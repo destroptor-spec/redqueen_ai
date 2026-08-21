@@ -1,0 +1,7 @@
+*.log
+*.fafreplay
+*.scfareplay
+*.tmp
+.idea/
+.vscode/
+__pycache__/
