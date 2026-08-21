@@ -85,6 +85,20 @@ for required in ("MassProduction", "EnergyProduction", "0.10 * deficit"):
 strategy_source = (ROOT / "lua/AI/RedQueen/StrategyDirector.lua").read_text(encoding="utf-8")
 counter_source = (ROOT / "lua/AI/RedQueen/CounterBuilders.lua").read_text(encoding="utf-8")
 production_source = (ROOT / "lua/AI/RedQueen/ProductionManager.lua").read_text(encoding="utf-8")
+intel_source = (ROOT / "lua/AI/RedQueen/IntelManager.lua").read_text(encoding="utf-8")
+fortification_source = (ROOT / "lua/AI/RedQueen/FortificationBuilders.lua").read_text(encoding="utf-8")
+combat_source = (ROOT / "lua/AI/RedQueen/CombatManager.lua").read_text(encoding="utf-8")
+for required in ("GetBlip", "IsSeenNow", "IsSeenEver", "IsOnRadar"):
+    if required not in intel_source:
+        fail(f"verified intel contract is missing: {required}")
+if "local highestObservedTech = 1" not in intel_source:
+    fail("observed enemy tech must be recomputed from surviving intel")
+if "- categories.TRANSPORTFOCUS" not in combat_source:
+    fail("combat waves must leave transports available to native transport plans")
+if "IsOwnedByBrain" not in production_source or "GetRebuildableForwardBaseSites" not in production_source:
+    fail("forward-base lifecycle must enforce ownership and support destroyed-site rebuilding")
+if 'GetNumCategoryUnits("Engineers", category)' not in fortification_source:
+    fail("emergency engineer tier checks must use the location engineer manager")
 for required in (
     "GetBestExposedEconomyTarget",
     "GetStrategicPicture",
@@ -94,7 +108,7 @@ for required in (
     "FocusWeights",
     "EconomicReadiness",
     "MajorProjectSlots",
-    "GetObservedArmyPressure",
+    "GetObservedArmyClusters",
     "UpdateDefenseAlert",
 ):
     if required not in strategy_source:
@@ -138,6 +152,7 @@ for required in (
     "IsObsoleteProfile",
     "RedQueenEmergencyFortificationBuilders",
     "SelectForwardBaseSite",
+    "RevalidateEstablishedForwardBases",
     "T3StrategicMissileDefense",
 ):
     if required not in production_source:

@@ -91,4 +91,29 @@ site = world:SelectForwardBaseSite(
 )
 assert(not site, "route threat above escort capacity must reject a forward site")
 
+local nearbyClaims = {
+    MassCluster1 = true,
+    ThreatenedExpansion = true,
+}
+local engineerAtDestroyedSite = { 300, 0, 0 }
+site = world:SelectForwardBaseSite(
+    engineerAtDestroyedSite,
+    { 500, 0, 0 },
+    intel,
+    nearbyClaims,
+    100
+)
+assert(not site, "ordinary markers inside the engineer minimum distance must remain ineligible")
+
+site = world:SelectForwardBaseSite(
+    engineerAtDestroyedSite,
+    { 500, 0, 0 },
+    intel,
+    nearbyClaims,
+    100,
+    { SafeDefense = true }
+)
+assert(site and site.Name == "SafeDefense", "released destroyed markers must allow rebuilding at the engineer position")
+assert(site.RouteThreat == 0, "nearby rebuilding must retain engineer-origin route threat checks")
+
 print("Red Queen world model contracts passed")

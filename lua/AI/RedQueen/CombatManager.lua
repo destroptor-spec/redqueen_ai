@@ -5,7 +5,14 @@ local function IsCombatUnit(unit)
     return unit
         and not unit.Dead
         and (not unit.BeenDestroyed or not unit:BeenDestroyed())
-        and EntityCategoryContains(categories.MOBILE - categories.ENGINEER - categories.COMMAND - categories.SCOUT, unit)
+        and EntityCategoryContains(
+            categories.MOBILE
+                - categories.ENGINEER
+                - categories.COMMAND
+                - categories.SCOUT
+                - categories.TRANSPORTFOCUS,
+            unit
+        )
 end
 
 local function UnitLayer(unit)
@@ -249,6 +256,10 @@ CombatManager = ClassSimple {
             local naval = self:SelectTaskForce(groups.Water, defensive)
             if self:IssueObjective(naval, objective, "Water") then
                 ordered = ordered + table.getn(naval)
+            end
+            local amphibious = self:SelectTaskForce(groups.Amphibious, defensive)
+            if self:IssueObjective(amphibious, objective, "Amphibious") then
+                ordered = ordered + table.getn(amphibious)
             end
         elseif destinationLayer ~= "Air" then
             local land = self:SelectTaskForce(groups.Land, defensive)

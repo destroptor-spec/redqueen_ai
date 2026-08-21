@@ -1,11 +1,17 @@
 local categoryMetatable = {}
-categoryMetatable.__mul = function() return setmetatable({}, categoryMetatable) end
-categoryMetatable.__add = function() return setmetatable({}, categoryMetatable) end
-categoryMetatable.__sub = function() return setmetatable({}, categoryMetatable) end
+local function CombineCategories(left, right)
+    local result = { Keys = {} }
+    for key, present in pairs(left.Keys or {}) do result.Keys[key] = present end
+    for key, present in pairs(right.Keys or {}) do result.Keys[key] = present end
+    return setmetatable(result, categoryMetatable)
+end
+categoryMetatable.__mul = CombineCategories
+categoryMetatable.__add = CombineCategories
+categoryMetatable.__sub = CombineCategories
 
 categories = setmetatable({}, {
     __index = function(value, key)
-        local category = setmetatable({}, categoryMetatable)
+        local category = setmetatable({ Keys = { [key] = true } }, categoryMetatable)
         rawset(value, key, category)
         return category
     end,
@@ -33,7 +39,26 @@ dofile("lua/AI/RedQueen/FortificationBuilders.lua")
 assert(groups.RedQueenEmergencyFortificationBuilders, "emergency fortification group must register")
 
 local factionIndex = 1
-local alertActive = true
+local engineerCounts = {
+    MAIN = { [2] = 0, [3] = 1 },
+    EXPANSION = { [2] = 1, [3] = 0 },
+}
+local function EngineerManager(locationType, position)
+    return {
+        Radius = 80,
+        GetLocationCoords = function() return position end,
+        GetNumCategoryUnits = function(_, unitType, category)
+            assert(unitType == "Engineers", "fortification checks must query the local engineer roster")
+            if category.Keys.TECH3 then
+                return engineerCounts[locationType][3]
+            end
+            if category.Keys.TECH2 then
+                return engineerCounts[locationType][2]
+            end
+            return 0
+        end,
+    }
+end
 local brain = {
     RedQueenModules = {
         Strategy = {
@@ -55,13 +80,12 @@ local brain = {
     },
     BuilderManagers = {
         MAIN = {
-            EngineerManager = {
-                Radius = 80,
-                GetLocationCoords = function() return { 0, 0, 0 } end,
-            },
+            EngineerManager = EngineerManager("MAIN", { 0, 0, 0 }),
+        },
+        EXPANSION = {
+            EngineerManager = EngineerManager("EXPANSION", { 200, 0, 200 }),
         },
     },
-    GetCurrentUnits = function() return 1 end,
     GetNumUnitsAroundPoint = function() return 0 end,
     GetFactionIndex = function() return factionIndex end,
 }
@@ -80,7 +104,19 @@ local tml = builders["Red Queen Emergency Tactical Missile T3 Engineer"]
 assert(smd.BuilderConditions[1][1](brain, "MAIN"), "mature emergency bases must request strategic missile defense")
 assert(tml.BuilderConditions[1][1](brain, "MAIN"), "mature emergency bases must request tactical missiles")
 
+brain.RedQueenModules.Strategy.ProductionDemand.DefenseAlert.AnchorPosition = { 200, 0, 200 }
+local t2Ground = builders["Red Queen Emergency T2 Point Defense"]
+local t2AntiAir = builders["Red Queen Emergency T2 AA"]
+local t2Shield = builders["Red Queen Emergency T2 Shield"]
+local t2Missile = builders["Red Queen Emergency Tactical Missile"]
+assert(t2Ground.BuilderConditions[1][1](brain, "EXPANSION"), "a T2-only expansion must retain ground defense fallback")
+assert(t2AntiAir.BuilderConditions[1][1](brain, "EXPANSION"), "a T2-only expansion must retain anti-air fallback")
+assert(t2Shield.BuilderConditions[1][1](brain, "EXPANSION"), "a T2-only expansion must retain shield fallback")
+assert(t2Missile.BuilderConditions[1][1](brain, "EXPANSION"), "a T2-only expansion must retain tactical missile fallback")
+assert(not cybranDefense.BuilderConditions[1][1](brain, "EXPANSION"), "a remote T3 engineer must not enable T3 builders at an expansion")
+assert(not smd.BuilderConditions[1][1](brain, "EXPANSION"), "a remote T3 engineer must not enable strategic defense at an expansion")
+
 brain.RedQueenModules.Strategy.ProductionDemand.DefenseAlert.Active = false
-assert(not cybranDefense.BuilderConditions[1][1](brain, "MAIN"), "fortification builders must stop when the alert clears")
+assert(not t2Ground.BuilderConditions[1][1](brain, "EXPANSION"), "fortification builders must stop when the alert clears")
 
 print("Red Queen fortification builder contracts passed")

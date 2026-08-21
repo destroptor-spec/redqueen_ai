@@ -4,6 +4,7 @@ local knownTarget = nil
 local localThreat = 0
 local observedPressure = nil
 local armyStats = { Lost = 0, Destroyed = 0 }
+local waterPoint = nil
 local dropOpportunity = {
     EntityId = 90,
     Position = { 80, 0, 80 },
@@ -19,7 +20,10 @@ function GetGameTimeSeconds()
     return currentTime
 end
 
-function GetSurfaceHeight()
+function GetSurfaceHeight(x, z)
+    if waterPoint and waterPoint[1] == x and waterPoint[3] == z then
+        return 5
+    end
     return 0
 end
 
@@ -118,7 +122,15 @@ local intel = {
     GetBestKnownTarget = function() return knownTarget end,
     GetBestExposedEconomyTarget = function() return dropOpportunity end,
     GetStrategicPicture = function() return strategicPicture end,
-    GetObservedArmyPressure = function() return observedPressure end,
+    GetObservedArmyClusters = function()
+        if not observedPressure then
+            return {}
+        end
+        if observedPressure[1] then
+            return observedPressure
+        end
+        return { observedPressure }
+    end,
 }
 local economy = {
     State = {
@@ -263,8 +275,65 @@ assert(director.CurrentObjective.Type == "Defend", "immediate base danger must r
 assert(director.ProductionDemand.FocusWeights.Tech3 == 0, "base danger must block new strategic investment")
 
 localThreat = 0
+local expansionAnchor = { 240, 0, 240 }
+brain.BuilderManagers.EXPANSION = {
+    EngineerManager = {
+        GetLocationCoords = function() return expansionAnchor end,
+    },
+}
+observedPressure = {
+    Position = { 420, 0, 420 },
+    AnchorIndex = 2,
+    DistanceToAnchor = 255,
+    Threat = 50,
+    Surface = 50,
+    Air = 0,
+    ClosingThreat = 0,
+    Approaching = false,
+}
+local measuredDefensePosition = nil
+director.GetOwnThreatNear = function(_, position)
+    measuredDefensePosition = position
+    if position == expansionAnchor then
+        return 50
+    end
+    return 0
+end
+currentTick = 4900
+director:UpdateDefenseAlert()
+assert(measuredDefensePosition == expansionAnchor, "friendly threat must be measured at the protected anchor")
+assert(not director.DefenseAlert.Active, "a defended anchor must not panic over a distant relative threat")
+brain.BuilderManagers.EXPANSION = nil
+
+local navalAnchor = { 320, 5, 320 }
+waterPoint = navalAnchor
+brain.BuilderManagers.NAVAL = {
+    EngineerManager = {
+        GetLocationCoords = function() return navalAnchor end,
+    },
+}
+observedPressure = {
+    Position = { 350, 5, 350 },
+    AnchorIndex = 2,
+    DistanceToAnchor = 42,
+    Threat = 50,
+    Surface = 50,
+    Air = 0,
+    ClosingThreat = 40,
+    Approaching = true,
+}
+director.GetOwnThreatNear = function() return 20 end
+currentTick = 4950
+director:Update()
+assert(director.DefenseAlert.Active, "a massive naval force must trigger a defense alert")
+assert(director.CurrentObjective.Position == navalAnchor, "naval defense must protect the selected anchor")
+assert(director.CurrentObjective.Layer == "Water", "a water anchor must dispatch naval defenders")
+brain.BuilderManagers.NAVAL = nil
+waterPoint = nil
+
 observedPressure = {
     Position = { 30, 0, 30 },
+    AnchorIndex = 1,
     AnchorPosition = { 0, 0, 0 },
     DistanceToAnchor = 42,
     Threat = 50,
@@ -278,6 +347,7 @@ currentTick = 5000
 director:Update()
 assert(director.DefenseAlert.Active, "a massive observed army must be acknowledged")
 assert(director.CurrentObjective.Type == "Defend", "a massive army must override the active objective")
+assert(director.CurrentObjective.Layer == "Land", "a land anchor must dispatch land defenders")
 assert(director.ProductionDemand.MajorProjectSlots == 0, "defense alerts must pause new major projects")
 assert(director.ProductionDemand.DesiredNukes == 0, "defense alerts must block new nuclear starts")
 
@@ -288,20 +358,56 @@ assert(not director.DefenseAlert.Active, "a stale army alert must clear after it
 
 armyStats.Lost = 500
 armyStats.Destroyed = 50
-observedPressure = {
-    Position = { 50, 0, 50 },
-    AnchorPosition = { 0, 0, 0 },
-    DistanceToAnchor = 70,
-    Threat = 30,
-    Surface = 30,
-    Air = 0,
-    ClosingThreat = 20,
-    Approaching = true,
+local losingExpansionAnchor = { 240, 0, 240 }
+brain.BuilderManagers.LOSS_EXPANSION = {
+    EngineerManager = {
+        GetLocationCoords = function() return losingExpansionAnchor end,
+    },
 }
-director.GetOwnThreatNear = function() return 30 end
+local approachingPosition = { 50, 0, 50 }
+observedPressure = {
+    {
+        FirstEntityId = 40,
+        Position = { 400, 0, 400 },
+        AnchorIndex = 2,
+        DistanceToAnchor = 226,
+        Threat = 100,
+        Surface = 100,
+        Air = 0,
+        ClosingThreat = 0,
+        Approaching = false,
+    },
+    {
+        FirstEntityId = 41,
+        Position = approachingPosition,
+        AnchorIndex = 1,
+        DistanceToAnchor = 70,
+        Threat = 30,
+        Surface = 30,
+        Air = 0,
+        ClosingThreat = 20,
+        Approaching = true,
+    },
+}
+local checkedMainAnchor = false
+local checkedExpansionAnchor = false
+director.GetOwnThreatNear = function(_, position)
+    if position == losingExpansionAnchor then
+        checkedExpansionAnchor = true
+        return 100
+    end
+    if position == world.StartPosition then
+        checkedMainAnchor = true
+        return 30
+    end
+    return 0
+end
 currentTick = 5500
 director:UpdateDefenseAlert()
 assert(director.CombatMomentum.Losing, "unfavorable mass exchange must be tracked")
+assert(checkedMainAnchor and checkedExpansionAnchor, "every observed cluster must be tested at its nearest anchor")
 assert(director.DefenseAlert.Active, "a losing AI must react to a smaller approaching army")
+assert(director.DefenseAlert.Position == approachingPosition, "a larger non-threatening cluster must not hide an approaching army")
+brain.BuilderManagers.LOSS_EXPANSION = nil
 
 print("Red Queen strategy director contracts passed")

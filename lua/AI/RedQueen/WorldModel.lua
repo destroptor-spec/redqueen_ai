@@ -207,7 +207,7 @@ WorldModel = ClassSimple {
         return maximum
     end,
 
-    SelectForwardBaseSite = function(self, origin, objective, intel, claimed, escortThreat)
+    SelectForwardBaseSite = function(self, origin, objective, intel, claimed, escortThreat, rebuildable)
         if not objective then
             return nil
         end
@@ -220,7 +220,10 @@ WorldModel = ClassSimple {
             if not claimed[candidate.Name] then
                 local ownDistance = math.sqrt(DistanceSquared(origin, candidate.Position))
                 local objectiveDistance = math.sqrt(DistanceSquared(objective, candidate.Position))
-                if ownDistance >= minimumDistance and self:CanPath("Land", origin, candidate.Position) then
+                local rebuilding = rebuildable and rebuildable[candidate.Name]
+                if (rebuilding or ownDistance >= minimumDistance)
+                    and self:CanPath("Land", origin, candidate.Position)
+                then
                     local routeThreat = self:GetObservedRouteThreat(
                         origin,
                         candidate.Position,

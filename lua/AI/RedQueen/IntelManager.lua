@@ -85,6 +85,29 @@ local function UnitLayer(unit)
     return "Land"
 end
 
+local function GetVerifiedIntelBlip(unit, armyIndex)
+    if not unit or unit.Dead then
+        return nil
+    end
+
+    local blip = unit:GetBlip(armyIndex)
+    if not blip then
+        return nil
+    end
+
+    local seenNow = blip:IsSeenNow(armyIndex)
+    local onOmni = blip:IsOnOmni(armyIndex)
+    local activelyDetected = seenNow
+        or onOmni
+        or blip:IsOnRadar(armyIndex)
+        or blip:IsOnSonar(armyIndex)
+    local identified = seenNow or onOmni or blip:IsSeenEver(armyIndex)
+    if activelyDetected and identified then
+        return blip
+    end
+    return nil
+end
+
 ---@class RedQueenIntelManager
 IntelManager = ClassSimple {
     __init = function(self, brain)
@@ -101,6 +124,9 @@ IntelManager = ClassSimple {
         end
 
         local entityId = unit.EntityId
+        if not entityId and unit.GetEntityId then
+            entityId = unit:GetEntityId()
+        end
         local position = unit:GetPosition()
         if not entityId or not position then
             return
@@ -123,6 +149,7 @@ IntelManager = ClassSimple {
 
     Update = function(self)
         local tick = GetGameTick()
+        local armyIndex = self.Brain:GetArmyIndex()
         local observerCategory = categories.MOBILE * (categories.LAND + categories.AIR + categories.NAVAL)
         local observers = self.Brain:GetListOfUnits(observerCategory, false)
         local observerCount = table.getn(observers)
@@ -144,7 +171,10 @@ IntelManager = ClassSimple {
                         "Enemy"
                     )
                     for _, enemy in pairs(enemies) do
-                        self:ObserveUnit(enemy, tick)
+                        local blip = GetVerifiedIntelBlip(enemy, armyIndex)
+                        if blip then
+                            self:ObserveUnit(blip, tick)
+                        end
                     end
                 end
             end
@@ -152,7 +182,7 @@ IntelManager = ClassSimple {
 
         local lifetimeTicks = Constants.Policy.IntelLifetimeSeconds * 10
         local threat = { Land = 0, Air = 0, Naval = 0, Economy = 0 }
-        local highestObservedTech = self.HighestObservedTech
+        local highestObservedTech = 1
         for entityId, observation in pairs(self.Observations) do
             local age = tick - observation.LastSeenTick
             if age > lifetimeTicks then
@@ -199,7 +229,7 @@ IntelManager = ClassSimple {
         return result
     end,
 
-    GetObservedArmyPressure = function(self, anchors, worldWidth)
+    GetObservedArmyClusters = function(self, anchors, worldWidth)
         local tick = GetGameTick()
         local freshTicks = Constants.Policy.FreshCombatIntelSeconds * 10
         local radius = math.max(
@@ -283,19 +313,19 @@ IntelManager = ClassSimple {
             end
         end
 
-        local best = nil
         for _, cluster in pairs(clusters) do
             cluster.DistanceToAnchor, cluster.AnchorIndex = ClosestDistance(cluster.Position, anchors)
             cluster.Approaching = cluster.ClosingThreat
                 >= cluster.Threat * Constants.Policy.ArmyClosingThreatFraction
-            if not best
-                or cluster.Threat > best.Threat
-                or (cluster.Threat == best.Threat and cluster.FirstEntityId < best.FirstEntityId)
-            then
-                best = cluster
-            end
         end
-        return best
+
+        table.sort(clusters, function(a, b)
+            if a.Threat == b.Threat then
+                return a.FirstEntityId < b.FirstEntityId
+            end
+            return a.Threat > b.Threat
+        end)
+        return clusters
     end,
 
     GetStrategicPicture = function(self, origin, world)

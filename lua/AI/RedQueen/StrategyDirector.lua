@@ -233,12 +233,14 @@ StrategyDirector = ClassSimple {
         local previous = self.DefenseAlert or { Active = false }
         local momentum = self:UpdateCombatMomentum()
         local anchors = self:GetProtectedAnchors()
-        local cluster = self.Intel.GetObservedArmyPressure
-            and self.Intel:GetObservedArmyPressure(anchors, self.World.Width)
+        local clusters = self.Intel.GetObservedArmyClusters
+            and self.Intel:GetObservedArmyClusters(anchors, self.World.Width)
+            or {}
         local alert = { Active = false }
 
-        if cluster then
-            local ownThreat = self:GetOwnThreatNear(cluster.Position, math.max(60, self.World.Width / 12))
+        for _, cluster in pairs(clusters) do
+            local anchor = anchors[cluster.AnchorIndex or 1] or self.World.StartPosition
+            local ownThreat = self:GetOwnThreatNear(anchor, math.max(60, self.World.Width / 12))
             local ratio = cluster.Threat / math.max(1, ownThreat)
             local massive = cluster.Threat >= Constants.Policy.MassiveArmyThreat
                 and ratio >= Constants.Policy.MassiveArmyThreatRatio
@@ -248,8 +250,7 @@ StrategyDirector = ClassSimple {
                 and momentum.Losing
 
             if massive or pressure then
-                local anchor = anchors[cluster.AnchorIndex or 1] or self.World.StartPosition
-                alert = {
+                local candidate = {
                     Active = true,
                     Position = cluster.Position,
                     AnchorPosition = anchor,
@@ -260,6 +261,8 @@ StrategyDirector = ClassSimple {
                     Ratio = ratio,
                     Count = cluster.Count,
                     Approaching = cluster.Approaching,
+                    DistanceToAnchor = cluster.DistanceToAnchor,
+                    FirstEntityId = cluster.FirstEntityId,
                     Losing = momentum.Losing,
                     LostMass = momentum.LostMass,
                     DestroyedMass = momentum.DestroyedMass,
@@ -274,6 +277,26 @@ StrategyDirector = ClassSimple {
                     CreatedTick = previous.Active and previous.CreatedTick or tick,
                     ExpiresTick = tick + Constants.Policy.DefenseAlertHoldSeconds * 10,
                 }
+                if not alert.Active
+                    or candidate.Ratio > alert.Ratio
+                    or (
+                        candidate.Ratio == alert.Ratio
+                        and candidate.DistanceToAnchor < alert.DistanceToAnchor
+                    )
+                    or (
+                        candidate.Ratio == alert.Ratio
+                        and candidate.DistanceToAnchor == alert.DistanceToAnchor
+                        and candidate.Threat > alert.Threat
+                    )
+                    or (
+                        candidate.Ratio == alert.Ratio
+                        and candidate.DistanceToAnchor == alert.DistanceToAnchor
+                        and candidate.Threat == alert.Threat
+                        and candidate.FirstEntityId < alert.FirstEntityId
+                    )
+                then
+                    alert = candidate
+                end
             end
         end
 
@@ -722,7 +745,7 @@ StrategyDirector = ClassSimple {
                 Type = "Defend",
                 Position = defenseAlert.AnchorPosition,
                 ThreatPosition = defenseAlert.Position,
-                Layer = "Land",
+                Layer = PositionLayer(defenseAlert.AnchorPosition),
                 Priority = 140,
                 CreatedTick = GetGameTick(),
             }

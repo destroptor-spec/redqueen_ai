@@ -25,8 +25,15 @@ local function DistanceSquared(a, b)
     return dx * dx + dz * dz
 end
 
-local function HasEngineer(aiBrain, tier)
-    return aiBrain:GetCurrentUnits(categories.ENGINEER * categories["TECH" .. tostring(tier)]) > 0
+local function HasEngineer(aiBrain, locationType, tier)
+    local managers = aiBrain.BuilderManagers
+    local manager = managers and managers[locationType]
+    local engineerManager = manager and manager.EngineerManager
+    if not engineerManager or not engineerManager.GetNumCategoryUnits then
+        return false
+    end
+    local category = categories.ENGINEER * categories["TECH" .. tostring(tier)]
+    return engineerManager:GetNumCategoryUnits("Engineers", category) > 0
 end
 
 local function NeedsDefense(aiBrain, locationType, role, category)
@@ -48,7 +55,7 @@ end
 
 local function NeedsT2GroundWithT3(aiBrain, locationType)
     return aiBrain:GetFactionIndex() ~= 1
-        and HasEngineer(aiBrain, 3)
+        and HasEngineer(aiBrain, locationType, 3)
         and NeedsDefense(
             aiBrain,
             locationType,
@@ -59,7 +66,7 @@ end
 
 local function NeedsT3Ground(aiBrain, locationType)
     return aiBrain:GetFactionIndex() == 1
-        and HasEngineer(aiBrain, 3)
+        and HasEngineer(aiBrain, locationType, 3)
         and NeedsDefense(
             aiBrain,
             locationType,
@@ -69,8 +76,8 @@ local function NeedsT3Ground(aiBrain, locationType)
 end
 
 local function NeedsT2Ground(aiBrain, locationType)
-    return not HasEngineer(aiBrain, 3)
-        and HasEngineer(aiBrain, 2)
+    return not HasEngineer(aiBrain, locationType, 3)
+        and HasEngineer(aiBrain, locationType, 2)
         and NeedsDefense(
             aiBrain,
             locationType,
@@ -80,7 +87,7 @@ local function NeedsT2Ground(aiBrain, locationType)
 end
 
 local function NeedsTacticalMissileWithT3(aiBrain, locationType)
-    return HasEngineer(aiBrain, 3)
+    return HasEngineer(aiBrain, locationType, 3)
         and NeedsDefense(
             aiBrain,
             locationType,
@@ -90,7 +97,7 @@ local function NeedsTacticalMissileWithT3(aiBrain, locationType)
 end
 
 local function NeedsT3AntiAir(aiBrain, locationType)
-    return HasEngineer(aiBrain, 3)
+    return HasEngineer(aiBrain, locationType, 3)
         and NeedsDefense(
             aiBrain,
             locationType,
@@ -100,8 +107,8 @@ local function NeedsT3AntiAir(aiBrain, locationType)
 end
 
 local function NeedsT2AntiAir(aiBrain, locationType)
-    return not HasEngineer(aiBrain, 3)
-        and HasEngineer(aiBrain, 2)
+    return not HasEngineer(aiBrain, locationType, 3)
+        and HasEngineer(aiBrain, locationType, 2)
         and NeedsDefense(
             aiBrain,
             locationType,
@@ -111,7 +118,7 @@ local function NeedsT2AntiAir(aiBrain, locationType)
 end
 
 local function NeedsT3Shield(aiBrain, locationType)
-    return HasEngineer(aiBrain, 3)
+    return HasEngineer(aiBrain, locationType, 3)
         and NeedsDefense(
             aiBrain,
             locationType,
@@ -121,8 +128,8 @@ local function NeedsT3Shield(aiBrain, locationType)
 end
 
 local function NeedsT2Shield(aiBrain, locationType)
-    return not HasEngineer(aiBrain, 3)
-        and HasEngineer(aiBrain, 2)
+    return not HasEngineer(aiBrain, locationType, 3)
+        and HasEngineer(aiBrain, locationType, 2)
         and NeedsDefense(
             aiBrain,
             locationType,
@@ -132,7 +139,7 @@ local function NeedsT2Shield(aiBrain, locationType)
 end
 
 local function NeedsStrategicMissileDefense(aiBrain, locationType)
-    return HasEngineer(aiBrain, 3)
+    return HasEngineer(aiBrain, locationType, 3)
         and NeedsDefense(
             aiBrain,
             locationType,
@@ -142,8 +149,8 @@ local function NeedsStrategicMissileDefense(aiBrain, locationType)
 end
 
 local function NeedsTacticalMissile(aiBrain, locationType)
-    return not HasEngineer(aiBrain, 3)
-        and HasEngineer(aiBrain, 2)
+    return not HasEngineer(aiBrain, locationType, 3)
+        and HasEngineer(aiBrain, locationType, 2)
         and NeedsDefense(
             aiBrain,
             locationType,

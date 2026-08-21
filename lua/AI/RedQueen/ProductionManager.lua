@@ -1,6 +1,5 @@
 local AIBuildStructures = import("/lua/AI/aibuildstructures.lua")
 local AIAddBuilderTable = import("/lua/AI/AIAddBuilderTable.lua")
-local AIUtilities = import("/lua/AI/aiutilities.lua")
 local BaseTemplates = import("/lua/basetemplates.lua")
 local BuildingTemplates = import("/lua/buildingtemplates.lua")
 local Constants = import("/mods/TheRedQueen/lua/AI/RedQueen/Constants.lua")
@@ -39,11 +38,31 @@ local function IsAvailable(unit)
     return IsAlive(unit) and unit:IsIdleState()
 end
 
+local function IsOwnedByBrain(unit, brain)
+    return IsAlive(unit)
+        and unit.GetArmy
+        and brain.GetArmyIndex
+        and unit:GetArmy() == brain:GetArmyIndex()
+end
+
 local function UnitTech(unit)
     local hash = unit:GetBlueprint().CategoriesHash or {}
     if hash.TECH3 then return 3 end
     if hash.TECH2 then return 2 end
     return 1
+end
+
+local function HasExpansionBase(brain, baseName)
+    if brain.HasPlatoonList then
+        local locations = brain.PBM and brain.PBM.Locations or {}
+        for _, location in pairs(locations) do
+            if location.LocationType == baseName then
+                return true
+            end
+        end
+        return false
+    end
+    return brain.BuilderManagers and brain.BuilderManagers[baseName] ~= nil
 end
 
 local FactionNames = { "UEF", "Aeon", "Cybran", "Seraphim", "Nomads" }
@@ -557,20 +576,92 @@ ProductionManager = ClassSimple {
         }
     end,
 
+    FindForwardBaseFactory = function(self, base)
+        if IsOwnedByBrain(base.Factory, self.Brain) then
+            return base.Factory
+        end
+        if not self.Brain.GetUnitsAroundPoint then
+            return nil
+        end
+
+        local factories = self.Brain:GetUnitsAroundPoint(
+            categories.STRUCTURE * categories.FACTORY,
+            base.Position,
+            Constants.Policy.ForwardBaseSiteRadius,
+            "Ally"
+        ) or {}
+        local available = {}
+        for _, factory in pairs(factories) do
+            if IsOwnedByBrain(factory, self.Brain) then
+                table.insert(available, factory)
+            end
+        end
+        table.sort(available, function(a, b)
+            local aPosition = a:GetPosition()
+            local bPosition = b:GetPosition()
+            local adx = aPosition[1] - base.Position[1]
+            local adz = aPosition[3] - base.Position[3]
+            local bdx = bPosition[1] - base.Position[1]
+            local bdz = bPosition[3] - base.Position[3]
+            local aDistance = adx * adx + adz * adz
+            local bDistance = bdx * bdx + bdz * bdz
+            if aDistance ~= bDistance then
+                return aDistance < bDistance
+            end
+            return (a.EntityId or 0) < (b.EntityId or 0)
+        end)
+        return available[1]
+    end,
+
+    GetRebuildableForwardBaseSites = function(self)
+        local sites = {}
+        for _, base in pairs(self.ForwardBases) do
+            if base.State == "Destroyed" and base.SiteName then
+                sites[base.SiteName] = true
+            end
+        end
+        return sites
+    end,
+
+    RevalidateEstablishedForwardBases = function(self)
+        local tick = GetGameTick()
+        for _, base in pairs(self.ForwardBases) do
+            if base.State == "Established" then
+                local managerPresent = HasExpansionBase(self.Brain, base.Name)
+                local factory = self:FindForwardBaseFactory(base)
+                base.ManagerPresent = managerPresent
+                base.FactoryPresent = factory ~= nil
+                if managerPresent and factory then
+                    base.Factory = factory
+                else
+                    base.State = "Destroyed"
+                    base.DestroyedTick = tick
+                    self.ForwardBaseClaims[base.SiteName] = nil
+                    Logger.Info(self.Brain, string.format(
+                        "forward base destroyed name=%s site=%s manager=%s factory=%s",
+                        base.Name,
+                        base.SiteName,
+                        managerPresent and "yes" or "no",
+                        factory and "yes" or "no"
+                    ))
+                end
+            end
+        end
+    end,
+
     UpdateForwardBaseStatus = function(self)
+        self:RevalidateEstablishedForwardBases()
         local active = self.ForwardBaseActive
         if not active then
             return
         end
-        local factoryCount = self.Brain:GetNumUnitsAroundPoint(
-            categories.STRUCTURE * categories.FACTORY,
-            active.Position,
-            Constants.Policy.ForwardBaseSiteRadius,
-            "Ally"
-        )
-        if factoryCount > 0 then
+        local factory = self:FindForwardBaseFactory(active)
+        if factory then
             active.State = "Established"
             active.EstablishedTick = GetGameTick()
+            active.Factory = factory
+            active.FactoryPresent = true
+            active.ManagerPresent = HasExpansionBase(self.Brain, active.Name)
             self.ForwardBaseActive = nil
             Logger.Info(self.Brain, string.format(
                 "forward base established name=%s site=%s tech=%d",
@@ -627,7 +718,22 @@ ProductionManager = ClassSimple {
             NearMarkerType = site.Type,
             BuildStructures = package,
         }
-        local queued = 0
+        local record = {
+            Name = baseName,
+            SiteName = site.Name,
+            Type = site.Type,
+            Position = site.Position,
+            RouteThreat = site.RouteThreat,
+            Engineer = engineer,
+            Tech = tech,
+            StartTick = GetGameTick(),
+            State = "Preparing",
+            Queued = 0,
+            Registered = false,
+        }
+        table.insert(self.ForwardBases, record)
+        self.ForwardBaseClaims[site.Name] = true
+
         for _, buildingType in pairs(package) do
             if AIBuildStructures.AIExecuteBuildStructure(
                 self.Brain,
@@ -639,43 +745,51 @@ ProductionManager = ClassSimple {
                 movedTemplate,
                 site.Position
             ) then
-                queued = queued + 1
+                record.Queued = record.Queued + 1
             end
         end
-        if queued == 0 then
+        if record.Queued == 0 then
+            self.ForwardBaseClaims[site.Name] = nil
+            table.remove(self.ForwardBases, table.getn(self.ForwardBases))
+            Logger.Warning(self.Brain, string.format(
+                "forward base aborted name=%s site=%s reason=no-structures-queued",
+                baseName,
+                site.Name
+            ))
             return false
         end
+        self.LastForwardBaseTick = GetGameTick()
 
-        AIUtilities.AINewExpansionBase(
+        local registrationCompleted, registrationError = pcall(
+            AIBuildStructures.AINewExpansionBase,
             self.Brain,
             baseName,
             site.Position,
             engineer,
             constructionData
         )
+        record.Registered = HasExpansionBase(self.Brain, baseName)
+        if not registrationCompleted or not record.Registered then
+            record.State = "Failed"
+            record.Failure = "ExpansionRegistration"
+            Logger.Error(self.Brain, string.format(
+                "forward base registration failed name=%s site=%s queued=%d error=%s",
+                baseName,
+                site.Name,
+                record.Queued,
+                registrationCompleted and "manager-missing" or tostring(registrationError)
+            ))
+            return false
+        end
 
-        local record = {
-            Name = baseName,
-            SiteName = site.Name,
-            Type = site.Type,
-            Position = site.Position,
-            RouteThreat = site.RouteThreat,
-            Engineer = engineer,
-            Tech = tech,
-            StartTick = GetGameTick(),
-            State = "Building",
-            Queued = queued,
-        }
-        table.insert(self.ForwardBases, record)
-        self.ForwardBaseClaims[site.Name] = true
+        record.State = "Building"
         self.ForwardBaseActive = record
-        self.LastForwardBaseTick = GetGameTick()
         Logger.Info(self.Brain, string.format(
             "forward base started name=%s site=%s tech=%d queued=%d routeThreat=%.1f",
             baseName,
             site.Name,
             tech,
-            queued,
+            record.Queued,
             site.RouteThreat
         ))
         return true
@@ -709,16 +823,21 @@ ProductionManager = ClassSimple {
         if not self:CanStartForwardBase(engineer) then
             return
         end
+        local engineerPosition = engineer:GetPosition()
+        if not engineerPosition then
+            return
+        end
         local escortThreat = self.Strategy:GetOwnThreatNear(
-            engineer:GetPosition(),
+            engineerPosition,
             Constants.Policy.ForwardBaseSiteRadius
         )
         local site = self.World:SelectForwardBaseSite(
-            self.World.StartPosition,
+            engineerPosition,
             objective.Position,
             self.Intel,
             self.ForwardBaseClaims,
-            escortThreat
+            escortThreat,
+            self:GetRebuildableForwardBaseSites()
         )
         if site then
             self:StartForwardBase(engineer, site)
