@@ -1,6 +1,6 @@
 AI = {
     Name = "The Red Queen",
-    Version = "V7",
+    Version = "V8",
     AIList = {
         {
             key = "redqueen",

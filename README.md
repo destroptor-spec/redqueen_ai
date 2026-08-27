@@ -1,6 +1,6 @@
 # The Red Queen
 
-The Red Queen is an adaptive skirmish AI for Supreme Commander: Forged Alliance Forever, delivered as a simulation mod. Release `V7` combines FAF's maintained Adaptive AI machinery with deterministic, observed-intel strategy for counterplay, tier-aware production, emergency defense, forward bases, coordinated combat, and allied support.
+The Red Queen is an adaptive skirmish AI for Supreme Commander: Forged Alliance Forever, delivered as a simulation mod. Release `V8` combines FAF's maintained Adaptive AI machinery with deterministic, observed-intel strategy for counterplay, tier-aware production, emergency defense, forward bases, coordinated combat, and allied support.
 
 It appears in the lobby as `AI: The Red Queen` and supports the four standard FAF factions.
 
