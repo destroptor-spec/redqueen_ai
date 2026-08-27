@@ -86,6 +86,18 @@ local function NeedsT2Ground(aiBrain, locationType)
         )
 end
 
+local function NeedsT1Ground(aiBrain, locationType)
+    return not HasEngineer(aiBrain, locationType, 3)
+        and not HasEngineer(aiBrain, locationType, 2)
+        and HasEngineer(aiBrain, locationType, 1)
+        and NeedsDefense(
+            aiBrain,
+            locationType,
+            "Ground",
+            categories.STRUCTURE * categories.DEFENSE * categories.DIRECTFIRE
+        )
+end
+
 local function NeedsTacticalMissileWithT3(aiBrain, locationType)
     return HasEngineer(aiBrain, locationType, 3)
         and NeedsDefense(
@@ -216,6 +228,25 @@ BuilderGroup {
             Construction = {
                 BuildClose = true,
                 BuildStructures = { "T2GroundDefense" },
+                Location = "LocationType",
+            },
+        },
+    },
+    Builder {
+        BuilderName = "Red Queen Emergency T1 Point Defense",
+        PlatoonTemplate = "EngineerBuilder",
+        Priority = 1000,
+        InstanceCount = 4,
+        BuilderType = "Any",
+        BuilderConditions = {
+            { NeedsT1Ground, { "LocationType" } },
+            { InstantBuildConditions, "BrainNotLowPowerMode", {} },
+            { UnitCountBuildConditions, "LocationEngineersBuildingLess", { "LocationType", 4, categories.DEFENSE } },
+        },
+        BuilderData = {
+            Construction = {
+                BuildClose = true,
+                BuildStructures = { "T1GroundDefense" },
                 Location = "LocationType",
             },
         },

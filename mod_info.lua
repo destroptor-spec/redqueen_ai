@@ -1,11 +1,11 @@
 name = "The Red Queen"
-version = 6
+version = 7
 copyright = "Copyright (c) 2026 The Red Queen Project"
 description = "The Red Queen is an adaptive FAF skirmish AI that uses observed battlefield intel to select targets, identify weaknesses, switch counters, and keep its forces in combat. It advances through tier-aware production, reacts to major enemy armies with layered defenses, and can establish defended forward bases. Team games add coordinated attacks and allied support, while an income-only bonus scales with the starting army deficit."
 author = "The Red Queen Project"
 url = ""
 icon = "/mods/TheRedQueen/assets/mod_icon.png"
-uid = "7f4a8d2e-2d63-4e71-9c51-5ed0ee000006"
+uid = "7f4a8d2e-2d63-4e71-9c51-5ed0ee000007"
 exclusive = false
 ui_only = false
 selectable = true

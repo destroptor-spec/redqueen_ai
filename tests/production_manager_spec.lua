@@ -19,6 +19,8 @@ categories = {
     COMMAND = setmetatable({}, categoryMetatable),
     STRUCTURE = 1,
     FACTORY = 1,
+    DEFENSE = 1,
+    DIRECTFIRE = 1,
 }
 
 function EntityCategoryContains(category, unit)
@@ -63,6 +65,7 @@ local buildingTemplates = {
             { "T1LandFactory", "uel0101" },
             { "T1AirFactory", "uea0101" },
             { "T1SeaFactory", "ues0103" },
+            { "T1GroundDefense", "ueb2101" },
         },
     },
 }
@@ -70,8 +73,16 @@ local baseTemplates = { BaseTemplates = { [1] = {} }, ExpansionBaseTemplates = {
 local constants = {
     Policy = {
         FactoryCheckCooldownSeconds = 30,
+        FactoryAssistMassPerEngineer = 1.0,
+        MaximumFactoryAssistants = 6,
+        FactoryAssistSeconds = 30,
+        EmergencyDefenseCooldownSeconds = 5,
+        EmergencyDefenseEngineerHoldSeconds = 10,
+        EmergencyDefenseLogCooldownSeconds = 30,
+        EmergencyDefenseRadius = 60,
         ForwardBaseSiteRadius = 60,
         ForwardBaseCooldownSeconds = 120,
+        ForwardBaseDiagnosticSeconds = 60,
         ForwardBaseMinimumMassIncome = 4,
         ForwardBaseMinimumEnergyIncome = 40,
         Tech2MinimumMassIncome = 4,
@@ -109,6 +120,15 @@ function GetGameTick()
     return 1000
 end
 
+local guarded = {}
+local cleared = {}
+function IssueGuard(units, target)
+    table.insert(guarded, { Units = units, Target = target })
+end
+function IssueClearCommands(units)
+    table.insert(cleared, units)
+end
+
 local commander = {
     EntityId = 1,
     IsEngineer = true,
@@ -134,7 +154,8 @@ local destroyedEngineer = {
     IsIdleState = function() error("destroyed units must not be queried") end,
     CanBuild = function() return true end,
 }
-local pool = { GetPlatoonUnits = function() return { commander, engineer, destroyedEngineer } end }
+local poolUnits = { commander, engineer, destroyedEngineer }
+local pool = { GetPlatoonUnits = function() return poolUnits end }
 local forwardFactory = {
     EntityId = 10,
     Dead = false,
@@ -168,11 +189,22 @@ ScenarioInfo = {
     },
 }
 local economy = {
-    State = { DesiredFactories = 3 },
+    State = {
+        DesiredFactories = 3,
+        MassIncome = 8,
+        StallRisk = false,
+    },
     CanExpandProduction = function() return true end,
 }
 local world = { WaterRatio = 0 }
-local strategy = { ProductionDemand = { Air = 0.30, Naval = 0.15 } }
+local strategy = {
+    ProductionDemand = {
+        Land = 0.55,
+        Air = 0.30,
+        Naval = 0.15,
+        DefenseAlert = { Active = false },
+    },
+}
 
 dofile("lua/AI/RedQueen/ProductionManager.lua")
 
@@ -195,6 +227,152 @@ assert(captured[2] == engineer, "custom capacity must use an idle non-commander 
 assert(captured[4] == false, "factory placement must not follow an arbitrary builder")
 assert(captured[5] == false, "base placement must use the engine's absolute result")
 assert(manager.FillIdleFactories == nil, "adaptive factory manager must remain the only unit-queue owner")
+
+local landFactoryBuilder = {
+    Priority = 500,
+    OriginalPriority = 500,
+    RedQueenConstructionTypes = { "T1LandFactory" },
+    SetPriority = function(self, priority) self.Priority = priority end,
+}
+local navalFactoryBuilder = {
+    Priority = 500,
+    OriginalPriority = 500,
+    RedQueenConstructionTypes = { "T1SeaFactory" },
+    SetPriority = function(self, priority) self.Priority = priority end,
+}
+local airFactoryBuilder = {
+    Priority = 500,
+    OriginalPriority = 500,
+    RedQueenConstructionTypes = { "T1AirFactory" },
+    SetPriority = function(self, priority) self.Priority = priority end,
+}
+brain.BuilderManagers.MAIN.EngineerManager = {
+    BuilderData = {
+        Any = { Builders = { landFactoryBuilder, airFactoryBuilder, navalFactoryBuilder } },
+    },
+    SortBuilderList = function() end,
+}
+manager:ApplyFactoryCapacityPolicy({ Total = 3, Land = 1, Air = 1, Naval = 1 })
+assert(landFactoryBuilder.Priority == 0, "native factory builders must stop at the sustainable total cap")
+assert(navalFactoryBuilder.Priority == 0, "factory caps must cover every construction domain")
+manager:ApplyFactoryCapacityPolicy({ Total = 2, Land = 1, Air = 1, Naval = 0 })
+assert(landFactoryBuilder.Priority == 0, "a satisfied land target must remain capped")
+assert(navalFactoryBuilder.Priority == 500, "a missing naval factory must restore only naval construction")
+
+economy.State.DesiredFactories = 2
+strategy.ProductionDemand.Naval = 0.05
+manager:ApplyFactoryCapacityPolicy({ Total = 2, Land = 2, Air = 0, Naval = 0 })
+assert(landFactoryBuilder.Priority == 0, "an overrepresented factory domain must remain capped")
+assert(airFactoryBuilder.Priority == 500, "a missing domain must remain buildable when the total cap has the wrong mix")
+assert(navalFactoryBuilder.Priority == 0, "an irrelevant absent domain must not bypass the total allocation")
+
+local ratchetCounts = { Total = 3, Land = 1, Air = 1, Naval = 1 }
+manager:ApplyFactoryCapacityPolicy(ratchetCounts)
+assert(ratchetCounts.TargetTotal == 2, "an existing off-demand factory must not ratchet the sustainable factory total upward")
+assert(navalFactoryBuilder.Priority == 0, "an off-demand domain must stay capped even once it already owns a factory")
+
+local expansionTargets = { Land = 2, Air = 1, Naval = 0, Total = 3 }
+assert(
+    manager:SelectFactoryType({ Total = 2, Land = 1, Air = 1, Naval = 0 }, expansionTargets) == "T1LandFactory",
+    "direct expansion must build the domain the capacity policy still wants"
+)
+assert(
+    manager:SelectFactoryType({ Total = 3, Land = 2, Air = 1, Naval = 0 }, expansionTargets) == nil,
+    "direct expansion must never build into a domain the capacity policy has capped"
+)
+local navalTargets = { Land = 1, Air = 0, Naval = 1, Total = 2 }
+world.WaterRatio = 0.50
+assert(
+    manager:SelectFactoryType({ Total = 1, Land = 1, Air = 0, Naval = 0 }, navalTargets) == "T1SeaFactory",
+    "a wet map must satisfy an unmet naval target"
+)
+world.WaterRatio = 0
+assert(
+    manager:SelectFactoryType({ Total = 1, Land = 1, Air = 0, Naval = 0 }, navalTargets) == nil,
+    "a dry map must never select a naval factory"
+)
+
+economy.State.DesiredFactories = 3
+strategy.ProductionDemand.Naval = 0.15
+
+local assistEngineer = {
+    EntityId = 40,
+    IsEngineer = true,
+    IsCommander = false,
+    IsIdleState = function() return true end,
+    CanBuild = function() return true end,
+    GetPosition = function() return { 10, 0, 10 } end,
+    GetBlueprint = function()
+        return { CategoriesHash = { ENGINEER = true, TECH1 = true } }
+    end,
+}
+local assignedEngineer = {
+    EntityId = 39,
+    IsEngineer = true,
+    IsCommander = false,
+    IsIdleState = function() return true end,
+    GetBlueprint = function()
+        return { CategoriesHash = { ENGINEER = true, TECH1 = true } }
+    end,
+}
+local activeFactory = {
+    EntityId = 41,
+    IsUnitState = function(_, state) return state == "Building" end,
+    GetBlueprint = function()
+        return { CategoriesHash = { FACTORY = true, LAND = true, TECH3 = true } }
+    end,
+}
+brain.GetListOfUnits = function() return { assignedEngineer, assistEngineer } end
+brain.GetNumUnitsAroundPoint = function() return 0 end
+poolUnits = {}
+manager:UpdateFactoryAssistance({ activeFactory })
+assert(table.getn(guarded) == 0, "idle engineers owned by native managers must not be taken for factory assistance")
+poolUnits = { assistEngineer }
+manager:UpdateFactoryAssistance({ activeFactory })
+assert(table.getn(guarded) == 1, "idle T1 engineers must assist active factories instead of adding factory shells")
+assert(guarded[1].Target == activeFactory, "factory assistance must prefer the active highest-tier target")
+assert(manager.FactoryAssistants[assistEngineer.EntityId], "assistant ownership must be tracked deterministically")
+
+local clearedBeforeIncomeDrop = table.getn(cleared)
+poolUnits = {}
+economy.State.MassIncome = 0
+manager:UpdateFactoryAssistance({ activeFactory })
+assert(not manager.FactoryAssistants[assistEngineer.EntityId], "reduced build power must release excess factory assistants")
+assert(table.getn(cleared) == clearedBeforeIncomeDrop, "a reclaimed engineer must not have its new native orders cleared")
+economy.State.MassIncome = 8
+poolUnits = { assistEngineer }
+manager:UpdateFactoryAssistance({ activeFactory })
+assert(manager.FactoryAssistants[assistEngineer.EntityId], "factory assistance must resume when build power recovers")
+
+strategy.ProductionDemand.DefenseAlert = {
+    Active = true,
+    AnchorKind = "Commander",
+    AnchorPosition = { 20, 0, 20 },
+    Targets = { Ground = 4 },
+}
+manager:UpdateFactoryAssistance({ activeFactory })
+assert(not manager.FactoryAssistants[assistEngineer.EntityId], "defense alerts must release factory assistants")
+assert(table.getn(cleared) > 0, "released assistants must have their factory orders cleared")
+captured = nil
+buildAllowed = true
+manager:UpdateEmergencyDefense()
+assert(captured, "a commander defense alert must directly queue point defense")
+assert(captured[2] == assistEngineer, "direct emergency construction must use an available non-commander engineer")
+assert(captured[3] == "T1GroundDefense", "T1 engineers must provide an early point-defense fallback")
+
+captured = nil
+manager.LastEmergencyDefenseTick = -100000
+strategy.ProductionDemand.DefenseAlert = {
+    Active = true,
+    AnchorKind = "MainBase",
+    AnchorLocationType = "MAIN",
+    AnchorPosition = { 0, 0, 0 },
+    Targets = { Ground = 4 },
+}
+assert(manager:HasManagedEmergencyDefense(strategy.ProductionDemand.DefenseAlert), "registered local fortification builders must own managed anchors")
+manager:UpdateEmergencyDefense()
+assert(not captured, "direct emergency construction must not duplicate a managed base builder queue")
+strategy.ProductionDemand.DefenseAlert = { Active = false }
 
 local mainlineBuilder = {
     Priority = 500,

@@ -6,14 +6,40 @@ local function DistanceSquared(a, b)
     return dx * dx + dz * dz
 end
 
+local function AnchorPosition(anchor)
+    return anchor and (anchor.Position or anchor)
+end
+
+-- Anchors are assigned geometrically, but co-located anchors must not be
+-- separated by sub-metre noise: quantizing the distance keeps the comparison a
+-- deterministic total order on (band, criticality, distance, index) while
+-- letting a commander standing inside its own base outrank the base itself.
 local function ClosestDistance(position, anchors)
+    local tolerance = math.max(1, Constants.Policy.AnchorProximityTolerance)
+    local bestBand = nil
     local bestDistance = nil
     local bestIndex = nil
+    local bestCriticality = nil
     for index, anchor in pairs(anchors or {}) do
-        local distance = math.sqrt(DistanceSquared(position, anchor))
-        if not bestDistance or distance < bestDistance then
+        local anchorPosition = AnchorPosition(anchor)
+        local criticality = anchor.Criticality or 1
+        local distance = math.sqrt(DistanceSquared(position, anchorPosition))
+        local band = math.floor(distance / tolerance)
+        if not bestDistance
+            or band < bestBand
+            or (band == bestBand and criticality > bestCriticality)
+            or (band == bestBand
+                and criticality == bestCriticality
+                and distance < bestDistance)
+            or (band == bestBand
+                and criticality == bestCriticality
+                and distance == bestDistance
+                and index < bestIndex)
+        then
+            bestBand = band
             bestDistance = distance
             bestIndex = index
+            bestCriticality = criticality
         end
     end
     return bestDistance or 1000000, bestIndex
@@ -83,6 +109,12 @@ local function UnitLayer(unit)
         return "Amphibious"
     end
     return "Land"
+end
+
+local function ObservationCombatThreat(observation)
+    local threat = observation.Threat or {}
+    return math.max(threat.Land or 0, threat.Naval or 0)
+        + (threat.Air or 0)
 end
 
 local function GetVerifiedIntelBlip(unit, armyIndex)
@@ -244,8 +276,7 @@ IntelManager = ClassSimple {
 
         for _, observation in pairs(self.Observations) do
             local role = observation.Role or {}
-            local threat = observation.Threat or {}
-            local totalThreat = (threat.Land or 0) + (threat.Air or 0) + (threat.Naval or 0)
+            local totalThreat = ObservationCombatThreat(observation)
             if role.MobileCombat
                 and observation.Position
                 and tick - observation.LastSeenTick <= freshTicks
@@ -279,6 +310,8 @@ IntelManager = ClassSimple {
                         observation.Position[3],
                     },
                     Count = 0,
+                    Land = 0,
+                    Naval = 0,
                     Surface = 0,
                     Air = 0,
                     Threat = 0,
@@ -296,10 +329,21 @@ IntelManager = ClassSimple {
                 + (observation.Position[3] - selected.Position[3]) / selected.Count
 
             local confidence = observation.Confidence or 0
-            local threat = observation.Threat or {}
-            local surface = ((threat.Land or 0) + (threat.Naval or 0)) * confidence
-            local air = (threat.Air or 0) * confidence
+            local movementThreat = ObservationCombatThreat(observation) * confidence
+            local land = 0
+            local naval = 0
+            local air = 0
+            if observation.Layer == "Air" then
+                air = movementThreat
+            elseif observation.Layer == "Water" then
+                naval = movementThreat
+            else
+                land = movementThreat
+            end
+            local surface = land + naval
             local contactThreat = surface + air
+            selected.Land = selected.Land + land
+            selected.Naval = selected.Naval + naval
             selected.Surface = selected.Surface + surface
             selected.Air = selected.Air + air
             selected.Threat = selected.Threat + contactThreat

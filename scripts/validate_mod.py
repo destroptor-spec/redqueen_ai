@@ -45,18 +45,21 @@ if not uid_match or not re.fullmatch(
     fail("mod UID is not a lowercase UUID-shaped identifier")
 
 vault_version_match = re.search(r"(?m)^version\s*=\s*(\d+)", metadata)
-semantic_version_match = re.search(
+release_label_match = re.search(
     r'(?m)^Version\s*=\s*"([^"]+)"',
     (ROOT / "lua/AI/RedQueen/Constants.lua").read_text(encoding="utf-8"),
 )
-registration_version_match = re.search(
+registration_label_match = re.search(
     r'(?m)^\s*Version\s*=\s*"([^"]+)"',
     (ROOT / "lua/AI/CustomAIs_v2/RedQueenAI.lua").read_text(encoding="utf-8"),
 )
-if not vault_version_match or not semantic_version_match or not registration_version_match:
+if not vault_version_match or not release_label_match or not registration_label_match:
     fail("release version metadata is incomplete")
-if semantic_version_match.group(1) != registration_version_match.group(1):
-    fail("semantic version differs between constants and lobby registration")
+release_label = f"V{vault_version_match.group(1)}"
+if release_label_match.group(1) != release_label:
+    fail("release label must be the Vault version prefixed with V")
+if registration_label_match.group(1) != release_label:
+    fail("release label differs between metadata and lobby registration")
 uid_revision = int(uid_match.group(1)[-6:])
 if int(vault_version_match.group(1)) != uid_revision:
     fail("Vault version must match the numeric UID revision")
@@ -88,6 +91,8 @@ production_source = (ROOT / "lua/AI/RedQueen/ProductionManager.lua").read_text(e
 intel_source = (ROOT / "lua/AI/RedQueen/IntelManager.lua").read_text(encoding="utf-8")
 fortification_source = (ROOT / "lua/AI/RedQueen/FortificationBuilders.lua").read_text(encoding="utf-8")
 combat_source = (ROOT / "lua/AI/RedQueen/CombatManager.lua").read_text(encoding="utf-8")
+context_source = (ROOT / "lua/AI/RedQueen/MatchContext.lua").read_text(encoding="utf-8")
+analyzer_source = (ROOT / "scripts/analyze-log.py").read_text(encoding="utf-8")
 for required in ("GetBlip", "IsSeenNow", "IsSeenEver", "IsOnRadar"):
     if required not in intel_source:
         fail(f"verified intel contract is missing: {required}")
@@ -99,6 +104,44 @@ if "IsOwnedByBrain" not in production_source or "GetRebuildableForwardBaseSites"
     fail("forward-base lifecycle must enforce ownership and support destroyed-site rebuilding")
 if 'GetNumCategoryUnits("Engineers", category)' not in fortification_source:
     fail("emergency engineer tier checks must use the location engineer manager")
+if 'BuilderName = "Red Queen Emergency T1 Point Defense"' not in fortification_source:
+    fail("early defense alerts must retain a T1 point-defense fallback")
+if 'PlatoonTemplate = "T1EngineerBuilder"' in fortification_source:
+    fail("T1EngineerBuilder is not a registered FAF platoon template")
+if 'return "Annihilation"' not in context_source:
+    fail("Annihilation must remain distinct from Supremacy")
+for required in ("AnchorKind", "Criticality", "DefenseLayers"):
+    if required not in strategy_source:
+        fail(f"critical defense anchor contract is missing: {required}")
+for required in (
+    "ApplyFactoryCapacityPolicy",
+    "GetUnassignedEngineers",
+    "UpdateFactoryAssistance",
+    "HasManagedEmergencyDefense",
+    "UpdateEmergencyDefense",
+):
+    if required not in production_source:
+        fail(f"production execution contract is missing: {required}")
+for required in ("ObservationCombatThreat", 'observation.Layer == "Water"'):
+    if required not in intel_source:
+        fail(f"movement-layer cluster contract is missing: {required}")
+for required in (
+    "CumulativeAirLosses",
+    "GunshipAirLossBaseline",
+    "Constants.Policy.AirLossWindowSeconds",
+):
+    if required not in strategy_source:
+        fail(f"gunship loss-baseline contract is missing: {required}")
+for required in ("landAnchor", "waterAnchor"):
+    if required not in strategy_source:
+        fail(f"defense layers must fall back to the threatened anchor: {required}")
+if "SelectFactoryType = function(self, counts, targets)" not in production_source:
+    fail("direct factory expansion must consume the capacity policy targets")
+if "Constants.Policy.AnchorProximityTolerance" not in intel_source:
+    fail("anchor assignment must resolve co-located anchors by criticality")
+for required in ("Engine Lua failures:", "Red Queen Lua failures:"):
+    if required not in analyzer_source:
+        fail(f"log analysis must report Lua failure attribution: {required}")
 for required in (
     "GetBestExposedEconomyTarget",
     "GetStrategicPicture",

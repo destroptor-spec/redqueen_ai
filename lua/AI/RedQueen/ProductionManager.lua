@@ -121,13 +121,57 @@ local function GuardBuilderPriority(builder)
     end
     builder.RedQueenOriginalCalculatePriority = builder.CalculatePriority
     builder.CalculatePriority = function(current, manager)
-        if current.RedQueenTierDisabled then
+        if current.RedQueenTierDisabled or current.RedQueenCapacityDisabled then
             local changed = current.Priority ~= 0
             current.Priority = 0
             return changed
         end
         return current.RedQueenOriginalCalculatePriority(current, manager)
     end
+end
+
+local function DistanceSquared(a, b)
+    local dx = a[1] - b[1]
+    local dz = a[3] - b[3]
+    return dx * dx + dz * dz
+end
+
+local function BuilderConstructionDomains(builder)
+    local cached = builder.RedQueenFactoryDomains
+    if cached ~= nil then
+        return cached or nil
+    end
+    local structures = builder.RedQueenConstructionTypes
+    if not structures and Builders and builder.BuilderName then
+        local definition = Builders[builder.BuilderName]
+        local construction = definition
+            and definition.BuilderData
+            and definition.BuilderData.Construction
+        structures = construction and construction.BuildStructures
+    end
+    if not structures then
+        builder.RedQueenFactoryDomains = false
+        return nil
+    end
+
+    local domains = {}
+    local found = false
+    for _, structureType in pairs(structures) do
+        if string.find(structureType, "Factory") then
+            if string.find(structureType, "Air") then
+                domains.Air = true
+                found = true
+            elseif string.find(structureType, "Sea") or string.find(structureType, "Naval") then
+                domains.Naval = true
+                found = true
+            elseif string.find(structureType, "Land") then
+                domains.Land = true
+                found = true
+            end
+        end
+    end
+    builder.RedQueenFactoryDomains = found and domains or false
+    return found and domains or nil
 end
 
 ---@class RedQueenProductionManager
@@ -140,6 +184,9 @@ ProductionManager = ClassSimple {
         self.Intel = intel
         self.Strategy = strategy
         self.LastFactoryRequestTick = -100000
+        self.FactoryAssistants = {}
+        self.LastEmergencyDefenseTick = -100000
+        self.LastEmergencyDefenseLogTick = -100000
         self.CounterBuildersRegistered = {}
         self.RoleAvailability = {}
         self.TierPolicy = {
@@ -153,6 +200,8 @@ ProductionManager = ClassSimple {
         self.ForwardBaseActive = nil
         self.LastForwardBaseTick = -100000
         self.ForwardBaseSequence = 0
+        self.LastForwardBaseBlockReason = nil
+        self.LastForwardBaseBlockLogTick = -100000
     end,
 
     RegisterCounterBuilders = function(self)
@@ -265,6 +314,105 @@ ProductionManager = ClassSimple {
             end
         end
         return factories, counts
+    end,
+
+    GetFactoryTargets = function(self, counts)
+        local demand = self.Strategy.ProductionDemand or {}
+        local order = { "Land", "Air", "Naval" }
+        local targets = { Land = 0, Air = 0, Naval = 0 }
+        local relevant = {}
+        -- Relevance is demand-only. Deriving it from the current factory count
+        -- would let a single stray factory make its domain permanently
+        -- relevant, ratcheting the sustainable total up and never back down.
+        for _, domain in pairs(order) do
+            if (demand[domain] or 0) >= 0.10 then
+                targets[domain] = 1
+                table.insert(relevant, domain)
+            end
+        end
+        if table.getn(relevant) == 0 then
+            relevant = { "Land" }
+            targets.Land = 1
+        end
+
+        local desired = math.max(
+            self.Economy.State.DesiredFactories or 1,
+            table.getn(relevant)
+        )
+        local remaining = desired - table.getn(relevant)
+        while remaining > 0 do
+            local selected = relevant[1]
+            local selectedNeed = -1000000
+            for _, domain in pairs(relevant) do
+                local need = (demand[domain] or 0) * desired - targets[domain]
+                if need > selectedNeed then
+                    selected = domain
+                    selectedNeed = need
+                end
+            end
+            targets[selected] = targets[selected] + 1
+            remaining = remaining - 1
+        end
+        targets.Total = desired
+        return targets
+    end,
+
+    ApplyFactoryCapacityPolicy = function(self, counts)
+        local targets = self:GetFactoryTargets(counts)
+        counts.TargetTotal = targets.Total
+        local managers = self.Brain.BuilderManagers or {}
+        local locationTypes = {}
+        for locationType, _ in pairs(managers) do
+            table.insert(locationTypes, locationType)
+        end
+        table.sort(locationTypes)
+
+        for _, locationType in pairs(locationTypes) do
+            local engineerManager = managers[locationType].EngineerManager
+            if engineerManager and engineerManager.BuilderData then
+                for builderType, data in pairs(engineerManager.BuilderData) do
+                    local changed = false
+                    for _, builder in pairs(data.Builders or {}) do
+                        local domains = BuilderConstructionDomains(builder)
+                        if domains then
+                            local needed = false
+                            for domain, _ in pairs(domains) do
+                                if (counts[domain] or 0) < (targets[domain] or 0) then
+                                    needed = true
+                                end
+                            end
+                            local disabled = not needed
+                            if disabled and not builder.RedQueenCapacityDisabled then
+                                GuardBuilderPriority(builder)
+                                builder.RedQueenCapacityDisabled = true
+                                builder.RedQueenCapacityPriority = builder.Priority
+                                if builder.SetPriority then
+                                    builder:SetPriority(0)
+                                else
+                                    builder.Priority = 0
+                                end
+                                changed = true
+                            elseif not disabled and builder.RedQueenCapacityDisabled then
+                                builder.RedQueenCapacityDisabled = false
+                                local priority = builder.RedQueenCapacityPriority
+                                    or builder.OriginalPriority
+                                    or 1
+                                if builder.SetPriority then
+                                    builder:SetPriority(priority)
+                                else
+                                    builder.Priority = priority
+                                end
+                                changed = true
+                            end
+                        end
+                    end
+                    if changed and engineerManager.SortBuilderList then
+                        engineerManager:SortBuilderList(builderType)
+                    end
+                end
+            end
+        end
+        return targets
     end,
 
     UpdateTierPolicy = function(self, factories)
@@ -407,14 +555,28 @@ ProductionManager = ClassSimple {
         end
     end,
 
-    SelectFactoryType = function(self, counts)
-        if self.World.WaterRatio >= 0.20 and counts.Naval < math.max(1, math.floor(counts.Total * self.Strategy.ProductionDemand.Naval)) then
-            return "T1SeaFactory"
+    -- ApplyFactoryCapacityPolicy owns the per-domain allocation. Red Queen's own
+    -- expansion must consume the same targets rather than re-deriving a second,
+    -- divergent mix, so it can never build into a domain the policy has capped.
+    SelectFactoryType = function(self, counts, targets)
+        local buildingTypes = {
+            Land = "T1LandFactory",
+            Air = "T1AirFactory",
+            Naval = "T1SeaFactory",
+        }
+        local selected = nil
+        local selectedDeficit = 0
+        for _, domain in pairs({ "Land", "Air", "Naval" }) do
+            local deficit = (targets[domain] or 0) - (counts[domain] or 0)
+            if domain == "Naval" and self.World.WaterRatio < 0.20 then
+                deficit = 0
+            end
+            if deficit > selectedDeficit then
+                selected = domain
+                selectedDeficit = deficit
+            end
         end
-        if counts.Air < math.max(1, math.floor(counts.Total * self.Strategy.ProductionDemand.Air)) then
-            return "T1AirFactory"
-        end
-        return "T1LandFactory"
+        return selected and buildingTypes[selected] or nil
     end,
 
     FindIdleBuilder = function(self, blueprintId)
@@ -441,7 +603,322 @@ ProductionManager = ClassSimple {
         return nil
     end,
 
-    TryExpandFactoryCapacity = function(self, counts)
+    GetUnassignedEngineers = function(self)
+        local pool = self.Brain:GetPlatoonUniquelyNamed("ArmyPool")
+        local units = pool and pool:GetPlatoonUnits() or {}
+        local engineers = {}
+        local byEntityId = {}
+        for _, unit in pairs(units) do
+            local blueprint = IsAlive(unit) and unit.GetBlueprint and unit:GetBlueprint() or {}
+            local hash = blueprint.CategoriesHash or {}
+            if IsAlive(unit)
+                and (hash.ENGINEER or unit.IsEngineer)
+                and not (hash.COMMAND or unit.IsCommander)
+            then
+                table.insert(engineers, unit)
+                byEntityId[unit.EntityId] = true
+            end
+        end
+        table.sort(engineers, function(a, b)
+            return (a.EntityId or 0) < (b.EntityId or 0)
+        end)
+        return engineers, byEntityId
+    end,
+
+    ReleaseFactoryAssistants = function(self, reason, unassignedByEntityId)
+        local released = {}
+        if not unassignedByEntityId then
+            local _, byEntityId = self:GetUnassignedEngineers()
+            unassignedByEntityId = byEntityId
+        end
+        for _, record in pairs(self.FactoryAssistants) do
+            if IsAlive(record.Engineer)
+                and unassignedByEntityId[record.Engineer.EntityId]
+            then
+                table.insert(released, record.Engineer)
+            end
+            if record.Engineer then
+                record.Engineer.RedQueenFactoryAssistUntil = nil
+                record.Engineer.RedQueenFactoryAssistTarget = nil
+            end
+        end
+        self.FactoryAssistants = {}
+        if table.getn(released) > 0 and IssueClearCommands then
+            IssueClearCommands(released)
+            Logger.Info(self.Brain, string.format(
+                "factory assistants released count=%d reason=%s",
+                table.getn(released),
+                tostring(reason)
+            ))
+        end
+    end,
+
+    UpdateFactoryAssistance = function(self, factories, unassigned, unassignedByEntityId)
+        if not unassigned then
+            unassigned, unassignedByEntityId = self:GetUnassignedEngineers()
+        end
+        local alert = self.Strategy.ProductionDemand.DefenseAlert
+        local state = self.Economy.State
+        if state.StallRisk or (alert and alert.Active) then
+            self:ReleaseFactoryAssistants(
+                alert and alert.Active and "defense" or "stall",
+                unassignedByEntityId
+            )
+            return
+        end
+
+        local tick = GetGameTick()
+        local active = {}
+        local kept = {}
+        local expired = {}
+        for entityId, record in pairs(self.FactoryAssistants) do
+            if IsAlive(record.Engineer)
+                and IsAlive(record.Factory)
+                and record.ExpiresTick > tick
+                and unassignedByEntityId[record.Engineer.EntityId]
+            then
+                kept[entityId] = record
+                table.insert(active, record.Engineer)
+            elseif record.Engineer then
+                if IsAlive(record.Engineer)
+                    and unassignedByEntityId[record.Engineer.EntityId]
+                then
+                    table.insert(expired, record.Engineer)
+                end
+                record.Engineer.RedQueenFactoryAssistUntil = nil
+                record.Engineer.RedQueenFactoryAssistTarget = nil
+            end
+        end
+        self.FactoryAssistants = kept
+        if table.getn(expired) > 0 and IssueClearCommands then
+            IssueClearCommands(expired)
+        end
+
+        local desired = math.min(
+            Constants.Policy.MaximumFactoryAssistants,
+            math.floor((state.MassIncome or 0) / Constants.Policy.FactoryAssistMassPerEngineer)
+        )
+        if table.getn(active) > desired then
+            table.sort(active, function(a, b)
+                return (a.EntityId or 0) < (b.EntityId or 0)
+            end)
+            local excess = {}
+            for index = table.getn(active), desired + 1, -1 do
+                local engineer = active[index]
+                self.FactoryAssistants[engineer.EntityId] = nil
+                engineer.RedQueenFactoryAssistUntil = nil
+                engineer.RedQueenFactoryAssistTarget = nil
+                table.insert(excess, engineer)
+                table.remove(active, index)
+            end
+            if table.getn(excess) > 0 and IssueClearCommands then
+                IssueClearCommands(excess)
+            end
+        end
+        if desired <= table.getn(active) or desired <= 0 then
+            return
+        end
+
+        local targets = {}
+        for _, factory in pairs(factories) do
+            if IsAlive(factory) then table.insert(targets, factory) end
+        end
+        table.sort(targets, function(a, b)
+            local aActive = a.IsUnitState and a:IsUnitState("Building") or false
+            local bActive = b.IsUnitState and b:IsUnitState("Building") or false
+            if aActive ~= bActive then return aActive end
+            local aTech = UnitTech(a)
+            local bTech = UnitTech(b)
+            if aTech ~= bTech then return aTech > bTech end
+            return (a.EntityId or 0) < (b.EntityId or 0)
+        end)
+        if table.getn(targets) == 0 then return end
+
+        local candidates = {}
+        for _, engineer in pairs(unassigned) do
+            if engineer.RedQueenEmergencyDefenseUntil
+                and engineer.RedQueenEmergencyDefenseUntil <= tick
+            then
+                engineer.RedQueenEmergencyDefenseUntil = nil
+            end
+            if UnitTech(engineer) == 1
+                and IsAvailable(engineer)
+                and not engineer.RedQueenEmergencyDefenseUntil
+                and not self.FactoryAssistants[engineer.EntityId]
+            then
+                table.insert(candidates, engineer)
+            end
+        end
+
+        local assigned = 0
+        local needed = desired - table.getn(active)
+        for index = 1, math.min(needed, table.getn(candidates)) do
+            local engineer = candidates[index]
+            local targetCount = table.getn(targets)
+            local targetIndex = index - math.floor((index - 1) / targetCount) * targetCount
+            local factory = targets[targetIndex]
+            if IssueGuard then IssueGuard({ engineer }, factory) end
+            local expiresTick = tick + Constants.Policy.FactoryAssistSeconds * 10
+            engineer.RedQueenFactoryAssistUntil = expiresTick
+            engineer.RedQueenFactoryAssistTarget = factory.EntityId
+            self.FactoryAssistants[engineer.EntityId] = {
+                Engineer = engineer,
+                Factory = factory,
+                ExpiresTick = expiresTick,
+            }
+            assigned = assigned + 1
+        end
+        if assigned > 0 then
+            Logger.Info(self.Brain, string.format(
+                "factory assistants assigned count=%d total=%d target=%d",
+                assigned,
+                table.getn(active) + assigned,
+                desired
+            ))
+        end
+    end,
+
+    FindEmergencyDefenseEngineer = function(self, anchorPosition, blueprintId, engineers)
+        local candidates = {}
+        for _, engineer in pairs(engineers or {}) do
+            if IsAvailable(engineer)
+                and engineer.CanBuild
+                and engineer:CanBuild(blueprintId)
+            then
+                table.insert(candidates, engineer)
+            end
+        end
+        table.sort(candidates, function(a, b)
+            local aTech = UnitTech(a)
+            local bTech = UnitTech(b)
+            if aTech ~= bTech then return aTech < bTech end
+            local aPosition = a:GetPosition()
+            local bPosition = b:GetPosition()
+            local aDistance = DistanceSquared(aPosition, anchorPosition)
+            local bDistance = DistanceSquared(bPosition, anchorPosition)
+            if aDistance ~= bDistance then return aDistance < bDistance end
+            return (a.EntityId or 0) < (b.EntityId or 0)
+        end)
+        return candidates[1]
+    end,
+
+    HasManagedEmergencyDefense = function(self, alert)
+        local managers = self.Brain.BuilderManagers or {}
+        for locationType, manager in pairs(managers) do
+            local engineerManager = manager and manager.EngineerManager
+            if engineerManager and self.CounterBuildersRegistered[locationType] then
+                if alert.AnchorLocationType == locationType then
+                    return true
+                end
+                local position = engineerManager.GetLocationCoords
+                    and engineerManager:GetLocationCoords()
+                if position then
+                    local radius = math.max(40, engineerManager.Radius or 100)
+                    if DistanceSquared(position, alert.AnchorPosition) <= radius * radius then
+                        return true
+                    end
+                end
+            end
+        end
+        return false
+    end,
+
+    UpdateEmergencyDefense = function(self, engineers)
+        local alert = self.Strategy.ProductionDemand.DefenseAlert
+        local tick = GetGameTick()
+        if not alert or not alert.Active or not alert.AnchorPosition then return end
+        if self:HasManagedEmergencyDefense(alert) then return end
+        if tick - self.LastEmergencyDefenseTick
+            < Constants.Policy.EmergencyDefenseCooldownSeconds * 10
+        then
+            return
+        end
+
+        local target = alert.Targets and alert.Targets.Ground or 0
+        if target <= 0 or not self.Brain.GetNumUnitsAroundPoint then return end
+        local current = self.Brain:GetNumUnitsAroundPoint(
+            categories.STRUCTURE * categories.DEFENSE * categories.DIRECTFIRE,
+            alert.AnchorPosition,
+            Constants.Policy.EmergencyDefenseRadius,
+            "Ally"
+        ) or 0
+        if current >= target then return end
+
+        -- Assistants are already released by UpdateFactoryAssistance for any
+        -- active alert, so no release is needed here.
+        local faction = self.Context.FactionIndex
+        local buildingTemplate = BuildingTemplates.BuildingTemplates[faction]
+        local baseTemplate = BaseTemplates.ExpansionBaseTemplates[faction]
+            or BaseTemplates.BaseTemplates[faction]
+        if not buildingTemplate or not baseTemplate then return end
+        local movedTemplate = AIBuildStructures.AIBuildBaseTemplateFromLocation(
+            baseTemplate,
+            alert.AnchorPosition
+        )
+        local types = faction == 1
+            and { "T3GroundDefense", "T2GroundDefense", "T1GroundDefense" }
+            or { "T2GroundDefense", "T1GroundDefense" }
+        -- One roster for every candidate type; only the per-type CanBuild check
+        -- differs, so rescanning the ArmyPool per type is wasted work.
+        engineers = engineers or self:GetUnassignedEngineers()
+        local selectedEngineer = nil
+        local selectedType = nil
+        for _, buildingType in pairs(types) do
+            local blueprintId = FindBuildingId(buildingTemplate, buildingType)
+            if blueprintId then
+                selectedEngineer = self:FindEmergencyDefenseEngineer(
+                    alert.AnchorPosition,
+                    blueprintId,
+                    engineers
+                )
+                if selectedEngineer then
+                    selectedType = buildingType
+                    break
+                end
+            end
+        end
+
+        if not selectedEngineer then
+            if tick - self.LastEmergencyDefenseLogTick
+                >= Constants.Policy.EmergencyDefenseLogCooldownSeconds * 10
+            then
+                self.LastEmergencyDefenseLogTick = tick
+                Logger.Info(self.Brain, string.format(
+                    "emergency defense blocked anchor=%s reason=no-engineer current=%d target=%d",
+                    tostring(alert.AnchorKind),
+                    current,
+                    target
+                ))
+            end
+            return
+        end
+
+        local started = AIBuildStructures.AIExecuteBuildStructure(
+            self.Brain,
+            selectedEngineer,
+            selectedType,
+            false,
+            false,
+            buildingTemplate,
+            movedTemplate
+        )
+        if started then
+            self.LastEmergencyDefenseTick = tick
+            selectedEngineer.RedQueenEmergencyDefenseUntil = tick
+                + Constants.Policy.EmergencyDefenseEngineerHoldSeconds * 10
+            Logger.Info(self.Brain, string.format(
+                "emergency defense queued anchor=%s type=%s engineer=%d current=%d target=%d",
+                tostring(alert.AnchorKind),
+                selectedType,
+                selectedEngineer.EntityId or 0,
+                current,
+                target
+            ))
+        end
+    end,
+
+    TryExpandFactoryCapacity = function(self, counts, targets)
+        targets = targets or self:GetFactoryTargets(counts)
         local tick = GetGameTick()
         local cooldown = Constants.Policy.FactoryCheckCooldownSeconds * 10
         if tick - self.LastFactoryRequestTick < cooldown
@@ -457,7 +934,10 @@ ProductionManager = ClassSimple {
             return
         end
 
-        local buildingType = self:SelectFactoryType(counts)
+        local buildingType = self:SelectFactoryType(counts, targets)
+        if not buildingType then
+            return
+        end
         local blueprintId = FindBuildingId(buildingTemplate, buildingType)
         if not blueprintId then
             return
@@ -483,7 +963,7 @@ ProductionManager = ClassSimple {
                 "production expansion type=%s factories=%d desired=%d deficit=%d",
                 buildingType,
                 counts.Total,
-                self.Economy.State.DesiredFactories,
+                targets.Total or self.Economy.State.DesiredFactories,
                 self.Context.ArmyDeficit
             ))
         end
@@ -513,21 +993,19 @@ ProductionManager = ClassSimple {
         return engineers[1]
     end,
 
-    CanStartForwardBase = function(self, engineer)
+    GetForwardBaseBlockReason = function(self, engineer)
         local alert = self.Strategy.ProductionDemand.DefenseAlert
         local state = self.Economy.State
-        if not engineer
-            or not engineer.BuilderManagerData
+        if not engineer then return "no-idle-engineer" end
+        if not engineer.BuilderManagerData
             or not engineer.BuilderManagerData.EngineerManager
-            or (alert and alert.Active)
-            or state.StallRisk
-            or state.MassTrend < 0
-            or state.EnergyTrend < 0
-            or state.MassStoredRatio < 0.10
-            or state.EnergyStoredRatio < 0.10
-        then
-            return false
-        end
+        then return "engineer-without-manager" end
+        if alert and alert.Active then return "defense-alert" end
+        if state.StallRisk then return "stall-risk" end
+        if state.MassTrend < 0 then return "negative-mass-trend" end
+        if state.EnergyTrend < 0 then return "negative-energy-trend" end
+        if state.MassStoredRatio < 0.10 then return "low-mass-storage" end
+        if state.EnergyStoredRatio < 0.10 then return "low-energy-storage" end
 
         local tech = UnitTech(engineer)
         local mass = Constants.Policy.ForwardBaseMinimumMassIncome
@@ -539,7 +1017,25 @@ ProductionManager = ClassSimple {
             mass = math.max(mass, Constants.Policy.Tech2MinimumMassIncome)
             energy = math.max(energy, Constants.Policy.Tech2MinimumEnergyIncome)
         end
-        return state.MassIncome >= mass and state.EnergyIncome >= energy
+        if state.MassIncome < mass then return "low-mass-income" end
+        if state.EnergyIncome < energy then return "low-energy-income" end
+        return nil
+    end,
+
+    LogForwardBaseBlocked = function(self, reason)
+        local tick = GetGameTick()
+        self.LastForwardBaseBlockReason = reason
+        local plan = self.Strategy.ProductionDemand.ForwardBasePlan
+        if plan then
+            plan.BlockReason = reason
+        end
+        if tick - self.LastForwardBaseBlockLogTick
+            < Constants.Policy.ForwardBaseDiagnosticSeconds * 10
+        then
+            return
+        end
+        self.LastForwardBaseBlockLogTick = tick
+        Logger.Info(self.Brain, "forward base blocked reason=" .. tostring(reason))
     end,
 
     ForwardBasePackage = function(self, tech)
@@ -802,29 +1298,44 @@ ProductionManager = ClassSimple {
             Sites = self.ForwardBases,
         }
         self.Strategy.ProductionDemand.ForwardBasePlan = plan
-        if self.ForwardBaseActive
-            or self:CountViableForwardBases() >= self.World:GetMaximumForwardBases()
-            or GetGameTick() - self.LastForwardBaseTick
-                < Constants.Policy.ForwardBaseCooldownSeconds * 10
+        if self.ForwardBaseActive then
+            self:LogForwardBaseBlocked("construction-active")
+            return
+        end
+        if self:CountViableForwardBases() >= self.World:GetMaximumForwardBases() then
+            self:LogForwardBaseBlocked("map-cap")
+            return
+        end
+        if GetGameTick() - self.LastForwardBaseTick
+            < Constants.Policy.ForwardBaseCooldownSeconds * 10
         then
+            self:LogForwardBaseBlocked("cooldown")
             return
         end
 
         local objective = self.Strategy.CurrentObjective
         if not objective
             or not objective.Position
-            or objective.Type == "Recover"
+        then
+            self:LogForwardBaseBlocked("no-objective")
+            return
+        end
+        if objective.Type == "Recover"
             or objective.Type == "Stage"
             or objective.Type == "Defend"
         then
+            self:LogForwardBaseBlocked("objective-" .. string.lower(objective.Type))
             return
         end
         local engineer = self:FindForwardEngineer()
-        if not self:CanStartForwardBase(engineer) then
+        local blockReason = self:GetForwardBaseBlockReason(engineer)
+        if blockReason then
+            self:LogForwardBaseBlocked(blockReason)
             return
         end
         local engineerPosition = engineer:GetPosition()
         if not engineerPosition then
+            self:LogForwardBaseBlocked("engineer-without-position")
             return
         end
         local escortThreat = self.Strategy:GetOwnThreatNear(
@@ -840,17 +1351,30 @@ ProductionManager = ClassSimple {
             self:GetRebuildableForwardBaseSites()
         )
         if site then
-            self:StartForwardBase(engineer, site)
+            local started = self:StartForwardBase(engineer, site)
             self.Strategy.ProductionDemand.ForwardBasePlan.Active = self.ForwardBaseActive ~= nil
+            if started then
+                self.LastForwardBaseBlockReason = nil
+                plan.BlockReason = nil
+            else
+                self:LogForwardBaseBlocked("start-failed")
+            end
+        else
+            self:LogForwardBaseBlocked("no-safe-site")
         end
     end,
 
     Update = function(self)
         self:RegisterCounterBuilders()
         local factories, counts = self:CountFactories()
+        local targets = self:ApplyFactoryCapacityPolicy(counts)
         self:UpdateTierPolicy(factories)
         self:ApplyTierPolicy()
-        self:TryExpandFactoryCapacity(counts)
+        self:TryExpandFactoryCapacity(counts, targets)
+        -- One ArmyPool walk per pass, shared by both engineer consumers.
+        local unassigned, unassignedByEntityId = self:GetUnassignedEngineers()
+        self:UpdateEmergencyDefense(unassigned)
+        self:UpdateFactoryAssistance(factories, unassigned, unassignedByEntityId)
         self:UpdateForwardBases()
         self.Counts = counts
     end,

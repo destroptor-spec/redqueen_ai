@@ -14,12 +14,15 @@ function CalculateIncomeMultiplier(enemyCount, alliedSideSize)
     return 1 + 0.10 * CalculateArmyDeficit(enemyCount, alliedSideSize)
 end
 
-local function NormalizeVictory(rawVictory)
+function NormalizeVictoryCondition(rawVictory)
     if rawVictory == "demoralization" or rawVictory == "decapitation" then
         return "Assassination"
     end
-    if rawVictory == "domination" or rawVictory == "eradication" then
+    if rawVictory == "domination" then
         return "Supremacy"
+    end
+    if rawVictory == "eradication" then
+        return "Annihilation"
     end
     return tostring(rawVictory or "Unknown")
 end
@@ -69,7 +72,7 @@ function Create(brain)
         ArmyDeficit = armyDeficit,
         IncomeMultiplier = CalculateIncomeMultiplier(enemyCount, alliedSideSize),
         FactionIndex = brain:GetFactionIndex(),
-        VictoryCondition = NormalizeVictory(ScenarioInfo.Options.Victory),
+        VictoryCondition = NormalizeVictoryCondition(ScenarioInfo.Options.Victory),
         CreatedTick = GetGameTick(),
     }
 end

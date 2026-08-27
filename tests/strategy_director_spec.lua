@@ -49,6 +49,18 @@ table.getsize = function(value)
     return count
 end
 
+categories = {
+    COMMAND = 1,
+    MOBILE = 1,
+    LAND = 1,
+    AIR = 1,
+    NAVAL = 1,
+    ENGINEER = 1,
+    SCOUT = 1,
+    STRUCTURE = 1,
+    DEFENSE = 1,
+}
+
 local constants = {
     Policy = {
         ObjectiveLifetimeTicks = 300,
@@ -57,10 +69,15 @@ local constants = {
         LandLossWindowSeconds = 120,
         LandLossCountThreshold = 8,
         LandLossMassThreshold = 450,
+        AirLossWindowSeconds = 120,
+        AirLossCountThreshold = 8,
+        AirLossMassThreshold = 450,
+        GunshipRecoverySeconds = 120,
         CounterDoctrineSeconds = 180,
         GunshipAirThreatRatio = 0.40,
         AirDropMaximumAirThreat = 6,
         AirDropRequestCooldownSeconds = 90,
+        AirDropDiagnosticSeconds = 30,
         MaximumAirDropTransports = 2,
         Tech2MinimumMassIncome = 4,
         Tech2MinimumEnergyIncome = 60,
@@ -76,6 +93,15 @@ local constants = {
         StrategicSecondProjectArmyMaximum = 70,
         MassiveArmyThreat = 40,
         MassiveArmyThreatRatio = 1.25,
+        CommanderEmergencyThreat = 20,
+        CommanderEmergencyThreatRatio = 0.75,
+        CommanderEmergencyDistance = 100,
+        CommanderAssassinationCriticality = 3,
+        CommanderAnnihilationCriticality = 2,
+        CommanderSupremacyCriticality = 1.5,
+        MainBaseCriticality = 1.4,
+        ExpansionCriticality = 1,
+        ForwardBaseCriticality = 1.15,
         PressureEscalationThreat = 30,
         CombatMomentumWindowSeconds = 120,
         CombatMomentumLossRatio = 1.25,
@@ -158,6 +184,7 @@ local pings = { GetBestRequest = function() return nil end }
 
 dofile("lua/AI/RedQueen/StrategyDirector.lua")
 
+local commanderUnits = {}
 local brain = {
     BuilderManagers = {},
     GetArmyStat = function(_, name)
@@ -166,7 +193,7 @@ local brain = {
         end
         return { Value = armyStats.Destroyed }
     end,
-    GetListOfUnits = function() return {} end,
+    GetListOfUnits = function() return commanderUnits end,
     GetUnitsAroundPoint = function() return {} end,
 }
 local director = Create(brain, { VictoryCondition = "Supremacy" }, world, intel, economy, team, pings)
@@ -186,6 +213,14 @@ assert(director.CurrentObjective.Type == "Pressure", "public enemy starts must e
 assert(table.getn(published) == 1, "timer-free pressure must be shared with allies")
 assert(brain.TransportRequested, "an exposed economy target must request transport capacity immediately")
 assert(director.ProductionDemand.FocusWeights.Tech2 >= 35, "a ready economy must proactively enable T2")
+
+local returningDropOpportunity = dropOpportunity
+dropOpportunity = nil
+director:UpdateAirDropOpportunity(world.StartPosition)
+assert(director.AirDropStatus.State == "Expired", "a lost airdrop target must enter a terminal diagnostic state")
+dropOpportunity = returningDropOpportunity
+director:UpdateAirDropOpportunity(world.StartPosition)
+assert(director.AirDropStatus.State == "Opportunity", "the same airdrop target must reactivate after returning")
 
 local earlyTechScore = director.ProductionDemand.FocusWeights.Tech2
 currentTime = 5000
@@ -213,6 +248,15 @@ local lostTank = {
         }
     end,
 }
+local lostAircraft = {
+    GetBlueprint = function()
+        return {
+            CategoriesHash = { MOBILE = true, AIR = true },
+            Economy = { BuildCostMass = 60 },
+        }
+    end,
+}
+for _ = 1, 8 do director:RecordUnitLoss(lostAircraft) end
 for _ = 1, 8 do
     director:RecordUnitLoss(lostTank)
 end
@@ -221,6 +265,22 @@ intel.Threat.Air = 5
 director:UpdateDemand({ Type = "Raid" })
 assert(director.ProductionDemand.Doctrine == "GunshipCounter", "sustained land losses against weak AA must switch to gunships")
 assert(director.ProductionDemand.FocusWeights.Army >= 80, "combat losses must shift weight back toward the field army")
+director:UpdateDemand({ Type = "Raid" })
+assert(director.ProductionDemand.Doctrine == "GunshipCounter", "air losses before the gunship doctrine must not abandon a new counter")
+assert(director.GunshipAirLossBaseline.Tick == currentTick, "the gunship baseline must record when its measurement window opened")
+
+-- AirLossWindowSeconds after the baseline opened, a trickle of aircraft losses
+-- must not read as a failed counter: the thresholds are per window, not total.
+currentTick = 1700
+for _ = 1, 4 do director:RecordUnitLoss(lostAircraft) end
+director:UpdateDemand({ Type = "Raid" })
+assert(director.ProductionDemand.Doctrine == "GunshipCounter", "air losses spread beyond the loss window must not abandon a working counter")
+assert(director.GunshipAirLossBaseline.Tick == 1700, "the gunship loss baseline must restart once its window expires")
+
+for _ = 1, 8 do director:RecordUnitLoss(lostAircraft) end
+director:UpdateDemand({ Type = "Raid" })
+assert(director.ProductionDemand.Doctrine == "Balanced", "a badly trading gunship response must be abandoned early")
+assert(director.GunshipRecoveryUntilTick > currentTick, "failed gunships must enter a bounded recovery period")
 
 currentTick = 4000
 director.RecentLandLosses = {}
@@ -328,6 +388,25 @@ director:Update()
 assert(director.DefenseAlert.Active, "a massive naval force must trigger a defense alert")
 assert(director.CurrentObjective.Position == navalAnchor, "naval defense must protect the selected anchor")
 assert(director.CurrentObjective.Layer == "Water", "a water anchor must dispatch naval defenders")
+
+observedPressure = {
+    Position = { 350, 0, 350 },
+    AnchorIndex = 2,
+    DistanceToAnchor = 42,
+    Threat = 50,
+    Land = 50,
+    Naval = 0,
+    Surface = 50,
+    Air = 0,
+    ClosingThreat = 40,
+    Approaching = true,
+}
+director.DefenseAlert = { Active = false }
+currentTick = 4975
+director:Update()
+assert(director.CurrentObjective.Layer == "Land", "land invasions must not inherit a shoreline anchor's water layer")
+assert(director.CurrentObjective.DefenseLayers.Land, "land defenders must remain eligible at water-adjacent bases")
+assert(director.CurrentObjective.LayerPositions.Land == observedPressure.Position, "land defenders must intercept at the observed land position")
 brain.BuilderManagers.NAVAL = nil
 waterPoint = nil
 
@@ -348,6 +427,29 @@ director:Update()
 assert(director.DefenseAlert.Active, "a massive observed army must be acknowledged")
 assert(director.CurrentObjective.Type == "Defend", "a massive army must override the active objective")
 assert(director.CurrentObjective.Layer == "Land", "a land anchor must dispatch land defenders")
+
+local airRaidPosition = { 30, 0, 30 }
+observedPressure = {
+    Position = airRaidPosition,
+    AnchorIndex = 1,
+    DistanceToAnchor = 42,
+    Threat = 50,
+    Land = 0,
+    Naval = 0,
+    Surface = 0,
+    Air = 50,
+    ClosingThreat = 40,
+    Approaching = true,
+}
+director.DefenseAlert = { Active = false }
+currentTick = 5010
+director:Update()
+assert(director.DefenseAlert.Active, "a massive observed air formation must be acknowledged")
+assert(director.CurrentObjective.Layer == "Land", "a land anchor under air attack must keep organizing its ground defenders")
+assert(director.CurrentObjective.DefenseLayers.Land, "a single-layer attack must not leave the land task force without a destination")
+assert(director.CurrentObjective.LayerPositions.Land == world.StartPosition, "ground defenders must hold the threatened anchor when there is no surface threat to intercept")
+assert(not director.CurrentObjective.DefenseLayers.Water, "an inland anchor must not order naval defenders to an unreachable layer")
+assert(director.CurrentObjective.LayerPositions.Air == airRaidPosition, "air defenders must intercept the observed air formation")
 assert(director.ProductionDemand.MajorProjectSlots == 0, "defense alerts must pause new major projects")
 assert(director.ProductionDemand.DesiredNukes == 0, "defense alerts must block new nuclear starts")
 
@@ -409,5 +511,57 @@ assert(checkedMainAnchor and checkedExpansionAnchor, "every observed cluster mus
 assert(director.DefenseAlert.Active, "a losing AI must react to a smaller approaching army")
 assert(director.DefenseAlert.Position == approachingPosition, "a larger non-threatening cluster must not hide an approaching army")
 brain.BuilderManagers.LOSS_EXPANSION = nil
+
+local commanderPosition = { 20, 0, 20 }
+commanderUnits = {
+    {
+        EntityId = 99,
+        Dead = false,
+        GetPosition = function() return commanderPosition end,
+    },
+}
+local remoteAnchor = { 400, 0, 400 }
+brain.BuilderManagers.REMOTE = {
+    EngineerManager = {
+        GetLocationCoords = function() return remoteAnchor end,
+    },
+}
+director.Context.VictoryCondition = "Assassination"
+director.DefenseAlert = { Active = false }
+observedPressure = {
+    {
+        FirstEntityId = 50,
+        Position = { 420, 0, 420 },
+        AnchorIndex = 2,
+        DistanceToAnchor = 28,
+        Threat = 80,
+        Land = 80,
+        Naval = 0,
+        Surface = 80,
+        Air = 0,
+        ClosingThreat = 0,
+        Approaching = false,
+    },
+    {
+        FirstEntityId = 51,
+        Position = { 30, 0, 30 },
+        AnchorIndex = 3,
+        DistanceToAnchor = 14,
+        Threat = 30,
+        Land = 30,
+        Naval = 0,
+        Surface = 30,
+        Air = 0,
+        ClosingThreat = 20,
+        Approaching = true,
+    },
+}
+director.GetOwnThreatNear = function() return 20 end
+currentTick = 5600
+director:UpdateDefenseAlert()
+assert(director.DefenseAlert.AnchorKind == "Commander", "a credible Assassination attack on the ACU must outrank a larger remote formation")
+assert(director.DefenseAlert.AnchorPosition == commanderPosition, "commander emergencies must retain the live ACU position")
+brain.BuilderManagers.REMOTE = nil
+commanderUnits = {}
 
 print("Red Queen strategy director contracts passed")

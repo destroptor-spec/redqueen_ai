@@ -10,6 +10,8 @@ After an in-game run, summarize the log with:
 ./scripts/analyze-log.py "/path/to/game.log"
 ```
 
+The analyzer fails on Red Queen errors, on engine Lua errors it can attribute to this mod, and on any Lua error after the first defeat marker. Engine Lua errors it cannot attribute are reported as `Unattributed Lua failures` and do not fail the gate, so a stock-AI comparison run is not rejected for someone else's stack trace. If it prints `Post-defeat Lua failures: not checked`, the log carried no recognizable defeat marker and the task-leak check did not run.
+
 ## In-game smoke test
 
 1. Install the development symlink with `scripts/install-dev.sh`.
@@ -23,7 +25,7 @@ For an isolated command-line check, make a copy of `Game.prefs` in FAF's prefere
 
 ```lua
 active_mods = {
-    ['7f4a8d2e-2d63-4e71-9c51-5ed0ee000006'] = true
+    ['7f4a8d2e-2d63-4e71-9c51-5ed0ee000007'] = true
 }
 ```
 
@@ -46,7 +48,7 @@ The runner uses out-of-range difficulty `42` as an internal smoke-test marker, w
 | Sizes | 5, 10, 20, 40 km |
 | Terrain | Land, mixed, island, naval, generated |
 | Teams | 1v1, 1v2, 2v3, 2v2 with allied Red Queen, FFA |
-| Victory | Assassination, Supremacy |
+| Victory | Assassination, Supremacy, Annihilation |
 | Duration | Opening, 30-minute performance run, strategic endgame |
 
 For income verification, inspect mass/energy production rather than total economy trend. The expected multipliers are 1.0x for 1v1, 1.1x for 1v2, 1.2x for 1v3, and 1.1x for 2v3. Defeating an army must not change the multiplier.
@@ -63,8 +65,9 @@ Repeated pings may increase request priority, but pings must not cause an econom
 ## Counterplay behavior
 
 - Destroy at least eight mobile land combat units inside two minutes while keeping observed anti-air low. Diagnostics should report `doctrine=GunshipCounter`, and the next buildable air-factory counter orders should favor gunships.
+- Lose aircraft before Gunship Counter activates and confirm those prior losses do not cancel the new doctrine. Then, while Gunship Counter is active, destroy at least eight Red Queen combat aircraft or 450 mass of them **inside two minutes** and confirm the doctrine enters a bounded recovery period; dominant observed enemy air should select Air Defense during that period. Trickle the same total across more than two minutes and confirm the doctrine survives, because the measurement window restarts.
 - Present dominant observed air threat. Diagnostics should change to `doctrine=AirDefense` and favor fighters.
-- Leave an observed extractor, factory, power cluster, or engineer with local observed anti-air threat at or below six. The log should report `airdrop opportunity`; transport requests are capped at two existing transports and throttled to one request per 90 seconds.
+- Leave an observed extractor, factory, power cluster, or engineer with local observed anti-air threat at or below six. The log should report `airdrop state=Requested`, `Ready`, `TransportActive`, `Expired`, or `Abandoned`; transport requests are capped at two existing transports and throttled to one request per 90 seconds. Hide and reveal the same target and confirm a terminal status returns to `Opportunity` or a live transport state.
 - Check that new groups of at least three idle combat units leave the ArmyPool for the active objective, while land units are not ordered toward an unreachable water or island target.
 - Replay the same economy, army, and intel snapshot at different match ages and confirm diagnostics report identical `weights=A=...,T2=...,T3=...,X=...,N=...`; elapsed time must not alter strategic focus.
 - Give the AI sustainable headroom and missing relevant factory-tier coverage. Confirm T2/T3 weights enable upgrades without enemy contact, while an observed enemy tech advantage raises the corresponding weight. A genuine stall must disable new investments without changing an available attack into `Stage` or `Recover`.
@@ -78,8 +81,14 @@ Repeated pings may increase request priority, but pings must not cause an econom
 - Reveal a fresh enemy army whose observed threat is at least 1.25 times friendly threat around the nearest base or commander. Confirm a `defense alert started` event, a `Defend` objective, zero new experimental/nuke slots, and high-priority point defense, AA, shields, tactical missiles, and strategic missile defense. Existing strategic builds must not be canceled.
 - Produce an unfavorable two-minute killed-versus-lost mass exchange, then reveal an approaching observed force above the pressure threshold. Confirm the lower-threshold approach path also starts the defense alert. Remove or stale the contacts and confirm the alert clears after its hold period.
 - On UEF, verify T3 sentries are preferred. On Aeon, Cybran, and Seraphim, verify T2 point defense is backed by a larger T3 mobile garrison.
+- Trigger an early alert with only T1 engineers and verify T1 point defense queues. Confirm MAIN and managed expansions use only the registered fortification builders, then move the ACU beyond every builder-manager radius and verify direct emergency point defense queues around the commander.
+- On a shoreline base, reveal land units and ships whose blueprints expose surface threat but no sub threat. Confirm clustering follows movement layer: ordinary land defenders receive the land intercept while naval and amphibious defenders use reachable water/anchor positions.
+- Raise a defense alert with air units only. Confirm the ground army still receives a `Defend` order onto the threatened anchor rather than remaining idle in `ArmyPool`, and that air defenders intercept at the observed formation. Repeat with a naval-only threat at a water anchor and confirm the ships are ordered.
+- Park the ACU inside MAIN and reveal a threat. Confirm the alert reports `anchor=Commander`, not an arbitrary alternation between `Commander` and `MainBase` as the ACU drifts a few ogrids.
+- In Assassination, confirm a credible ACU attack outranks a larger remote formation. Repeat with Annihilation and verify the log retains `victory=Annihilation` rather than collapsing it into Supremacy.
+- Reach the sustainable factory total with the wrong mix and confirm the missing production domain remains buildable while satisfied domains stay capped. Confirm `production expansion` never names a domain the capacity policy has capped, and that its `desired=` matches the `factories=N/M` total in the `state` line. Build one factory in a domain whose production demand is below 10% and confirm the sustainable total does not rise. Verify only unallocated `ArmyPool` T1 engineers assist active highest-tier factories, that native-managed engineers are never claimed, and that assistants release immediately when a defense alert begins without clearing an engineer reclaimed by native management.
 - With positive economy trends, at least 10% storage, an idle engineer, an active forward objective, and a safe observed route, confirm `forward base started` then `forward base established`. Verify its package contains a factory, radar, defense, AA, and tier-appropriate shield/artillery; T2 tactical missiles and T3 strategic missile defense may appear, but no T3 strategic missile launcher is queued there.
-- Reveal sufficient route threat or start a defense alert and confirm no new forward base begins. Verify the base cap is one on 5 km maps, two on 20 km maps, and three on 40 km maps.
+- Reveal sufficient route threat or start a defense alert and confirm no new forward base begins, and that `forward=<sites>/<state>/<reason>` in the `state` line names the blocking reason. Verify the base cap is one on 5 km maps, two on 20 km maps, and three on 40 km maps.
 
 ## Performance gate
 

@@ -32,6 +32,7 @@ local constants = {
         ArmyClusterMaximumRadius = 90,
         ArmyClusterMapDivisor = 12,
         ArmyApproachDistance = 10,
+        AnchorProximityTolerance = 16,
         ArmyClosingThreatFraction = 0.25,
         ObserversPerUpdate = 2,
         ObservationRadius = 70,
@@ -171,6 +172,7 @@ manager.Observations[6] = {
     Position = { 60, 0, 0 },
     PreviousPosition = { 80, 0, 0 },
     LastSeenTick = 990,
+    Layer = "Land",
     Confidence = 1,
     Threat = { Land = 25, Air = 0, Naval = 0 },
     Role = { MobileCombat = true },
@@ -180,6 +182,7 @@ manager.Observations[7] = {
     Position = { 65, 0, 0 },
     PreviousPosition = { 85, 0, 0 },
     LastSeenTick = 995,
+    Layer = "Land",
     Confidence = 1,
     Threat = { Land = 20, Air = 5, Naval = 0 },
     Role = { MobileCombat = true },
@@ -188,6 +191,7 @@ manager.Observations[8] = {
     EntityId = 8,
     Position = { 400, 0, 400 },
     LastSeenTick = 998,
+    Layer = "Land",
     Confidence = 1,
     Threat = { Land = 200, Air = 0, Naval = 0 },
     Role = { MobileCombat = true },
@@ -198,8 +202,57 @@ assert(clusters[1].FirstEntityId == 8, "clusters must be sorted by threat determ
 assert(clusters[1].Threat == 200, "the largest independent formation must retain its threat")
 assert(clusters[2].Count == 2, "fresh nearby mobile contacts must form one army cluster")
 assert(clusters[2].Threat == 50, "army pressure must sum observed surface and air threat")
+assert(clusters[2].Land == 50, "all combat threat on land units must remain in the land movement bucket")
+assert(clusters[2].Naval == 0, "land clusters must not masquerade as naval formations")
+assert(clusters[2].Air == 0, "anti-air weapons on land units must not turn them into air formations")
 assert(clusters[2].Approaching, "contacts closing on a protected anchor must be acknowledged")
 assert(clusters[2].FirstEntityId == 6, "cluster formation must use deterministic entity order")
+
+manager.Observations[9] = {
+    EntityId = 9,
+    Position = { 300, 5, 300 },
+    LastSeenTick = 999,
+    Layer = "Water",
+    Confidence = 1,
+    Threat = { Land = 30, Air = 0, Naval = 0 },
+    Role = { MobileCombat = true },
+}
+clusters = manager:GetObservedArmyClusters({ { Position = { 320, 5, 320 } } }, 512)
+local navalCluster = nil
+for _, cluster in pairs(clusters) do
+    if cluster.FirstEntityId == 9 then navalCluster = cluster end
+end
+assert(navalCluster, "a fresh ship must remain available to defense strategy")
+assert(navalCluster.Land == 0, "surface weapon threat on ships must not create a land formation")
+assert(navalCluster.Naval == 30, "ship surface threat must be bucketed by its water movement layer")
+
+local function ClusterFor(clusterList, firstEntityId)
+    for _, cluster in pairs(clusterList) do
+        if cluster.FirstEntityId == firstEntityId then return cluster end
+    end
+    return nil
+end
+
+-- Co-located anchors must not be separated by sub-metre noise: a commander
+-- standing inside its own base has to win the assignment, not lose it to a
+-- fractional distance difference.
+clusters = manager:GetObservedArmyClusters({
+    { Position = { 320, 5, 320 }, Criticality = 1.4 },
+    { Position = { 322, 5, 322 }, Criticality = 3.0 },
+}, 512)
+assert(
+    ClusterFor(clusters, 9).AnchorIndex == 2,
+    "anchors within the proximity tolerance must be resolved by strategic criticality"
+)
+
+clusters = manager:GetObservedArmyClusters({
+    { Position = { 302, 5, 302 }, Criticality = 1.0 },
+    { Position = { 420, 5, 420 }, Criticality = 3.0 },
+}, 512)
+assert(
+    ClusterFor(clusters, 9).AnchorIndex == 1,
+    "criticality must not override a genuinely closer anchor"
+)
 
 local expiryBrain = {
     GetArmyIndex = function() return 1 end,

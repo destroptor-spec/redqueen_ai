@@ -152,6 +152,42 @@ assert(aggressiveOrders[1].Units[1] == amphibiousUnits[1], "amphibious dispatch 
 assert(amphibiousUnits[1].RedQueenOrderUntil == 150, "amphibious water defenders must receive an order lock")
 assert(amphibiousUnits[2].RedQueenOrderUntil == 150, "hover water defenders must receive an order lock")
 
+local landDefenders = {
+    {
+        EntityId = 40,
+        IsCombat = true,
+        GetPosition = function() return { 10, 0, 10 } end,
+        GetBlueprint = function() return { CategoriesHash = { LAND = true } } end,
+    },
+    {
+        EntityId = 41,
+        IsCombat = true,
+        GetPosition = function() return { 12, 0, 12 } end,
+        GetBlueprint = function() return { CategoriesHash = { LAND = true } } end,
+    },
+}
+local landDefensePosition = { 80, 0, 80 }
+local landPool = { GetPlatoonUnits = function() return landDefenders end }
+local landBrain = { GetPlatoonUniquelyNamed = function() return landPool end }
+local landStrategy = {
+    ProductionDemand = {
+        DefenseAlert = { Active = false },
+        ForwardBasePlan = { Sites = {} },
+    },
+    CurrentObjective = {
+        Type = "Defend",
+        Layer = "Land",
+        Position = { 100, 5, 100 },
+        DefenseLayers = { Land = true, Water = false, Amphibious = false, Air = false },
+        LayerPositions = { Land = landDefensePosition },
+    },
+}
+local ordersBeforeLandDefense = table.getn(aggressiveOrders)
+local landManager = Create(landBrain, waterWorld, {}, landStrategy)
+landManager:Update()
+assert(table.getn(aggressiveOrders) == ordersBeforeLandDefense + 1, "land invasions must mobilize ordinary land defenders at water-adjacent anchors")
+assert(aggressiveOrders[table.getn(aggressiveOrders)].Position == landDefensePosition, "land defense must use its layer-specific intercept position")
+
 local garrisonUnits = {}
 for entityId = 1, 12 do
     table.insert(garrisonUnits, {

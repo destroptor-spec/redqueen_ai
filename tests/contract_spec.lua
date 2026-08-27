@@ -18,4 +18,8 @@ AssertEqual(CalculateIncomeMultiplier(3, 1), 1.2, "1v3 multiplier")
 AssertEqual(CalculateIncomeMultiplier(3, 2), 1.1, "2v3 multiplier")
 AssertEqual(CalculateIncomeMultiplier(15, 1), 2.4, "uncapped 1v15 multiplier")
 
+assert(NormalizeVictoryCondition("demoralization") == "Assassination", "demoralization must remain Assassination")
+assert(NormalizeVictoryCondition("domination") == "Supremacy", "domination must remain Supremacy")
+assert(NormalizeVictoryCondition("eradication") == "Annihilation", "eradication must remain distinguishable as Annihilation")
+
 print("Red Queen formula contracts passed")

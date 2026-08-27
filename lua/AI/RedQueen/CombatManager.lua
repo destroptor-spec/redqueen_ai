@@ -35,6 +35,15 @@ local function AvailableForOrder(unit, tick)
         and (not unit.RedQueenGarrisonUntil or unit.RedQueenGarrisonUntil <= tick)
 end
 
+local function ObjectiveAt(objective, position)
+    return {
+        Type = objective.Type,
+        Position = position,
+        Layer = objective.Layer,
+        Priority = objective.Priority,
+    }
+end
+
 ---@class RedQueenCombatManager
 CombatManager = ClassSimple {
     __init = function(self, brain, world, economy, strategy)
@@ -239,20 +248,51 @@ CombatManager = ClassSimple {
         local groups = self:GatherAvailableUnits()
         local ordered = 0
 
-        local airObjective = objective
-        if objective.AirPosition then
-            airObjective = {
-                Type = "AirRaid",
-                Position = objective.AirPosition,
-            }
-        end
+        local layerPositions = objective.LayerPositions or {}
+        local airPosition = objective.AirPosition or layerPositions.Air
+        local airObjective = airPosition
+            and ObjectiveAt(objective, airPosition)
+            or objective
+        if objective.AirPosition then airObjective.Type = "AirRaid" end
         local air = self:SelectTaskForce(groups.Air, defensive)
         if self:IssueObjective(air, airObjective, "Air") then
             ordered = ordered + table.getn(air)
         end
 
         local destinationLayer = objective.Layer
-        if destinationLayer == "Water" then
+        local defenseLayers = objective.DefenseLayers
+        if defenseLayers then
+            if defenseLayers.Water and layerPositions.Water then
+                local naval = self:SelectTaskForce(groups.Water, defensive)
+                if self:IssueObjective(
+                    naval,
+                    ObjectiveAt(objective, layerPositions.Water),
+                    "Water"
+                ) then
+                    ordered = ordered + table.getn(naval)
+                end
+            end
+            if defenseLayers.Land and layerPositions.Land then
+                local land = self:SelectTaskForce(groups.Land, defensive)
+                if self:IssueObjective(
+                    land,
+                    ObjectiveAt(objective, layerPositions.Land),
+                    "Land"
+                ) then
+                    ordered = ordered + table.getn(land)
+                end
+            end
+            if defenseLayers.Amphibious and layerPositions.Amphibious then
+                local amphibious = self:SelectTaskForce(groups.Amphibious, defensive)
+                if self:IssueObjective(
+                    amphibious,
+                    ObjectiveAt(objective, layerPositions.Amphibious),
+                    "Amphibious"
+                ) then
+                    ordered = ordered + table.getn(amphibious)
+                end
+            end
+        elseif destinationLayer == "Water" then
             local naval = self:SelectTaskForce(groups.Water, defensive)
             if self:IssueObjective(naval, objective, "Water") then
                 ordered = ordered + table.getn(naval)

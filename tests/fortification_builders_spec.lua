@@ -40,8 +40,8 @@ assert(groups.RedQueenEmergencyFortificationBuilders, "emergency fortification g
 
 local factionIndex = 1
 local engineerCounts = {
-    MAIN = { [2] = 0, [3] = 1 },
-    EXPANSION = { [2] = 1, [3] = 0 },
+    MAIN = { [1] = 0, [2] = 0, [3] = 1 },
+    EXPANSION = { [1] = 0, [2] = 1, [3] = 0 },
 }
 local function EngineerManager(locationType, position)
     return {
@@ -54,6 +54,9 @@ local function EngineerManager(locationType, position)
             end
             if category.Keys.TECH2 then
                 return engineerCounts[locationType][2]
+            end
+            if category.Keys.TECH1 then
+                return engineerCounts[locationType][1]
             end
             return 0
         end,
@@ -115,6 +118,13 @@ assert(t2Shield.BuilderConditions[1][1](brain, "EXPANSION"), "a T2-only expansio
 assert(t2Missile.BuilderConditions[1][1](brain, "EXPANSION"), "a T2-only expansion must retain tactical missile fallback")
 assert(not cybranDefense.BuilderConditions[1][1](brain, "EXPANSION"), "a remote T3 engineer must not enable T3 builders at an expansion")
 assert(not smd.BuilderConditions[1][1](brain, "EXPANSION"), "a remote T3 engineer must not enable strategic defense at an expansion")
+
+engineerCounts.EXPANSION[1] = 1
+engineerCounts.EXPANSION[2] = 0
+local t1Ground = builders["Red Queen Emergency T1 Point Defense"]
+assert(t1Ground.BuilderConditions[1][1](brain, "EXPANSION"), "a T1-only threatened base must retain an emergency point-defense fallback")
+assert(t1Ground.PlatoonTemplate == "EngineerBuilder", "the T1 fallback must use FAF's registered engineer platoon template")
+assert(t1Ground.BuilderData.Construction.BuildStructures[1] == "T1GroundDefense", "the early fallback must use T1 point defense")
 
 brain.RedQueenModules.Strategy.ProductionDemand.DefenseAlert.Active = false
 assert(not t2Ground.BuilderConditions[1][1](brain, "EXPANSION"), "fortification builders must stop when the alert clears")

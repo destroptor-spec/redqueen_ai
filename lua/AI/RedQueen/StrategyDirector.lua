@@ -16,6 +16,16 @@ local function PositionLayer(position)
     return "Land"
 end
 
+local function PositionForLayer(layer, anchorPosition, threatPosition)
+    if threatPosition and PositionLayer(threatPosition) == layer then
+        return threatPosition
+    end
+    if anchorPosition and PositionLayer(anchorPosition) == layer then
+        return anchorPosition
+    end
+    return nil
+end
+
 local function CanInterrupt(previous, objective, tick)
     if not previous or not previous.ExpiresTick or previous.ExpiresTick <= tick then
         return true
@@ -67,9 +77,16 @@ StrategyDirector = ClassSimple {
         self.CurrentObjective = nil
         self.RecentLandLosses = {}
         self.LandLossPressure = { Count = 0, Mass = 0 }
+        self.RecentAirLosses = {}
+        self.AirLossPressure = { Count = 0, Mass = 0 }
+        self.CumulativeAirLosses = { Count = 0, Mass = 0 }
         self.CounterDoctrineUntilTick = 0
+        self.GunshipRecoveryUntilTick = 0
+        self.GunshipAirLossBaseline = nil
         self.LastAirDropRequestTick = -100000
         self.AirDropOpportunity = nil
+        self.AirDropStatus = nil
+        self.LastAirDropStatusTick = -100000
         self.CombatMomentumSamples = {}
         self.CombatMomentum = { LostMass = 0, DestroyedMass = 0, Losing = false }
         self.DefenseAlert = { Active = false }
@@ -109,19 +126,23 @@ StrategyDirector = ClassSimple {
         local blueprint = unit:GetBlueprint()
         local hash = blueprint.CategoriesHash or {}
         if not hash.MOBILE
-            or not (hash.LAND or hash.AMPHIBIOUS or hash.HOVER)
             or hash.ENGINEER
             or hash.COMMAND
             or hash.SCOUT
+            or hash.TRANSPORTFOCUS
         then
             return
         end
 
         local economy = blueprint.Economy or {}
-        table.insert(self.RecentLandLosses, {
-            Tick = GetGameTick(),
-            Mass = economy.BuildCostMass or 1,
-        })
+        local loss = { Tick = GetGameTick(), Mass = economy.BuildCostMass or 1 }
+        if hash.LAND or hash.AMPHIBIOUS or hash.HOVER then
+            table.insert(self.RecentLandLosses, loss)
+        elseif hash.AIR then
+            table.insert(self.RecentAirLosses, loss)
+            self.CumulativeAirLosses.Count = self.CumulativeAirLosses.Count + 1
+            self.CumulativeAirLosses.Mass = self.CumulativeAirLosses.Mass + loss.Mass
+        end
     end,
 
     UpdateLandLossPressure = function(self)
@@ -141,6 +162,25 @@ StrategyDirector = ClassSimple {
 
         self.LandLossPressure = { Count = count, Mass = mass }
         return self.LandLossPressure
+    end,
+
+    UpdateAirLossPressure = function(self)
+        local cutoff = GetGameTick() - Constants.Policy.AirLossWindowSeconds * 10
+        local count = 0
+        local mass = 0
+
+        for index = table.getn(self.RecentAirLosses), 1, -1 do
+            local loss = self.RecentAirLosses[index]
+            if loss.Tick < cutoff then
+                table.remove(self.RecentAirLosses, index)
+            else
+                count = count + 1
+                mass = mass + loss.Mass
+            end
+        end
+
+        self.AirLossPressure = { Count = count, Mass = mass }
+        return self.AirLossPressure
     end,
 
     UpdateCombatMomentum = function(self)
@@ -172,8 +212,38 @@ StrategyDirector = ClassSimple {
         return self.CombatMomentum
     end,
 
+    GetAnchorCriticality = function(self, kind)
+        if kind == "Commander" then
+            if self.Context.VictoryCondition == "Assassination" then
+                return Constants.Policy.CommanderAssassinationCriticality
+            elseif self.Context.VictoryCondition == "Annihilation" then
+                return Constants.Policy.CommanderAnnihilationCriticality
+            end
+            return Constants.Policy.CommanderSupremacyCriticality
+        elseif kind == "MainBase" then
+            return Constants.Policy.MainBaseCriticality
+        elseif kind == "ForwardBase" then
+            return Constants.Policy.ForwardBaseCriticality
+        elseif kind == "NavalBase" then
+            return Constants.Policy.NavalBaseCriticality
+        end
+        return Constants.Policy.ExpansionCriticality
+    end,
+
+    MakeAnchor = function(self, position, kind, locationType)
+        return {
+            Position = position,
+            Kind = kind,
+            Layer = PositionLayer(position),
+            LocationType = locationType,
+            Criticality = self:GetAnchorCriticality(kind),
+        }
+    end,
+
     GetProtectedAnchors = function(self)
-        local anchors = { self.World.StartPosition }
+        local anchors = {
+            self:MakeAnchor(self.World.StartPosition, "MainBase", "MAIN"),
+        }
         local managers = self.Brain.BuilderManagers or {}
         local locationTypes = {}
         for locationType, _ in pairs(managers) do
@@ -188,7 +258,15 @@ StrategyDirector = ClassSimple {
                 and engineerManager.GetLocationCoords
                 and engineerManager:GetLocationCoords()
             if position then
-                table.insert(anchors, position)
+                local kind = "Expansion"
+                if locationType == "MAIN" then
+                    kind = "MainBase"
+                elseif string.sub(locationType, 1, 5) == "RQFB_" then
+                    kind = "ForwardBase"
+                elseif PositionLayer(position) == "Water" then
+                    kind = "NavalBase"
+                end
+                table.insert(anchors, self:MakeAnchor(position, kind, locationType))
             end
         end
 
@@ -201,7 +279,12 @@ StrategyDirector = ClassSimple {
                 if commander and not commander.Dead then
                     local position = commander:GetPosition()
                     if position then
-                        table.insert(anchors, position)
+                        table.insert(anchors, self:MakeAnchor(
+                            position,
+                            "Commander",
+                            commander.BuilderManagerData
+                                and commander.BuilderManagerData.LocationType
+                        ))
                     end
                 end
             end
@@ -240,7 +323,11 @@ StrategyDirector = ClassSimple {
 
         for _, cluster in pairs(clusters) do
             local anchor = anchors[cluster.AnchorIndex or 1] or self.World.StartPosition
-            local ownThreat = self:GetOwnThreatNear(anchor, math.max(60, self.World.Width / 12))
+            local anchorPosition = anchor.Position or anchor
+            local anchorKind = anchor.Kind or "Base"
+            local anchorLayer = anchor.Layer or PositionLayer(anchorPosition)
+            local criticality = anchor.Criticality or 1
+            local ownThreat = self:GetOwnThreatNear(anchorPosition, math.max(60, self.World.Width / 12))
             local ratio = cluster.Threat / math.max(1, ownThreat)
             local massive = cluster.Threat >= Constants.Policy.MassiveArmyThreat
                 and ratio >= Constants.Policy.MassiveArmyThreatRatio
@@ -248,15 +335,50 @@ StrategyDirector = ClassSimple {
                 and ratio >= 1
                 and cluster.Approaching
                 and momentum.Losing
+            local commanderEmergency = anchorKind == "Commander"
+                and cluster.Threat >= Constants.Policy.CommanderEmergencyThreat
+                and ratio >= Constants.Policy.CommanderEmergencyThreatRatio
+                and (cluster.Approaching
+                    or cluster.DistanceToAnchor <= Constants.Policy.CommanderEmergencyDistance)
 
-            if massive or pressure then
+            if massive or pressure or commanderEmergency then
+                local land = cluster.Land
+                local naval = cluster.Naval
+                if land == nil and naval == nil then
+                    if anchorLayer == "Water" then
+                        land = 0
+                        naval = cluster.Surface or 0
+                    else
+                        land = cluster.Surface or 0
+                        naval = 0
+                    end
+                end
+                land = land or 0
+                naval = naval or 0
+                local air = cluster.Air or 0
+                local surface = cluster.Surface or 0
+                -- With no observed surface threat the anchor's own layer decides
+                -- how its defenders should be organized.
+                local primaryLayer
+                if land <= 0 and naval <= 0 then
+                    primaryLayer = anchorLayer == "Water" and "Water" or "Land"
+                else
+                    primaryLayer = land >= naval and "Land" or "Water"
+                end
                 local candidate = {
                     Active = true,
                     Position = cluster.Position,
-                    AnchorPosition = anchor,
+                    AnchorPosition = anchorPosition,
+                    AnchorKind = anchorKind,
+                    AnchorLayer = anchorLayer,
+                    AnchorLocationType = anchor.LocationType,
+                    Criticality = criticality,
+                    PrimaryLayer = primaryLayer,
                     Threat = cluster.Threat,
-                    Surface = cluster.Surface,
-                    Air = cluster.Air,
+                    Land = land,
+                    Naval = naval,
+                    Surface = surface,
+                    Air = air,
                     FriendlyThreat = ownThreat,
                     Ratio = ratio,
                     Count = cluster.Count,
@@ -266,30 +388,30 @@ StrategyDirector = ClassSimple {
                     Losing = momentum.Losing,
                     LostMass = momentum.LostMass,
                     DestroyedMass = momentum.DestroyedMass,
-                    Severity = math.max(1, ratio),
+                    Severity = math.max(1, ratio) * criticality,
                     Targets = {
-                        Ground = math.max(4, math.min(12, math.ceil(cluster.Surface / 12))),
-                        AntiAir = math.max(2, math.min(8, math.ceil(cluster.Air / 10))),
+                        Ground = land > 0 and math.max(4, math.min(12, math.ceil(land / 12))) or 0,
+                        AntiAir = air > 0 and math.max(2, math.min(8, math.ceil(air / 10))) or 0,
                         Shields = (ratio >= 2 or cluster.DistanceToAnchor <= 60) and 2 or 1,
                         StrategicMissileDefense = 1,
-                        TacticalMissiles = cluster.Surface > 0 and 2 or 0,
+                        TacticalMissiles = land > 0 and 2 or 0,
                     },
                     CreatedTick = previous.Active and previous.CreatedTick or tick,
                     ExpiresTick = tick + Constants.Policy.DefenseAlertHoldSeconds * 10,
                 }
                 if not alert.Active
-                    or candidate.Ratio > alert.Ratio
+                    or candidate.Severity > alert.Severity
                     or (
-                        candidate.Ratio == alert.Ratio
+                        candidate.Severity == alert.Severity
                         and candidate.DistanceToAnchor < alert.DistanceToAnchor
                     )
                     or (
-                        candidate.Ratio == alert.Ratio
+                        candidate.Severity == alert.Severity
                         and candidate.DistanceToAnchor == alert.DistanceToAnchor
                         and candidate.Threat > alert.Threat
                     )
                     or (
-                        candidate.Ratio == alert.Ratio
+                        candidate.Severity == alert.Severity
                         and candidate.DistanceToAnchor == alert.DistanceToAnchor
                         and candidate.Threat == alert.Threat
                         and candidate.FirstEntityId < alert.FirstEntityId
@@ -306,7 +428,9 @@ StrategyDirector = ClassSimple {
 
         if alert.Active and not previous.Active then
             Logger.Info(self.Brain, string.format(
-                "defense alert started threat=%.1f friendly=%.1f ratio=%.2f approaching=%s losses=%.0f/%.0f",
+                "defense alert started anchor=%s layer=%s threat=%.1f friendly=%.1f ratio=%.2f approaching=%s losses=%.0f/%.0f",
+                tostring(alert.AnchorKind),
+                tostring(alert.PrimaryLayer),
                 alert.Threat,
                 alert.FriendlyThreat,
                 alert.Ratio,
@@ -643,6 +767,7 @@ StrategyDirector = ClassSimple {
     UpdateDemand = function(self, objective)
         local threat = self.Intel.Threat
         local demand = self.ProductionDemand
+        local previousDoctrine = demand.Doctrine
         demand.Scouts = table.getsize(self.Intel.Observations) == 0 and 0.15 or 0.07
         demand.Artillery = objective.Type == "Assault" and 0.18 or 0.10
         demand.Gunships = 0.18
@@ -667,6 +792,9 @@ StrategyDirector = ClassSimple {
         demand.AntiAir = math.max(0.10, math.min(0.45, airThreat / math.max(1, surfaceThreat + airThreat)))
 
         local loss = self:UpdateLandLossPressure()
+        -- Prunes the reported air-loss window; the gunship decision below uses
+        -- its own baseline so that losses predating the doctrine never count.
+        self:UpdateAirLossPressure()
         local lossesDemandCounter = loss.Count >= Constants.Policy.LandLossCountThreshold
             or loss.Mass >= Constants.Policy.LandLossMassThreshold
         local airDefenseIsExposed = airThreat <= math.max(
@@ -675,11 +803,41 @@ StrategyDirector = ClassSimple {
         )
         local tick = GetGameTick()
 
-        if lossesDemandCounter and airDefenseIsExposed then
+        local gunshipLoss = { Count = 0, Mass = 0 }
+        if previousDoctrine == "GunshipCounter" and self.GunshipAirLossBaseline then
+            gunshipLoss.Count = self.CumulativeAirLosses.Count
+                - self.GunshipAirLossBaseline.Count
+            gunshipLoss.Mass = self.CumulativeAirLosses.Mass
+                - self.GunshipAirLossBaseline.Mass
+        end
+        local gunshipFailure = previousDoctrine == "GunshipCounter"
+            and (gunshipLoss.Count >= Constants.Policy.AirLossCountThreshold
+                or gunshipLoss.Mass >= Constants.Policy.AirLossMassThreshold)
+        if gunshipFailure and tick >= self.GunshipRecoveryUntilTick then
+            self.GunshipRecoveryUntilTick = tick
+                + Constants.Policy.GunshipRecoverySeconds * 10
+            self.CounterDoctrineUntilTick = 0
+            Logger.Info(self.Brain, string.format(
+                "gunship counter abandoned airloss=%d/%.0f",
+                gunshipLoss.Count,
+                gunshipLoss.Mass
+            ))
+        end
+
+        if lossesDemandCounter
+            and airDefenseIsExposed
+            and tick >= self.GunshipRecoveryUntilTick
+        then
             self.CounterDoctrineUntilTick = tick + Constants.Policy.CounterDoctrineSeconds * 10
         end
 
-        if tick < self.CounterDoctrineUntilTick
+        if tick < self.GunshipRecoveryUntilTick then
+            if airThreat > 10 and airThreat > surfaceThreat * 0.75 then
+                demand.Doctrine = "AirDefense"
+                demand.AntiAir = 0.45
+                demand.Air = math.max(demand.Air, 0.45)
+            end
+        elseif tick < self.CounterDoctrineUntilTick
             and airThreat <= math.max(12, surfaceThreat * 0.65)
         then
             demand.Doctrine = "GunshipCounter"
@@ -691,20 +849,79 @@ StrategyDirector = ClassSimple {
             demand.Air = math.max(demand.Air, 0.45)
         end
 
+        if demand.Doctrine == "GunshipCounter" then
+            -- The baseline is re-snapshot once its window expires, so the
+            -- thresholds mean "this many losses inside AirLossWindowSeconds
+            -- while the doctrine is active" rather than "this many ever".
+            local baseline = self.GunshipAirLossBaseline
+            if previousDoctrine ~= "GunshipCounter"
+                or not baseline
+                or tick - baseline.Tick >= Constants.Policy.AirLossWindowSeconds * 10
+            then
+                self.GunshipAirLossBaseline = {
+                    Count = self.CumulativeAirLosses.Count,
+                    Mass = self.CumulativeAirLosses.Mass,
+                    Tick = tick,
+                }
+            end
+        else
+            self.GunshipAirLossBaseline = nil
+        end
+
         self:UpdateStrategicFocus(objective, loss, surfaceThreat, airThreat)
+    end,
+
+    SetAirDropStatus = function(self, state, opportunity, transports, reason)
+        local tick = GetGameTick()
+        local previous = self.AirDropStatus
+        local target = opportunity and opportunity.EntityId
+            or previous and previous.Target
+        local changed = not previous
+            or previous.State ~= state
+            or previous.Target ~= target
+        self.AirDropStatus = {
+            State = state,
+            Target = target,
+            Transports = transports or 0,
+            Reason = reason,
+            UpdatedTick = tick,
+        }
+        if changed or tick - self.LastAirDropStatusTick
+            >= Constants.Policy.AirDropDiagnosticSeconds * 10
+        then
+            self.LastAirDropStatusTick = tick
+            Logger.Info(self.Brain, string.format(
+                "airdrop state=%s target=%s transports=%d reason=%s",
+                state,
+                tostring(target or "none"),
+                transports or 0,
+                tostring(reason or "none")
+            ))
+        end
     end,
 
     UpdateAirDropOpportunity = function(self, start)
         self.AirDropOpportunity = nil
-        if (self.DefenseAlert and self.DefenseAlert.Active)
-            or not self.Intel.GetBestExposedEconomyTarget
-        then
+        if self.DefenseAlert and self.DefenseAlert.Active then
+            if self.AirDropStatus and self.AirDropStatus.State ~= "Abandoned" then
+                self:SetAirDropStatus("Abandoned", nil, 0, "defense-alert")
+            end
+            return nil
+        end
+        if not self.Intel.GetBestExposedEconomyTarget then
+            self:SetAirDropStatus("Unavailable", nil, 0, "no-intel-provider")
             return nil
         end
 
         local opportunity = self.Intel:GetBestExposedEconomyTarget(start)
         self.AirDropOpportunity = opportunity
         if not opportunity then
+            if self.AirDropStatus
+                and self.AirDropStatus.State ~= "Expired"
+                and self.AirDropStatus.State ~= "Unavailable"
+            then
+                self:SetAirDropStatus("Expired", nil, 0, "target-lost")
+            end
             return nil
         end
 
@@ -715,19 +932,37 @@ StrategyDirector = ClassSimple {
             transports = self.Brain:GetCurrentUnits(categories.TRANSPORTFOCUS)
         end
 
+        local activeTransports = 0
+        if transports > 0 and self.Brain.GetListOfUnits then
+            local transportUnits = self.Brain:GetListOfUnits(categories.TRANSPORTFOCUS, false) or {}
+            for _, transport in pairs(transportUnits) do
+                if transport and not transport.Dead
+                    and (transport.InUse
+                        or (transport.IsIdleState and not transport:IsIdleState()))
+                then
+                    activeTransports = activeTransports + 1
+                end
+            end
+        end
+
         if transports < Constants.Policy.MaximumAirDropTransports
             and not self.Brain.TransportRequested
             and tick - self.LastAirDropRequestTick >= cooldown
         then
             self.Brain.TransportRequested = true
             self.LastAirDropRequestTick = tick
-            Logger.Info(self.Brain, string.format(
-                "airdrop opportunity target=%d aa=%.1f surface=%.1f transports=%d",
-                opportunity.EntityId,
-                opportunity.AirDefense,
-                opportunity.SurfaceThreat,
-                transports
-            ))
+            self:SetAirDropStatus("Requested", opportunity, transports, "transport-capacity")
+        elseif activeTransports > 0 then
+            self:SetAirDropStatus("TransportActive", opportunity, transports, "transport-in-use")
+        elseif transports > 0 then
+            self:SetAirDropStatus("Ready", opportunity, transports, "transport-available")
+        elseif not self.AirDropStatus
+            or self.AirDropStatus.Target ~= opportunity.EntityId
+            or self.AirDropStatus.State == "Expired"
+            or self.AirDropStatus.State == "Abandoned"
+            or self.AirDropStatus.State == "Unavailable"
+        then
+            self:SetAirDropStatus("Opportunity", opportunity, transports, "awaiting-request")
         end
 
         return opportunity
@@ -741,11 +976,49 @@ StrategyDirector = ClassSimple {
         local objective = nil
 
         if defenseAlert.Active then
+            local landPosition = PositionForLayer(
+                "Land",
+                defenseAlert.AnchorPosition,
+                defenseAlert.Position
+            )
+            local waterPosition = PositionForLayer(
+                "Water",
+                defenseAlert.AnchorPosition,
+                defenseAlert.Position
+            )
+            -- Held positions for layers the enemy is not currently attacking on.
+            local landAnchor = PositionForLayer("Land", defenseAlert.AnchorPosition)
+            local waterAnchor = PositionForLayer("Water", defenseAlert.AnchorPosition)
             objective = {
                 Type = "Defend",
                 Position = defenseAlert.AnchorPosition,
                 ThreatPosition = defenseAlert.Position,
-                Layer = PositionLayer(defenseAlert.AnchorPosition),
+                Layer = defenseAlert.PrimaryLayer,
+                -- Observed enemy layers decide where each of our task forces
+                -- intercepts, never whether it defends at all: a layer with a
+                -- reachable destination always receives an order, falling back
+                -- to the threatened anchor. Otherwise a single-layer attack
+                -- leaves whole task forces idle in the ArmyPool.
+                DefenseLayers = {
+                    Land = landPosition ~= nil,
+                    Water = waterPosition ~= nil,
+                    Amphibious = true,
+                    Air = true,
+                },
+                LayerPositions = {
+                    Land = defenseAlert.Land > 0 and landPosition
+                        or landAnchor
+                        or landPosition,
+                    Water = defenseAlert.Naval > 0 and waterPosition
+                        or waterAnchor
+                        or waterPosition,
+                    Amphibious = defenseAlert.AnchorPosition,
+                    Air = defenseAlert.Air > 0
+                        and defenseAlert.Position
+                        or defenseAlert.AnchorPosition,
+                },
+                AnchorKind = defenseAlert.AnchorKind,
+                AnchorLocationType = defenseAlert.AnchorLocationType,
                 Priority = 140,
                 CreatedTick = GetGameTick(),
             }
