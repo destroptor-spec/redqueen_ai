@@ -38,6 +38,15 @@ FAF_PREFS=RedQueenSmoke.prefs \
 ./scripts/run-smoke.sh SCMP_007 /tmp/the-red-queen-smoke.log
 ```
 
+The runner passes `/init init_faf.lua`, because FAF's own init is the one that calls
+`LoadVaultContent` and therefore mounts the vault `mods` directory. The bare
+`init.lua` in the game's `bin` directory is whatever init the client configured
+last: if that was a featured mod such as Nomads, it never mounts the vault and
+The Red Queen cannot load at all. Override with `FAF_INIT=` only when testing a
+featured mod deliberately. Confirm the log contains
+`AddSearchPath: '...mods\theredqueen'` and the expected `vNN` UID before reading
+any result.
+
 The runner uses out-of-range difficulty `42` as an internal smoke-test marker, which redirects command-line Rush opponents to The Red Queen inside the simulation. Normal lobby sessions and stock Rush AIs are unchanged.
 
 ## Required match matrix

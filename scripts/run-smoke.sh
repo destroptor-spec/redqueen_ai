@@ -11,11 +11,16 @@ fi
 
 map_name=$1
 log_path=${2:-/tmp/the-red-queen-smoke.log}
+# init.lua is whatever init the FAF client configured last, which may be a
+# featured mod such as Nomads whose init never calls LoadVaultContent. Without
+# that call the vault mods directory is never mounted and The Red Queen cannot
+# load at all, so default to FAF's own init instead.
+init_file=${FAF_INIT:-init_faf.lua}
 binary_directory=$(cd -- "$(dirname -- "$FAF_EXE")" && pwd)
 preferences_file=${FAF_PREFS:-}
 
 launch_arguments=(
-    /init init.lua
+    /init "$init_file"
     /map "$map_name"
     /redqueen
     /diff 42
