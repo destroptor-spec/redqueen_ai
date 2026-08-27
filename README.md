@@ -130,4 +130,4 @@ The command-line smoke proves initialization and catches startup or scheduler fa
 
 ## Project status
 
-The Red Queen is a playable development release with contract coverage for its core strategic behavior. Its stated 1000–1300 strength target still requires replay-driven tuning and human beta evidence and is not inferred from source validation or startup smoke results.
+The Red Queen is a playable development release with contract coverage for its core strategic behavior. Release `V8` passes the fast gate and a command-line startup smoke; its layered defensive dispatch, counter-doctrine recovery, and anchor criticality have contract coverage but no runtime evidence yet, because a short smoke never reaches a defense alert. Its stated 1000–1300 strength target still requires replay-driven tuning and human beta evidence and is not inferred from source validation or startup smoke results.

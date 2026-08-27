@@ -14,8 +14,22 @@ The analyzer fails on Red Queen errors, on engine Lua errors it can attribute to
 
 ## In-game smoke test
 
-1. Install the development symlink with `scripts/install-dev.sh`.
-2. Enable **The Red Queen** in the lobby mod manager.
+Two prerequisites fail silently, so check both before reading any result.
+
+- **The version bump changes the UID.** FAF keys mods by UID, so a bumped release
+  is a different mod to the game: the previous lobby enable does not carry over,
+  and a `RedQueenSmoke.prefs` still naming the old UID launches without the mod
+  at all. The run then looks healthy while testing nothing.
+- **Nothing else in `mods/` may declare The Red Queen.** A leftover
+  `TheRedQueen.copy-*` directory beside the symlink registers as a second entry
+  under its own UID. Move stale copies out of `mods/` entirely rather than
+  relying on the UID differing.
+
+1. Install the development symlink with `scripts/install-dev.sh`, then confirm
+   `readlink -f` resolves to this checkout and that `mods/` holds no other Red
+   Queen directory.
+2. Enable **The Red Queen** in the lobby mod manager, re-ticking it after any
+   version bump.
 3. Start a 5 km 1v1 with fog of war enabled.
 4. Confirm the lobby lists `AI: The Red Queen` and the game log contains `[RedQueen] started` without warnings or stack traces.
 5. Repeat a 1v2 and confirm the startup log reports `deficit=1 income=1.10`.
@@ -48,6 +62,40 @@ featured mod deliberately. Confirm the log contains
 any result.
 
 The runner uses out-of-range difficulty `42` as an internal smoke-test marker, which redirects command-line Rush opponents to The Red Queen inside the simulation. Normal lobby sessions and stock Rush AIs are unchanged.
+
+### What a short run cannot reach
+
+A five-minute command-line smoke on a 10 km map reaches roughly `eco=Balanced`,
+four factories, and `objective=Raid`. It exercises startup, income contracts,
+tier policy, factory assistance, airdrop status, and forward-base rejection
+reasons. It produces **zero defense alerts**, because no observed cluster reaches
+`MassiveArmyThreat` before the armies meet.
+
+Every check below that depends on a defense alert — layered land/water/amphibious
+/air dispatch, anchor criticality, emergency point defense, alert-driven
+production — therefore needs either a run long enough for contact, or a lobby
+game where the threat is staged deliberately. A passing short smoke is not
+evidence for any of them.
+
+### Diagnostics reference
+
+The periodic `state` line carries every director decision, so most behavioral
+checks read it rather than the game UI:
+
+```text
+state objective=<type> eco=<mode> mass=<perTick> energy=<perTick>
+      factories=<live>/<sustainableTarget> intel=<observations>
+      doctrine=<Balanced|GunshipCounter|AirDefense> focus=<primary>
+      weights=A=..,T2=..,T3=..,X=..,N=.. ready=<0..1> slots=<n> reason=<focus>
+      landloss=<count>/<mass> airloss=<count>/<mass>
+      airdrop=<None|Unavailable|Opportunity|Requested|Ready|TransportActive|Expired|Abandoned>
+      alert=<yes|no>/<threat>/<ratio> momentum=<lost>/<destroyed>/<losing|stable>
+      tiers=L<n>,A<n>,N<n> forward=<sites>/<building|idle>/<blockReason>
+```
+
+`factories=` compares live factories against the capacity policy's sustainable
+target, not against `DesiredFactories`; `production expansion` logs the same
+number. `mass=` and `energy=` are per tick, as below.
 
 ## Required match matrix
 
