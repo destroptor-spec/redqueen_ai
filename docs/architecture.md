@@ -58,14 +58,21 @@ own numbers: it silently moves a threshold by a factor of ten. The factory-assis
 thresholds shipped that way and gated the feature behind an economy no match
 reaches, which is why the convention is written down here.
 
+The convention is confirmed against the engine, not assumed. A commander alone
+produces 1 mass and 20 energy per second (`UEL0001_unit.bp`), and the first
+diagnostic sample of a match, taken while each brain still has only its
+commander, reads `mass=0.1 energy=2.0` in both match 27741743 and the V8
+verification match. Ten ticks to the second, exactly.
+
+Reading the constants back through that conversion shows they were calibrated
+deliberately: `Tech3MinimumEnergyIncome = 250` is 2500 energy per second, which
+is exactly one T3 power generator; `Tech2MinimumEnergyIncome = 60` is 600, about
+2.7 T2 generators; experimentals gate at 3.2 T3 generators and nuclear launchers
+at 4.8. The mass gates form the matching ladder -- Tech 2 at 40 per second,
+Tech 3 at 100, experimentals at 220, nuclear at 300.
+
 ## Known gaps
 
-- `MinimumProductionMassIncome` and `EconomyManager`'s
-  `DesiredFactories = 1 + floor(MassIncome / 8)` both read as per-second figures
-  against per-tick input. If that is unintended, the production gate is ten times
-  stricter than it looks and the income term contributes nothing below 80 mass
-  per second, leaving the army-deficit term to set the factory count on its own.
-  Not yet confirmed either way.
 - Alert-driven behavior has contract coverage but no runtime evidence; see the
   short-run limits in [testing.md](testing.md).
 
