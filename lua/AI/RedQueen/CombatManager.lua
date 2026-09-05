@@ -15,6 +15,20 @@ local function IsCombatUnit(unit)
         )
 end
 
+-- Threat contribution of a single unit. A unit whose blueprint is unavailable
+-- contributes nothing rather than raising: this runs inside a sort comparator,
+-- where an error would abort the whole combat pass.
+local function UnitThreat(unit)
+    if not unit or not unit.GetBlueprint then
+        return 0
+    end
+    local blueprint = unit:GetBlueprint() or {}
+    local defense = blueprint.Defense or {}
+    return (defense.SurfaceThreatLevel or 0)
+        + (defense.SubThreatLevel or 0)
+        + (defense.AirThreatLevel or 0)
+end
+
 local function UnitLayer(unit)
     local hash = unit:GetBlueprint().CategoriesHash or {}
     if hash.AIR then
@@ -189,14 +203,35 @@ CombatManager = ClassSimple {
         return groups
     end,
 
-    SelectTaskForce = function(self, units, defensive)
+    -- Observed enemy threat at the destination. Only offensive commitment
+    -- consults it; a defensive response is never gated.
+    GetObjectiveThreat = function(self, objective)
+        local intel = self.Strategy and self.Strategy.Intel
+        if not intel or not intel.GetThreatNear or not objective.Position then
+            return 0
+        end
+        return intel:GetThreatNear(
+            objective.Position,
+            Constants.Policy.CommitmentThreatRadius
+        ) or 0
+    end,
+
+    SelectTaskForce = function(self, units, defensive, objective)
         local available = table.getn(units)
         local minimum = defensive and 2 or Constants.Policy.MinimumAttackUnits
         if available < minimum then
             return nil
         end
 
+        -- Highest contribution first, EntityId only to break ties. Sorting by
+        -- EntityId alone re-sent the same oldest survivors every pass and left
+        -- fresh production queued behind them.
         table.sort(units, function(a, b)
+            local aThreat = UnitThreat(a)
+            local bThreat = UnitThreat(b)
+            if aThreat ~= bThreat then
+                return aThreat > bThreat
+            end
             return (a.EntityId or 0) < (b.EntityId or 0)
         end)
 
@@ -207,10 +242,45 @@ CombatManager = ClassSimple {
         end
 
         local selected = {}
+        local threat = 0
         for index = 1, count do
             selected[index] = units[index]
+            threat = threat + UnitThreat(units[index])
+        end
+
+        -- Tactical commitment gate. Economy and match time never hold a unit
+        -- back, but an offensive wave that cannot beat what is waiting for it
+        -- is fed piecemeal into a formed army: match 27741743 built 998 land
+        -- units, lost 1005 and killed 141. Units held here simply stay in the
+        -- pool near base and join the next, larger wave.
+        if not defensive and objective then
+            local enemyThreat = self:GetObjectiveThreat(objective)
+            local required = enemyThreat * Constants.Policy.CommitmentThreatRatio
+            -- A full wave always commits. Hoarding past the task-force cap
+            -- buys nothing, because the surplus cannot be ordered anyway.
+            if count < Constants.Policy.MaximumTaskForceUnits and threat < required then
+                self:LogCommitmentHeld(objective, count, threat, required)
+                return nil
+            end
         end
         return selected
+    end,
+
+    LogCommitmentHeld = function(self, objective, count, threat, required)
+        local tick = GetGameTick()
+        if tick - (self.LastCommitmentLogTick or -100000)
+            < Constants.Policy.CommitmentDiagnosticSeconds * 10
+        then
+            return
+        end
+        self.LastCommitmentLogTick = tick
+        Logger.Info(self.Brain, string.format(
+            "commitment held objective=%s units=%d threat=%.0f required=%.0f",
+            tostring(objective.Type),
+            count,
+            threat,
+            required
+        ))
     end,
 
     IssueObjective = function(self, units, objective, layer)
@@ -254,7 +324,7 @@ CombatManager = ClassSimple {
             and ObjectiveAt(objective, airPosition)
             or objective
         if objective.AirPosition then airObjective.Type = "AirRaid" end
-        local air = self:SelectTaskForce(groups.Air, defensive)
+        local air = self:SelectTaskForce(groups.Air, defensive, airObjective)
         if self:IssueObjective(air, airObjective, "Air") then
             ordered = ordered + table.getn(air)
         end
@@ -263,50 +333,41 @@ CombatManager = ClassSimple {
         local defenseLayers = objective.DefenseLayers
         if defenseLayers then
             if defenseLayers.Water and layerPositions.Water then
-                local naval = self:SelectTaskForce(groups.Water, defensive)
-                if self:IssueObjective(
-                    naval,
-                    ObjectiveAt(objective, layerPositions.Water),
-                    "Water"
-                ) then
+                local waterObjective = ObjectiveAt(objective, layerPositions.Water)
+                local naval = self:SelectTaskForce(groups.Water, defensive, waterObjective)
+                if self:IssueObjective(naval, waterObjective, "Water") then
                     ordered = ordered + table.getn(naval)
                 end
             end
             if defenseLayers.Land and layerPositions.Land then
-                local land = self:SelectTaskForce(groups.Land, defensive)
-                if self:IssueObjective(
-                    land,
-                    ObjectiveAt(objective, layerPositions.Land),
-                    "Land"
-                ) then
+                local landObjective = ObjectiveAt(objective, layerPositions.Land)
+                local land = self:SelectTaskForce(groups.Land, defensive, landObjective)
+                if self:IssueObjective(land, landObjective, "Land") then
                     ordered = ordered + table.getn(land)
                 end
             end
             if defenseLayers.Amphibious and layerPositions.Amphibious then
-                local amphibious = self:SelectTaskForce(groups.Amphibious, defensive)
-                if self:IssueObjective(
-                    amphibious,
-                    ObjectiveAt(objective, layerPositions.Amphibious),
-                    "Amphibious"
-                ) then
+                local amphibiousObjective = ObjectiveAt(objective, layerPositions.Amphibious)
+                local amphibious = self:SelectTaskForce(groups.Amphibious, defensive, amphibiousObjective)
+                if self:IssueObjective(amphibious, amphibiousObjective, "Amphibious") then
                     ordered = ordered + table.getn(amphibious)
                 end
             end
         elseif destinationLayer == "Water" then
-            local naval = self:SelectTaskForce(groups.Water, defensive)
+            local naval = self:SelectTaskForce(groups.Water, defensive, objective)
             if self:IssueObjective(naval, objective, "Water") then
                 ordered = ordered + table.getn(naval)
             end
-            local amphibious = self:SelectTaskForce(groups.Amphibious, defensive)
+            local amphibious = self:SelectTaskForce(groups.Amphibious, defensive, objective)
             if self:IssueObjective(amphibious, objective, "Amphibious") then
                 ordered = ordered + table.getn(amphibious)
             end
         elseif destinationLayer ~= "Air" then
-            local land = self:SelectTaskForce(groups.Land, defensive)
+            local land = self:SelectTaskForce(groups.Land, defensive, objective)
             if self:IssueObjective(land, objective, "Land") then
                 ordered = ordered + table.getn(land)
             end
-            local amphibious = self:SelectTaskForce(groups.Amphibious, defensive)
+            local amphibious = self:SelectTaskForce(groups.Amphibious, defensive, objective)
             if self:IssueObjective(amphibious, objective, "Amphibious") then
                 ordered = ordered + table.getn(amphibious)
             end

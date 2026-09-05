@@ -89,6 +89,9 @@ local constants = {
         NukeMinimumEnergyIncome = 1200,
         StrategicFocusMinimumScore = 35,
         StrategicFocusSwitchMargin = 15,
+        StrategicFocusDwellSeconds = 90,
+        DefenseAlertEndgameTaxPerSeverity = 0.20,
+        DefenseAlertMinimumEndgameRetention = 0.35,
         StrategicSecondProjectReadiness = 0.80,
         StrategicSecondProjectArmyMaximum = 70,
         MassiveArmyThreat = 40,
@@ -205,6 +208,8 @@ local ownForces = {
     MissingT3Coverage = 2,
     Experimentals = 0,
     Nukes = 0,
+    ExperimentalsUnderConstruction = 0,
+    NukesUnderConstruction = 0,
 }
 director.GetOwnForces = function() return ownForces end
 
@@ -450,8 +455,81 @@ assert(director.CurrentObjective.DefenseLayers.Land, "a single-layer attack must
 assert(director.CurrentObjective.LayerPositions.Land == world.StartPosition, "ground defenders must hold the threatened anchor when there is no surface threat to intercept")
 assert(not director.CurrentObjective.DefenseLayers.Water, "an inland anchor must not order naval defenders to an unreachable layer")
 assert(director.CurrentObjective.LayerPositions.Air == airRaidPosition, "air defenders must intercept the observed air formation")
-assert(director.ProductionDemand.MajorProjectSlots == 0, "defense alerts must pause new major projects")
-assert(director.ProductionDemand.DesiredNukes == 0, "defense alerts must block new nuclear starts")
+-- A defence alert taxes endgame investment in proportion to severity; it does
+-- not cancel it. Zeroing the weights outright meant that a brain under
+-- sustained pressure -- exactly the late game of a hard match -- could never
+-- finish an experimental, however rich it was.
+assert(director.ProductionDemand.FocusWeights.Army == 100, "a defense alert must make army production primary")
+assert(
+    director.ProductionDemand.FocusWeights.Experimental > 0
+        and director.ProductionDemand.FocusWeights.Experimental < 80,
+    "a non-commander alert must reduce experimental weight without zeroing it"
+)
+assert(
+    director.ProductionDemand.MajorProjectSlots == 1,
+    "a non-commander alert must fund at most one major project, not none"
+)
+assert(director.ProductionDemand.DesiredExperimentals == 1, "a taxed alert must still allow a single experimental")
+assert(director.ProductionDemand.DesiredNukes == 0, "observed strategic defense must still suppress nuclear starts")
+
+-- Severity scales the tax: a far worse ratio must retain less.
+local taxedExperimental = director.ProductionDemand.FocusWeights.Experimental
+director.DefenseAlert.Severity = 10
+director:UpdateStrategicFocus({ Type = "Raid" }, { Count = 0, Mass = 0 }, 10, 5)
+assert(
+    director.ProductionDemand.FocusWeights.Experimental < taxedExperimental,
+    "a more severe alert must retain less endgame investment"
+)
+assert(
+    director.ProductionDemand.FocusWeights.Experimental > 0,
+    "even a severe non-commander alert must not zero endgame investment outright"
+)
+
+-- The commander is the exception. In Assassination, losing the ACU ends the
+-- match, so a credible attack on it vetoes every project absolutely.
+local previousVictory = director.Context.VictoryCondition
+local previousAnchorKind = director.DefenseAlert.AnchorKind
+director.Context.VictoryCondition = "Assassination"
+director.DefenseAlert.AnchorKind = "Commander"
+director:UpdateStrategicFocus({ Type = "Raid" }, { Count = 0, Mass = 0 }, 10, 5)
+assert(director.ProductionDemand.MajorProjectSlots == 0, "a commander emergency must veto every major project")
+assert(director.ProductionDemand.FocusWeights.Experimental == 0, "a commander emergency must zero experimental weight")
+assert(director.ProductionDemand.FocusWeights.Tech3 == 0, "a commander emergency must zero tier investment")
+assert(director.ProductionDemand.FocusReason == "commander-emergency", "a commander emergency must be reported distinctly")
+
+-- The same alert outside Assassination is graded, not absolute.
+director.Context.VictoryCondition = "Annihilation"
+director:UpdateStrategicFocus({ Type = "Raid" }, { Count = 0, Mass = 0 }, 10, 5)
+assert(
+    director.ProductionDemand.FocusReason == "defense-pressure",
+    "a commander alert outside Assassination must remain a graded defense response"
+)
+-- A pause gates new starts, never work already under way. Even the absolute
+-- commander veto must let a half-built experimental finish: abandoning it
+-- strands its engineers and wastes everything already spent.
+ownForces.ExperimentalsUnderConstruction = 1
+ownForces.NukesUnderConstruction = 1
+director.Context.VictoryCondition = "Assassination"
+director.DefenseAlert.AnchorKind = "Commander"
+director:UpdateStrategicFocus({ Type = "Raid" }, { Count = 0, Mass = 0 }, 10, 5)
+assert(
+    director.ProductionDemand.DesiredExperimentals == 1,
+    "an experimental already under construction must keep its target through any veto"
+)
+assert(
+    director.ProductionDemand.DesiredNukes == 1,
+    "a nuclear launcher already under construction must keep its target through any veto"
+)
+assert(
+    director.ProductionDemand.MajorProjectSlots >= 2,
+    "an experimental and a nuclear launcher in flight need a slot each, not a shared one"
+)
+ownForces.ExperimentalsUnderConstruction = 0
+ownForces.NukesUnderConstruction = 0
+
+director.Context.VictoryCondition = previousVictory
+director.DefenseAlert.AnchorKind = previousAnchorKind
+director.DefenseAlert.Severity = 3.5
 
 observedPressure = nil
 currentTick = 5400

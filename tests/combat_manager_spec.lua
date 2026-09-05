@@ -60,9 +60,12 @@ local constants = {
         UnitOrderLifetimeTicks = 50,
         ForwardBaseSiteRadius = 60,
         ForwardBaseGarrisonSeconds = 60,
+        CommitmentThreatRatio = 1.10,
+        CommitmentThreatRadius = 60,
+        CommitmentDiagnosticSeconds = 30,
     },
 }
-local logger = { Debug = function() end }
+local logger = { Debug = function() end, Info = function() end }
 
 function import(path)
     if path == "/mods/TheRedQueen/lua/AI/RedQueen/Constants.lua" then
@@ -88,6 +91,83 @@ assert(pressure[1].EntityId == 1, "task-force selection must remain deterministi
 local smallWave = manager:SelectTaskForce({ units[1], units[2], units[3] }, false)
 assert(table.getn(smallWave) == 3, "three available combat units must leave the pool as a wave")
 assert(not manager:SelectTaskForce({ units[1], units[2] }, false), "undersized offensive waves must still wait for one more unit")
+
+-- Tactical commitment gate. Feeding three-unit packets into a formed army is
+-- what produced 998 land units built against 141 kills in match 27741743.
+local observedThreat = 0
+local gatedManager = Create({}, {}, {}, {
+    Intel = { GetThreatNear = function() return observedThreat end },
+})
+local function ThreateningUnit(entityId, threat)
+    return {
+        EntityId = entityId,
+        GetBlueprint = function()
+            return { Defense = { SurfaceThreatLevel = threat } }
+        end,
+    }
+end
+local wave = {}
+for entityId = 1, 10 do
+    table.insert(wave, ThreateningUnit(entityId, 10))
+end
+local target = { Type = "Raid", Position = { 100, 0, 100 } }
+
+observedThreat = 0
+assert(
+    gatedManager:SelectTaskForce(wave, false, target),
+    "an undefended objective must be attacked immediately"
+)
+
+observedThreat = 500
+assert(
+    not gatedManager:SelectTaskForce(wave, false, target),
+    "an offensive wave must not commit below the threat ratio"
+)
+assert(
+    gatedManager:SelectTaskForce(wave, true, target),
+    "a defensive response must never be gated on enemy threat"
+)
+
+observedThreat = 50
+assert(
+    gatedManager:SelectTaskForce(wave, false, target),
+    "a wave that clears the threat ratio must commit"
+)
+
+-- Economy must never hold a unit back, only tactics.
+local economyStarved = Create({}, {}, { State = { StallRisk = true, MassIncome = 0 } }, {
+    Intel = { GetThreatNear = function() return 0 end },
+})
+assert(
+    economyStarved:SelectTaskForce(wave, false, target),
+    "a stalled economy must never hold existing combat units back"
+)
+
+-- A full task force always commits rather than hoarding past the cap.
+local fullWave = {}
+for entityId = 1, constants.Policy.MaximumTaskForceUnits + 20 do
+    table.insert(fullWave, ThreateningUnit(entityId, 1))
+end
+observedThreat = 100000
+assert(
+    gatedManager:SelectTaskForce(fullWave, false, target),
+    "a full task force must commit rather than hoard past the cap"
+)
+
+-- Selection is by contribution, with EntityId only breaking ties.
+local mixedWave = {
+    ThreateningUnit(1, 5),
+    ThreateningUnit(2, 90),
+    ThreateningUnit(3, 40),
+}
+observedThreat = 0
+local ordered = gatedManager:SelectTaskForce(mixedWave, false, target)
+assert(ordered[1].EntityId == 2, "the highest-contribution unit must lead the task force")
+assert(ordered[2].EntityId == 3, "task forces must be ordered by contribution")
+
+local tiedWave = { ThreateningUnit(7, 20), ThreateningUnit(4, 20), ThreateningUnit(9, 20) }
+local tied = gatedManager:SelectTaskForce(tiedWave, false, target)
+assert(tied[1].EntityId == 4, "equal contributions must fall back to a deterministic EntityId order")
 
 local fighter = {
     EntityId = 20,

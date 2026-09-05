@@ -19,6 +19,7 @@ local constants = {
         OpeningDurationSeconds = 300,
         MinimumAttackMassIncome = 6,
         MinimumProductionMassIncome = 8,
+        IncomeSmoothingWeight = 0.25,
     },
 }
 
@@ -69,7 +70,21 @@ sample.MassIncome = 7
 balanced:Update()
 assert(balanced.State.Mode == "ExpandProduction", "mature positive storage should expose surplus")
 assert(balanced:CanCommitAttack(), "sustainable mature economy may commit an attack")
-assert(not balanced:CanExpandProduction(0), "even teams must leave factory expansion to adaptive builders")
+assert(not balanced:CanExpandProduction(0), "income below the production minimum must block expansion")
+
+sample.MassIncome = 8
+balanced:Update()
+assert(
+    balanced.State.DesiredFactories == 2,
+    "the factory target must follow income alone, not the army deficit"
+)
+assert(
+    balanced:CanExpandProduction(1),
+    "a balanced match must still expand its own production; a zero deficit must not disable it"
+)
+assert(not balanced:CanExpandProduction(2), "factory target must stop additional expansion")
+sample.MassIncome = 7
+balanced:Update()
 
 sample.EnergyStoredRatio = 0.01
 sample.EnergyTrend = 1
@@ -89,8 +104,8 @@ assert(not underdog:CanExpandProduction(1), "low income must block deficit facto
 
 sample.MassIncome = 8
 underdog:Update()
-assert(underdog.State.DesiredFactories == 4, "income and army deficit should raise the factory target")
+assert(underdog.State.DesiredFactories == 2, "the factory target must be income-driven for every match shape")
 assert(underdog:CanExpandProduction(1), "outnumbered surplus economy should add production capacity")
-assert(not underdog:CanExpandProduction(4), "factory target must stop additional expansion")
+assert(not underdog:CanExpandProduction(2), "factory target must stop additional expansion")
 
 print("Red Queen economy manager contracts passed")

@@ -39,10 +39,17 @@ Policy = {
     MinimumAttackUnits = 3,
     MaximumTaskForceUnits = 60,
     AttackReserveFraction = 0.10,
+    -- Offensive commitment is tactical, never economic. A wave must carry this
+    -- multiple of the observed enemy threat at its destination before it goes.
+    CommitmentThreatRatio = 1.10,
+    CommitmentThreatRadius = 60,
+    CommitmentDiagnosticSeconds = 30,
     UnitOrderLifetimeTicks = 300,
     ObjectiveLifetimeTicks = 300,
     ObjectiveInterruptPriorityGap = 15,
     FactoryCheckCooldownSeconds = 30,
+    FactoryCapDiagnosticSeconds = 60,
+    MaximumManagedBases = 8,
     FactoryAssistMassPerEngineer = 1.0,
     MaximumFactoryAssistants = 6,
     FactoryAssistSeconds = 30,
@@ -50,6 +57,8 @@ Policy = {
     EmergencyDefenseEngineerHoldSeconds = 10,
     EmergencyDefenseLogCooldownSeconds = 30,
     EmergencyDefenseRadius = 60,
+    EconomyStagnationSeconds = 180,
+    EconomyGrowthRatio = 1.05,
     LandLossWindowSeconds = 120,
     LandLossCountThreshold = 8,
     LandLossMassThreshold = 450,
@@ -64,6 +73,10 @@ Policy = {
     AirDropRequestCooldownSeconds = 90,
     AirDropDiagnosticSeconds = 30,
     MaximumAirDropTransports = 2,
+    -- Airdrop allowance plus a ferry reserve. A first calibration against an
+    -- observed fleet of 30 that produced no kills; the transport budget
+    -- diagnostic reports when it engages so it can be tuned from evidence.
+    MaximumTransports = 10,
     Tech2MinimumMassIncome = 4,
     Tech2MinimumEnergyIncome = 60,
     Tech3MinimumMassIncome = 10,
@@ -101,8 +114,17 @@ Policy = {
     ForwardBaseMinimumEnergyIncome = 40,
     ForwardBaseGarrisonSeconds = 60,
     ForwardBaseDiagnosticSeconds = 60,
+    ForwardBaseRecordRetentionSeconds = 300,
+    -- A remote site must be reached before it can be built. Six minutes retired
+    -- bases that were alive and defending; this is the absolute deadline, and a
+    -- lost engineer or manager still fails immediately.
+    ForwardBaseEstablishSeconds = 900,
     StrategicFocusMinimumScore = 35,
     StrategicFocusSwitchMargin = 15,
+    StrategicFocusDwellSeconds = 90,
+    DefenseAlertEndgameTaxPerSeverity = 0.20,
+    DefenseAlertMinimumEndgameRetention = 0.35,
+    IncomeSmoothingWeight = 0.25,
     StrategicSecondProjectReadiness = 0.80,
     StrategicSecondProjectArmyMaximum = 70,
     StrategicHighValueThreshold = 80,

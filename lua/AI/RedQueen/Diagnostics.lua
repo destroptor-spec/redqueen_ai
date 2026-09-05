@@ -1,3 +1,4 @@
+local Constants = import("/mods/TheRedQueen/lua/AI/RedQueen/Constants.lua")
 local Logger = import("/mods/TheRedQueen/lua/AI/RedQueen/Logger.lua")
 
 ---@class RedQueenDiagnostics
@@ -5,6 +6,47 @@ Diagnostics = ClassSimple {
     __init = function(self, brain, modules)
         self.Brain = brain
         self.Modules = modules
+        self.StagnationMark = nil
+        self.StagnationTick = nil
+        self.LastStagnationLogTick = -100000
+    end,
+
+    -- Economic stagnation is invisible in a single state sample. Army 5 of
+    -- match 27741743 reported exactly 21.8 mass four samples running and 27.9
+    -- three samples before that, on a map with 33 mass clusters, and nothing in
+    -- the log named it. This reports the plateau directly.
+    -- Compares smoothed income, not the instantaneous sample. A single spike --
+    -- a reclaim burst, or several extractors finishing together -- would
+    -- otherwise latch the high-water mark and make a genuinely climbing economy
+    -- read as stagnant for the rest of the match. The peak is reported so a
+    -- real decline is distinguishable from a plateau.
+    ReportEconomy = function(self, economy)
+        local tick = GetGameTick()
+        local income = economy.SmoothedMassIncome or economy.MassIncome or 0
+        if not self.StagnationMark
+            or income > self.StagnationMark * Constants.Policy.EconomyGrowthRatio
+        then
+            self.StagnationMark = income
+            self.StagnationTick = tick
+            return
+        end
+
+        local window = Constants.Policy.EconomyStagnationSeconds * 10
+        if tick - (self.StagnationTick or tick) < window then
+            return
+        end
+        if tick - self.LastStagnationLogTick < window then
+            return
+        end
+        self.LastStagnationLogTick = tick
+        Logger.Info(self.Brain, string.format(
+            "economy %s mass=%.1f peak=%.1f since=%.0fs mode=%s",
+            income < self.StagnationMark and "declining" or "stagnant",
+            income,
+            self.StagnationMark,
+            (tick - self.StagnationTick) / 10,
+            tostring(economy.Mode)
+        ))
     end,
 
     Update = function(self)
@@ -26,6 +68,7 @@ Diagnostics = ClassSimple {
             or { LostMass = 0, DestroyedMass = 0, Losing = false }
         local tiers = demand.TierPolicy or {}
         local forward = demand.ForwardBasePlan or { Active = false, Sites = {} }
+        self:ReportEconomy(economy)
 
         Logger.Info(self.Brain, string.format(
             "state objective=%s eco=%s mass=%.1f energy=%.1f factories=%d/%d intel=%d doctrine=%s focus=%s weights=A=%d,T2=%d,T3=%d,X=%d,N=%d ready=%.2f slots=%d reason=%s landloss=%d/%.0f airloss=%d/%.0f airdrop=%s alert=%s/%.1f/%.2f momentum=%.0f/%.0f/%s tiers=L%d,A%d,N%d forward=%d/%s/%s",

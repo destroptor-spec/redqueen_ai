@@ -29,11 +29,23 @@ end
 
 local captured = nil
 local buildAllowed = true
+local buildRaises = false
 local expansionFailure = false
 local expansionCalls = {}
 local buildStructures = {
     AIExecuteBuildStructure = function(...)
         captured = { ... }
+        -- FAF forwards argument 4 (closeToBuilder) straight into
+        -- aiBrain:FindPlaceToBuild, whose matching parameter is a game object.
+        -- A boolean there makes the engine raise "Expected a game object" and
+        -- kill the calling scheduler task, so the stub refuses to accept one.
+        assert(
+            type(captured[4]) ~= "boolean",
+            "closeToBuilder is a game-object slot and must never receive a boolean"
+        )
+        if buildRaises then
+            error("simulated engine rejection: Expected a game object")
+        end
         return buildAllowed
     end,
     AIBuildBaseTemplateFromLocation = function(template)
@@ -83,6 +95,11 @@ local constants = {
         ForwardBaseSiteRadius = 60,
         ForwardBaseCooldownSeconds = 120,
         ForwardBaseDiagnosticSeconds = 60,
+        ForwardBaseRecordRetentionSeconds = 300,
+        ForwardBaseEstablishSeconds = 900,
+        FactoryCapDiagnosticSeconds = 60,
+        MaximumManagedBases = 8,
+        MaximumTransports = 10,
         ForwardBaseMinimumMassIncome = 4,
         ForwardBaseMinimumEnergyIncome = 40,
         Tech2MinimumMassIncome = 4,
@@ -162,10 +179,12 @@ local forwardFactory = {
     GetArmy = function() return 1 end,
     GetPosition = function() return { 128, 0, 128 } end,
 }
+local transportCount = 0
 local brain = {
     Army = 1,
     Name = "ARMY_1",
     GetArmyIndex = function() return 1 end,
+    GetCurrentUnits = function() return transportCount end,
     GetPlatoonUniquelyNamed = function() return pool end,
     GetUnitsAroundPoint = function()
         if forwardFactory.Dead then
@@ -224,7 +243,7 @@ manager:TryExpandFactoryCapacity({ Total = 1, Land = 1, Air = 0, Naval = 0 })
 
 assert(captured, "sustainable deficit should request a factory")
 assert(captured[2] == engineer, "custom capacity must use an idle non-commander engineer")
-assert(captured[4] == false, "factory placement must not follow an arbitrary builder")
+assert(captured[4] == nil, "factory placement must not follow an arbitrary builder")
 assert(captured[5] == false, "base placement must use the engine's absolute result")
 assert(manager.FillIdleFactories == nil, "adaptive factory manager must remain the only unit-queue owner")
 
@@ -270,6 +289,79 @@ local ratchetCounts = { Total = 3, Land = 1, Air = 1, Naval = 1 }
 manager:ApplyFactoryCapacityPolicy(ratchetCounts)
 assert(ratchetCounts.TargetTotal == 2, "an existing off-demand factory must not ratchet the sustainable factory total upward")
 assert(navalFactoryBuilder.Priority == 0, "an off-demand domain must stay capped even once it already owns a factory")
+
+-- FAF ships two kinds of builder that both mention a factory. The pure ones
+-- build only a factory. The mixed ones create a whole expansion or naval base
+-- and list a factory as one late line item; capping those on factory count
+-- stopped the AI taking and holding ground in match 27741743.
+local expansionPackageBuilder = {
+    Priority = 850,
+    OriginalPriority = 850,
+    RedQueenConstructionTypes = {
+        "T1GroundDefense", "T1Radar", "T2AADefense", "T2GroundDefense",
+        "T2StrategicMissile", "T1LandFactory", "T2ShieldDefense",
+    },
+    SetPriority = function(self, priority) self.Priority = priority end,
+}
+local navalPackageBuilder = {
+    Priority = 850,
+    OriginalPriority = 850,
+    RedQueenConstructionTypes = {
+        "T1SeaFactory", "T1AADefense", "T1NavalDefense", "T1Sonar",
+    },
+    SetPriority = function(self, priority) self.Priority = priority end,
+}
+brain.BuilderManagers.MAIN.EngineerManager.BuilderData.Any.Builders = {
+    landFactoryBuilder,
+    airFactoryBuilder,
+    navalFactoryBuilder,
+    expansionPackageBuilder,
+    navalPackageBuilder,
+}
+
+-- Map still offers unclaimed base sites: the base-creating builders must run
+-- however saturated their factory domain already is.
+world.ForwardBaseCandidates = { {}, {}, {} }
+economy.State.DesiredFactories = 2
+manager:ApplyFactoryCapacityPolicy({ Total = 4, Land = 3, Air = 1, Naval = 1 })
+assert(
+    expansionPackageBuilder.Priority == 850,
+    "an expansion package must not be capped on factory count while base slots remain"
+)
+assert(
+    navalPackageBuilder.Priority == 850,
+    "a naval base package must not be capped on factory count while base slots remain"
+)
+assert(
+    landFactoryBuilder.Priority == 0,
+    "a pure factory builder must still be capped when its domain is saturated"
+)
+
+-- Base slots exhausted: the expansion package has no further ground to take,
+-- so its incidental factory may now be capped like any other.
+world.ForwardBaseCandidates = {}
+manager:ApplyFactoryCapacityPolicy({ Total = 4, Land = 3, Air = 1, Naval = 1 })
+assert(
+    expansionPackageBuilder.Priority == 0,
+    "an expansion package must be capped once the map has no unclaimed base slots"
+)
+assert(
+    navalPackageBuilder.Priority == 0,
+    "a naval base package must be capped once the map has no unclaimed base slots"
+)
+
+-- Restoring base slots must release the mixed builders again.
+world.ForwardBaseCandidates = { {}, {}, {} }
+manager:ApplyFactoryCapacityPolicy({ Total = 4, Land = 3, Air = 1, Naval = 1 })
+assert(
+    expansionPackageBuilder.Priority == 850,
+    "a mixed builder must recover its original priority when base slots return"
+)
+world.ForwardBaseCandidates = nil
+brain.BuilderManagers.MAIN.EngineerManager.BuilderData.Any.Builders = {
+    landFactoryBuilder, airFactoryBuilder, navalFactoryBuilder,
+}
+economy.State.DesiredFactories = 3
 
 local expansionTargets = { Land = 2, Air = 1, Naval = 0, Total = 3 }
 assert(
@@ -407,6 +499,86 @@ manager:ApplyTierPolicy()
 assert(mainlineBuilder.Priority == 500, "losing higher-tier access must restore lower-tier production")
 assert(shieldBuilder.Priority == 500, "support priorities must restore with the domain tier")
 
+-- A domain reduced to Tech 1 while the enemy is observed at Tech 3 must not
+-- pour mass into units that cannot trade. Suppressing the obsolete mainline
+-- leaves the surviving factory free to upgrade instead.
+manager.Intel.HighestObservedTech = 3
+economy.State.MassIncome = 20
+economy.State.SmoothedMassIncome = 20
+economy.State.StallRisk = false
+manager:ApplyTierPolicy()
+assert(
+    mainlineBuilder.Priority == 0,
+    "Tech 1 mainline must be suppressed when the enemy is observed at Tech 3"
+)
+assert(
+    shieldBuilder.Priority == 500,
+    "specialist lower-tier roles must survive the Tech 1 mainline suppression"
+)
+
+-- A brain that cannot afford the upgrade must keep building something.
+economy.State.StallRisk = true
+manager:ApplyTierPolicy()
+assert(
+    mainlineBuilder.Priority == 500,
+    "a stalled brain must not be left with nothing its factories can build"
+)
+economy.State.StallRisk = false
+economy.State.MassIncome = 1
+economy.State.SmoothedMassIncome = 1
+manager:ApplyTierPolicy()
+assert(
+    mainlineBuilder.Priority == 500,
+    "suppression must not apply when the Tech 2 upgrade is unaffordable"
+)
+
+-- Against a Tech 2 enemy, Tech 1 mainline remains a reasonable trade.
+manager.Intel.HighestObservedTech = 2
+economy.State.MassIncome = 20
+economy.State.SmoothedMassIncome = 20
+manager:ApplyTierPolicy()
+assert(
+    mainlineBuilder.Priority == 500,
+    "Tech 1 mainline must remain eligible against an observed Tech 2 enemy"
+)
+manager.Intel.HighestObservedTech = 1
+
+-- Transports are excluded from combat waves and garrisons, so a surplus does
+-- nothing but sit still. The budget caps the fleet; falling back under it must
+-- restore production.
+local transportBuilder = {
+    Priority = 400,
+    OriginalPriority = 400,
+    RedQueenUnitProfile = { Tier = 1, Domain = "Air", Role = "Transport" },
+    SetPriority = function(self, priority) self.Priority = priority end,
+}
+brain.BuilderManagers.MAIN.FactoryManager.BuilderData.Air = {
+    Builders = { transportBuilder },
+}
+transportCount = 3
+manager:UpdateTierPolicy({})
+manager:ApplyTierPolicy()
+assert(
+    transportBuilder.Priority == 400,
+    "transport production must run while the fleet is under budget"
+)
+transportCount = 10
+manager:UpdateTierPolicy({})
+manager:ApplyTierPolicy()
+assert(
+    transportBuilder.Priority == 0,
+    "transport production must stop once the fleet reaches its budget"
+)
+transportCount = 4
+manager:UpdateTierPolicy({})
+manager:ApplyTierPolicy()
+assert(
+    transportBuilder.Priority == 400,
+    "losing transports must restore production below the budget"
+)
+brain.BuilderManagers.MAIN.FactoryManager.BuilderData.Air = nil
+transportCount = 0
+
 local forwardSite = {
     Name = "Forward Marker 1",
     Type = "Expansion Area",
@@ -457,6 +629,35 @@ assert(not manager:StartForwardBase(engineer, emptySite), "an empty construction
 assert(table.getn(expansionCalls) == 2, "an empty queue must not create an expansion manager")
 assert(table.getn(manager.ForwardBases) == 2, "an empty queue must not leave a forward-base record")
 assert(not manager.ForwardBaseClaims[emptySite.Name], "an empty queue must release its site claim")
+
+-- An engine rejection inside AIExecuteBuildStructure must be contained. Before
+-- this contract existed, one unbuildable site aborted the whole production task
+-- and leaked a record plus a permanent site claim on every retry.
+buildAllowed = true
+buildRaises = true
+local raisingSite = {
+    Name = "Forward Marker 4",
+    Type = "Expansion Area",
+    Position = { 400, 0, 400 },
+    RouteThreat = 6,
+}
+local sequenceBeforeRaise = manager.ForwardBaseSequence
+manager.LastForwardBaseTick = -100000
+local raiseCompleted, raiseResult = pcall(manager.StartForwardBase, manager, engineer, raisingSite)
+assert(raiseCompleted, "an engine rejection must not escape StartForwardBase")
+assert(not raiseResult, "an engine rejection must report failure")
+assert(table.getn(manager.ForwardBases) == 2, "an engine rejection must not leave a forward-base record")
+assert(not manager.ForwardBaseClaims[raisingSite.Name], "an engine rejection must not claim its site")
+assert(
+    manager.ForwardBaseSequence == sequenceBeforeRaise,
+    "an engine rejection must not consume a base name"
+)
+assert(
+    manager.LastForwardBaseTick ~= -100000,
+    "a rejected attempt must still advance the cooldown so it is not retried immediately"
+)
+assert(table.getn(expansionCalls) == 2, "an engine rejection must not register an expansion")
+buildRaises = false
 
 forwardFactory.Dead = true
 manager:UpdateForwardBaseStatus()

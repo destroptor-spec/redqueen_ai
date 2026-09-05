@@ -156,6 +156,46 @@ AIBrain = Class(AdaptiveBrain) {
         if self.RedQueenModules and self.RedQueenModules.Team then
             self.RedQueenModules.Team:Destroy()
         end
+        self:RedQueenRetireBuilders()
+    end,
+
+    -- Retire every builder group Red Queen registered with FAF's managers.
+    --
+    -- Stopping the scheduler leaves those builders in place, and FAF keeps
+    -- evaluating their conditions against a location whose managers the defeat
+    -- has already torn down. That is where match 27741743's 76 "Invalid
+    -- location" warnings came from: they all name Large Expansion Area 1 and 2,
+    -- the two locations army 4 registered, and they all appear after its
+    -- defeat. FAF's GetHighestBuilder skips any builder below priority 1 before
+    -- it evaluates conditions, so retiring them at zero is enough.
+    RedQueenRetireBuilders = function(self)
+        local managers = self.BuilderManagers
+        if not managers then
+            return
+        end
+        for _, manager in pairs(managers) do
+            for _, subManager in pairs({
+                manager and manager.EngineerManager,
+                manager and manager.FactoryManager,
+                manager and manager.PlatoonFormManager,
+            }) do
+                for _, data in pairs(subManager.BuilderData or {}) do
+                    for _, builder in pairs(data.Builders or {}) do
+                        local name = builder.BuilderName
+                        if type(name) == "string"
+                            and string.sub(name, 1, 10) == "Red Queen "
+                        then
+                            builder.RedQueenRetired = true
+                            if builder.SetPriority then
+                                builder:SetPriority(0)
+                            else
+                                builder.Priority = 0
+                            end
+                        end
+                    end
+                end
+            end
+        end
     end,
 
     OnVictory = function(self)
