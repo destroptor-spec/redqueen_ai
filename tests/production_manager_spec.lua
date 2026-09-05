@@ -8,32 +8,59 @@ function ClassSimple(definition)
     })
 end
 
-local categoryMetatable = {
-    __sub = function(left, right)
-        return { EngineerOnly = left == categories.ENGINEER and right == categories.COMMAND }
+local categoryMetatable = {}
+local function Category(matches)
+    return setmetatable({ Matches = matches }, categoryMetatable)
+end
+categoryMetatable.__mul = function(left, right)
+    return Category(function(hash) return left.Matches(hash) and right.Matches(hash) end)
+end
+categoryMetatable.__add = function(left, right)
+    return Category(function(hash) return left.Matches(hash) or right.Matches(hash) end)
+end
+categoryMetatable.__sub = function(left, right)
+    return Category(function(hash) return left.Matches(hash) and not right.Matches(hash) end)
+end
+categories = setmetatable({}, {
+    __index = function(value, key)
+        local category = Category(function(hash) return hash[key] == true end)
+        rawset(value, key, category)
+        return category
     end,
-}
-
-categories = {
-    ENGINEER = setmetatable({}, categoryMetatable),
-    COMMAND = setmetatable({}, categoryMetatable),
-    STRUCTURE = 1,
-    FACTORY = 1,
-    DEFENSE = 1,
-    DIRECTFIRE = 1,
-}
+})
 
 function EntityCategoryContains(category, unit)
-    return category.EngineerOnly and unit.IsEngineer and not unit.IsCommander
+    return category.Matches({ ENGINEER = unit.IsEngineer, COMMAND = unit.IsCommander })
 end
+
+local counterModule
+local counterDefinitions = {}
+function Builder(definition)
+    counterDefinitions[definition.BuilderName] = definition
+    return definition
+end
+function BuilderGroup(definition) return definition end
+function PlatoonTemplate(definition) return definition end
 
 local captured = nil
 local buildAllowed = true
+local buildRaises = false
 local expansionFailure = false
 local expansionCalls = {}
 local buildStructures = {
     AIExecuteBuildStructure = function(...)
         captured = { ... }
+        -- FAF forwards argument 4 (closeToBuilder) straight into
+        -- aiBrain:FindPlaceToBuild, whose matching parameter is a game object.
+        -- A boolean there makes the engine raise "Expected a game object" and
+        -- kill the calling scheduler task, so the stub refuses to accept one.
+        assert(
+            type(captured[4]) ~= "boolean",
+            "closeToBuilder is a game-object slot and must never receive a boolean"
+        )
+        if buildRaises then
+            error("simulated engine rejection: Expected a game object")
+        end
         return buildAllowed
     end,
     AIBuildBaseTemplateFromLocation = function(template)
@@ -83,10 +110,17 @@ local constants = {
         ForwardBaseSiteRadius = 60,
         ForwardBaseCooldownSeconds = 120,
         ForwardBaseDiagnosticSeconds = 60,
+        ForwardBaseRecordRetentionSeconds = 300,
+        ForwardBaseEstablishSeconds = 900,
+        ForwardBaseSourceMinimumEngineers = 2,
+        FactoryCapDiagnosticSeconds = 60,
+        MaximumManagedBases = 8,
+        MaximumTransports = 10,
         ForwardBaseMinimumMassIncome = 4,
         ForwardBaseMinimumEnergyIncome = 40,
         Tech2MinimumMassIncome = 4,
         Tech2MinimumEnergyIncome = 60,
+        StrategicFocusMinimumScore = 35,
     },
 }
 local logger = {
@@ -109,7 +143,11 @@ function import(path)
     elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/Logger.lua" then
         return logger
     elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/CounterBuilders.lua" then
-        return {}
+        if not counterModule then
+            counterModule = setmetatable({}, { __index = _G })
+            setfenv(assert(loadfile("lua/AI/RedQueen/CounterBuilders.lua")), counterModule)()
+        end
+        return counterModule
     elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/FortificationBuilders.lua" then
         return {}
     end
@@ -140,6 +178,9 @@ local engineer = {
     EntityId = 2,
     IsEngineer = true,
     IsCommander = false,
+    -- AINewExpansionBase hands the engineer to the new base through its own
+    -- manager, so a forward-base engineer must always have one.
+    BuilderManagerData = { EngineerManager = {} },
     IsIdleState = function() return true end,
     CanBuild = function() return true end,
     GetBlueprint = function()
@@ -162,10 +203,22 @@ local forwardFactory = {
     GetArmy = function() return 1 end,
     GetPosition = function() return { 128, 0, 128 } end,
 }
+local transportCount = 0
+local gunshipCount = 0
 local brain = {
     Army = 1,
     Name = "ARMY_1",
     GetArmyIndex = function() return 1 end,
+    GetCurrentUnits = function(_, category)
+        local total = 0
+        if category.Matches({ AIR = true, MOBILE = true, TRANSPORTFOCUS = true }) then
+            total = total + transportCount
+        end
+        if category.Matches({ AIR = true, MOBILE = true, TRANSPORTFOCUS = true, GROUNDATTACK = true }) then
+            total = total + gunshipCount
+        end
+        return total
+    end,
     GetPlatoonUniquelyNamed = function() return pool end,
     GetUnitsAroundPoint = function()
         if forwardFactory.Dead then
@@ -192,6 +245,11 @@ local economy = {
     State = {
         DesiredFactories = 3,
         MassIncome = 8,
+        EnergyIncome = 100,
+        MassStoredRatio = 0.2,
+        EnergyStoredRatio = 0.2,
+        MassTrend = 0,
+        EnergyTrend = 0,
         StallRisk = false,
     },
     CanExpandProduction = function() return true end,
@@ -203,13 +261,77 @@ local strategy = {
         Air = 0.30,
         Naval = 0.15,
         DefenseAlert = { Active = false },
+        FocusWeights = { Tech2 = 70 },
     },
 }
+
+brain.RedQueenModules = { Economy = economy, World = world, Strategy = strategy }
 
 dofile("lua/AI/RedQueen/ProductionManager.lua")
 
 local manager = Create(brain, { FactionIndex = 1, ArmyDeficit = 2 }, world, economy, {}, strategy)
 assert(manager:FindForwardEngineer() == engineer, "destroyed ArmyPool engineers must be skipped safely")
+
+-- Base managers are the real engineer supply: EngineerManager:AddUnit claims
+-- every new engineer, so ArmyPool holds one or two in transit. Sourcing only
+-- from the pool blocked 82 forward-base attempts on no-idle-engineer.
+local function ManagedEngineer(entityId, tier, idle)
+    return {
+        EntityId = entityId,
+        IsEngineer = true,
+        IsCommander = false,
+        BuilderManagerData = { EngineerManager = {} },
+        IsIdleState = function() return idle end,
+        CanBuild = function() return true end,
+        GetBlueprint = function()
+            return { CategoriesHash = { ["TECH" .. tostring(tier)] = true } }
+        end,
+    }
+end
+
+local baseEngineers = {}
+local sourceManager = {
+    GetUnits = function() return baseEngineers end,
+    GetLocationCoords = function() return { 64, 0, 64 } end,
+}
+brain.BuilderManagers.SOURCE = { EngineerManager = sourceManager }
+
+-- At the retention floor nothing may be taken: a base must keep working.
+baseEngineers = { ManagedEngineer(60, 3, false), ManagedEngineer(61, 3, false) }
+poolUnits = { commander, destroyedEngineer }
+assert(
+    manager:FindForwardEngineer() == nil,
+    "a base at its engineer retention floor must not be stripped"
+)
+
+-- Above the floor the surplus becomes available, even though none is idle.
+baseEngineers = {
+    ManagedEngineer(60, 3, false), ManagedEngineer(61, 3, false),
+    ManagedEngineer(62, 3, false),
+}
+local sourced = manager:FindForwardEngineer()
+assert(sourced, "a base above its retention floor must supply a forward-base engineer")
+assert(sourced.EntityId == 60, "manager sourcing must be deterministic")
+
+-- An idle engineer costs nothing to take, so it wins over a busy higher tier.
+baseEngineers = {
+    ManagedEngineer(60, 3, false), ManagedEngineer(61, 3, false),
+    ManagedEngineer(62, 3, false), ManagedEngineer(63, 1, true),
+}
+assert(
+    manager:FindForwardEngineer().EntityId == 63,
+    "an idle engineer must be preferred over one taken off base duty"
+)
+
+-- Emergency defense outranks forward-base construction.
+baseEngineers[4].RedQueenEmergencyDefenseUntil = 100000
+assert(
+    manager:FindForwardEngineer().EntityId ~= 63,
+    "an engineer held for emergency defense must not be taken"
+)
+
+brain.BuilderManagers.SOURCE = nil
+poolUnits = { commander, engineer, destroyedEngineer }
 manager:RegisterCounterBuilders()
 assert(table.getn(addedCounterGroups) == 0, "custom builders must wait for FAF's native base setup")
 ScenarioInfo.ArmySetup.ARMY_1.AIBase = "RushMainBalanced"
@@ -224,7 +346,7 @@ manager:TryExpandFactoryCapacity({ Total = 1, Land = 1, Air = 0, Naval = 0 })
 
 assert(captured, "sustainable deficit should request a factory")
 assert(captured[2] == engineer, "custom capacity must use an idle non-commander engineer")
-assert(captured[4] == false, "factory placement must not follow an arbitrary builder")
+assert(captured[4] == nil, "factory placement must not follow an arbitrary builder")
 assert(captured[5] == false, "base placement must use the engine's absolute result")
 assert(manager.FillIdleFactories == nil, "adaptive factory manager must remain the only unit-queue owner")
 
@@ -270,6 +392,79 @@ local ratchetCounts = { Total = 3, Land = 1, Air = 1, Naval = 1 }
 manager:ApplyFactoryCapacityPolicy(ratchetCounts)
 assert(ratchetCounts.TargetTotal == 2, "an existing off-demand factory must not ratchet the sustainable factory total upward")
 assert(navalFactoryBuilder.Priority == 0, "an off-demand domain must stay capped even once it already owns a factory")
+
+-- FAF ships two kinds of builder that both mention a factory. The pure ones
+-- build only a factory. The mixed ones create a whole expansion or naval base
+-- and list a factory as one late line item; capping those on factory count
+-- stopped the AI taking and holding ground in match 27741743.
+local expansionPackageBuilder = {
+    Priority = 850,
+    OriginalPriority = 850,
+    RedQueenConstructionTypes = {
+        "T1GroundDefense", "T1Radar", "T2AADefense", "T2GroundDefense",
+        "T2StrategicMissile", "T1LandFactory", "T2ShieldDefense",
+    },
+    SetPriority = function(self, priority) self.Priority = priority end,
+}
+local navalPackageBuilder = {
+    Priority = 850,
+    OriginalPriority = 850,
+    RedQueenConstructionTypes = {
+        "T1SeaFactory", "T1AADefense", "T1NavalDefense", "T1Sonar",
+    },
+    SetPriority = function(self, priority) self.Priority = priority end,
+}
+brain.BuilderManagers.MAIN.EngineerManager.BuilderData.Any.Builders = {
+    landFactoryBuilder,
+    airFactoryBuilder,
+    navalFactoryBuilder,
+    expansionPackageBuilder,
+    navalPackageBuilder,
+}
+
+-- Map still offers unclaimed base sites: the base-creating builders must run
+-- however saturated their factory domain already is.
+world.ForwardBaseCandidates = { {}, {}, {} }
+economy.State.DesiredFactories = 2
+manager:ApplyFactoryCapacityPolicy({ Total = 4, Land = 3, Air = 1, Naval = 1 })
+assert(
+    expansionPackageBuilder.Priority == 850,
+    "an expansion package must not be capped on factory count while base slots remain"
+)
+assert(
+    navalPackageBuilder.Priority == 850,
+    "a naval base package must not be capped on factory count while base slots remain"
+)
+assert(
+    landFactoryBuilder.Priority == 0,
+    "a pure factory builder must still be capped when its domain is saturated"
+)
+
+-- Base slots exhausted: the expansion package has no further ground to take,
+-- so its incidental factory may now be capped like any other.
+world.ForwardBaseCandidates = {}
+manager:ApplyFactoryCapacityPolicy({ Total = 4, Land = 3, Air = 1, Naval = 1 })
+assert(
+    expansionPackageBuilder.Priority == 0,
+    "an expansion package must be capped once the map has no unclaimed base slots"
+)
+assert(
+    navalPackageBuilder.Priority == 0,
+    "a naval base package must be capped once the map has no unclaimed base slots"
+)
+
+-- Restoring base slots must release the mixed builders again.
+world.ForwardBaseCandidates = { {}, {}, {} }
+manager:ApplyFactoryCapacityPolicy({ Total = 4, Land = 3, Air = 1, Naval = 1 })
+assert(
+    expansionPackageBuilder.Priority == 850,
+    "a mixed builder must recover its original priority when base slots return"
+)
+world.ForwardBaseCandidates = nil
+brain.BuilderManagers.MAIN.EngineerManager.BuilderData.Any.Builders = {
+    landFactoryBuilder, airFactoryBuilder, navalFactoryBuilder,
+}
+economy.State.DesiredFactories = 3
 
 local expansionTargets = { Land = 2, Air = 1, Naval = 0, Total = 3 }
 assert(
@@ -407,6 +602,205 @@ manager:ApplyTierPolicy()
 assert(mainlineBuilder.Priority == 500, "losing higher-tier access must restore lower-tier production")
 assert(shieldBuilder.Priority == 500, "support priorities must restore with the domain tier")
 
+-- A domain reduced to Tech 1 while the enemy is observed at Tech 3 must not
+-- pour mass into units that cannot trade. Suppressing the obsolete mainline
+-- leaves the surviving factory free to upgrade instead.
+local t1LandFactory = {
+    GetBlueprint = function()
+        return { CategoriesHash = { LAND = true, FACTORY = true, TECH1 = true } }
+    end,
+}
+manager:UpdateTierPolicy({ t1LandFactory })
+manager.Intel.HighestObservedTech = 3
+economy.State.MassIncome = 20
+economy.State.SmoothedMassIncome = 20
+economy.State.StallRisk = false
+manager:ApplyTierPolicy()
+assert(
+    mainlineBuilder.Priority == 0,
+    "Tech 1 mainline must be suppressed when the enemy is observed at Tech 3"
+)
+assert(
+    shieldBuilder.Priority == 500,
+    "specialist lower-tier roles must survive the Tech 1 mainline suppression"
+)
+
+-- A brain that cannot afford the upgrade must keep building something.
+economy.State.StallRisk = true
+manager:ApplyTierPolicy()
+assert(
+    mainlineBuilder.Priority == 500,
+    "a stalled brain must not be left with nothing its factories can build"
+)
+economy.State.StallRisk = false
+-- Check both native upgrade builders and production against the same state.
+local t2Condition = counterDefinitions["Red Queen T1 Land Factory Tech"].BuilderConditions[1][1]
+local function CheckFallback(expectedUpgrade, message)
+    manager:ApplyTierPolicy()
+    assert((t2Condition(brain) or false) == expectedUpgrade, message .. " (upgrade)")
+    assert(mainlineBuilder.Priority == (expectedUpgrade and 0 or 500), message .. " (production)")
+end
+economy.State.MassIncome = 4
+economy.State.EnergyIncome = 10
+CheckFallback(false, "4 mass and 10 energy cannot support a T2 upgrade")
+economy.State.EnergyIncome = 60
+CheckFallback(true, "meeting the exact income thresholds permits the upgrade")
+strategy.ProductionDemand.DefenseAlert.Active = true
+CheckFallback(false, "an active defense alert preserves fallback production")
+strategy.ProductionDemand.DefenseAlert.Active = false
+economy.State.MassStoredRatio = 0.09
+economy.State.MassTrend = -1
+CheckFallback(false, "low mass reserves with a negative trend block suppression")
+economy.State.MassTrend = 0
+CheckFallback(true, "a balanced trend permits low reserves")
+economy.State.EnergyStoredRatio = 0.14
+economy.State.EnergyTrend = -1
+CheckFallback(false, "low energy reserves with a negative trend block suppression")
+economy.State.EnergyStoredRatio = 0.15
+CheckFallback(true, "adequate energy reserves permit a negative trend")
+economy.State.EnergyTrend = 0
+strategy.ProductionDemand.FocusWeights.Tech2 = 34
+CheckFallback(false, "insufficient T2 focus preserves fallback production")
+strategy.ProductionDemand.FocusWeights.Tech2 = 70
+world.MapType = "Naval"
+CheckFallback(false, "a naval map cannot suppress land production for an irrelevant upgrade")
+world.MapType = "Land"
+CheckFallback(true, "restoring upgrade eligibility suppresses T1 mainline")
+for _, domain in ipairs({ "Air", "Naval" }) do
+    local condition = counterDefinitions["Red Queen T1 " .. domain .. " Factory Tech"].BuilderConditions[1][1]
+    local profile = { Tier = 1, Domain = domain, Role = "Mainline" }
+    for _, mapType in ipairs({ "Land", "Naval" }) do
+        world.MapType = mapType
+        local expected = domain == "Air" or mapType == "Naval"
+        assert((condition(brain) or false) == expected, "upgrade relevance must match the domain and map")
+        assert(manager:IsObsoleteProfile(profile) == expected, "suppression must use its own domain's eligibility")
+    end
+end
+world.MapType = "Land"
+
+economy.State.MassIncome = 1
+economy.State.SmoothedMassIncome = 1
+manager:ApplyTierPolicy()
+assert(
+    mainlineBuilder.Priority == 500,
+    "suppression must not apply when the Tech 2 upgrade is unaffordable"
+)
+
+-- Exercise blueprint classification rather than supplying preclassified roles.
+__blueprints = {
+    uel0104 = { CategoriesHash = { UEF = true, LAND = true, MOBILE = true, TECH1 = true, ANTIAIR = true } },
+    uea0203 = { CategoriesHash = { UEF = true, AIR = true, MOBILE = true, TECH2 = true,
+        GROUNDATTACK = true, TRANSPORTFOCUS = true, TRANSPORTATION = true } },
+    uea0104 = { CategoriesHash = { UEF = true, AIR = true, MOBILE = true, TECH1 = true,
+        TRANSPORTFOCUS = true, TRANSPORTATION = true } },
+}
+PlatoonTemplates = {}
+local function BlueprintBuilder(blueprintId, priority)
+    PlatoonTemplates[blueprintId] = { FactionSquads = { UEF = { { blueprintId } } } }
+    return {
+        Priority = priority,
+        GetPlatoonTemplate = function() return blueprintId end,
+        SetPriority = function(self, value) self.Priority = value end,
+    }
+end
+function EntityCategoryGetUnitList(category)
+    local result = {}
+    for blueprintId, blueprint in pairs(__blueprints) do
+        if category.Matches(blueprint.CategoriesHash) then
+            table.insert(result, blueprintId)
+        end
+    end
+    return result
+end
+local aaBuilder = BlueprintBuilder("uel0104", 450)
+table.insert(brain.BuilderManagers.MAIN.FactoryManager.BuilderData.Land.Builders, aaBuilder)
+economy.State.MassIncome = 20
+manager:ApplyTierPolicy()
+assert(mainlineBuilder.Priority == 0, "the AA regression must run with mainline suppression active")
+assert(aaBuilder.Priority == 450, "T1 mobile AA must survive mainline suppression")
+manager:UpdateTierPolicy({ t3LandFactory })
+manager:ApplyTierPolicy()
+assert(aaBuilder.Priority == 450, "AA must remain eligible without a same-domain replacement")
+__blueprints.uel0205 = { CategoriesHash = { UEF = true, LAND = true, MOBILE = true, TECH2 = true, ANTIAIR = true } }
+manager.RoleAvailability = {}
+manager:ApplyTierPolicy()
+assert(aaBuilder.Priority == 0, "an available higher-tier ground AA replacement retires T1 AA")
+manager:UpdateTierPolicy({})
+
+-- Against a Tech 2 enemy, Tech 1 mainline remains a reasonable trade.
+manager.Intel.HighestObservedTech = 2
+economy.State.MassIncome = 20
+economy.State.SmoothedMassIncome = 20
+manager:ApplyTierPolicy()
+assert(
+    mainlineBuilder.Priority == 500,
+    "Tech 1 mainline must remain eligible against an observed Tech 2 enemy"
+)
+manager.Intel.HighestObservedTech = 1
+
+-- Transports are excluded from combat waves and garrisons, so a surplus does
+-- nothing but sit still. The budget caps the fleet; falling back under it must
+-- restore production.
+local transportBuilder = BlueprintBuilder("uea0104", 400)
+local gunshipBuilder = BlueprintBuilder("uea0203", 800)
+brain.BuilderManagers.MAIN.FactoryManager.BuilderData.Air = {
+    Builders = { transportBuilder, gunshipBuilder },
+}
+gunshipCount = 10
+manager:UpdateTierPolicy({})
+manager:ApplyTierPolicy()
+assert(manager.TransportCount == 0, "ten UEF gunships must not consume the transport budget")
+assert(transportBuilder.Priority == 400, "gunships must not stop genuine transport production")
+assert(not manager:HasRoleAtTier("Air", "Transport", 2), "a gunship is not a T2 transport replacement")
+assert(manager:HasRoleAtTier("Air", "GroundAttack", 2), "the UEF gunship provides ground attack")
+transportCount = 3
+manager:UpdateTierPolicy({})
+manager:ApplyTierPolicy()
+assert(
+    transportBuilder.Priority == 400,
+    "transport production must run while the fleet is under budget"
+)
+transportCount = 10
+manager:UpdateTierPolicy({})
+manager:ApplyTierPolicy()
+assert(
+    transportBuilder.Priority == 0,
+    "transport production must stop once the fleet reaches its budget"
+)
+assert(gunshipBuilder.Priority == 800, "a full transport fleet must not disable the UEF gunship builder")
+transportCount = 4
+manager:UpdateTierPolicy({})
+manager:ApplyTierPolicy()
+assert(
+    transportBuilder.Priority == 400,
+    "losing transports must restore production below the budget"
+)
+brain.BuilderManagers.MAIN.FactoryManager.BuilderData.Air = nil
+transportCount = 0
+gunshipCount = 0
+
+local pruneManager = Create(brain, {}, world, economy, {}, strategy)
+for _, state in ipairs({ "Preparing", "Building", "Established" }) do
+    for _, reverse in ipairs({ false, true }) do
+        local expired = { State = "Destroyed", SiteName = "Rebuilt", DestroyedTick = -2000 }
+        local replacement = { State = state, SiteName = "Rebuilt" }
+        pruneManager.ForwardBases = reverse and { replacement, expired } or { expired, replacement }
+        pruneManager.ForwardBaseClaims = { Rebuilt = true }
+        pruneManager:PruneForwardBaseRecords()
+        assert(table.getn(pruneManager.ForwardBases) == 1, "the expired record must be pruned at retention")
+        assert(pruneManager.ForwardBases[1] == replacement, "the replacement record must remain")
+        assert(pruneManager.ForwardBaseClaims.Rebuilt, "a retained live replacement must keep its marker claim")
+    end
+end
+pruneManager.ForwardBases = {
+    { State = "Failed", SiteName = "Expired", FailedTick = -2000 },
+    { State = "Destroyed", SiteName = "Recent", DestroyedTick = -1999 },
+}
+pruneManager.ForwardBaseClaims = { Expired = true, Recent = true }
+pruneManager:PruneForwardBaseRecords()
+assert(not pruneManager.ForwardBaseClaims.Expired, "an expired unowned site must release its claim")
+assert(pruneManager.ForwardBaseClaims.Recent, "a terminal record within retention keeps its claim")
+
 local forwardSite = {
     Name = "Forward Marker 1",
     Type = "Expansion Area",
@@ -457,6 +851,35 @@ assert(not manager:StartForwardBase(engineer, emptySite), "an empty construction
 assert(table.getn(expansionCalls) == 2, "an empty queue must not create an expansion manager")
 assert(table.getn(manager.ForwardBases) == 2, "an empty queue must not leave a forward-base record")
 assert(not manager.ForwardBaseClaims[emptySite.Name], "an empty queue must release its site claim")
+
+-- An engine rejection inside AIExecuteBuildStructure must be contained. Before
+-- this contract existed, one unbuildable site aborted the whole production task
+-- and leaked a record plus a permanent site claim on every retry.
+buildAllowed = true
+buildRaises = true
+local raisingSite = {
+    Name = "Forward Marker 4",
+    Type = "Expansion Area",
+    Position = { 400, 0, 400 },
+    RouteThreat = 6,
+}
+local sequenceBeforeRaise = manager.ForwardBaseSequence
+manager.LastForwardBaseTick = -100000
+local raiseCompleted, raiseResult = pcall(manager.StartForwardBase, manager, engineer, raisingSite)
+assert(raiseCompleted, "an engine rejection must not escape StartForwardBase")
+assert(not raiseResult, "an engine rejection must report failure")
+assert(table.getn(manager.ForwardBases) == 2, "an engine rejection must not leave a forward-base record")
+assert(not manager.ForwardBaseClaims[raisingSite.Name], "an engine rejection must not claim its site")
+assert(
+    manager.ForwardBaseSequence == sequenceBeforeRaise,
+    "an engine rejection must not consume a base name"
+)
+assert(
+    manager.LastForwardBaseTick ~= -100000,
+    "a rejected attempt must still advance the cooldown so it is not retried immediately"
+)
+assert(table.getn(expansionCalls) == 2, "an engine rejection must not register an expansion")
+buildRaises = false
 
 forwardFactory.Dead = true
 manager:UpdateForwardBaseStatus()

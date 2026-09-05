@@ -39,10 +39,15 @@ local function CanInterrupt(previous, objective, tick)
     return objective.Priority >= previous.Priority + Constants.Policy.ObjectiveInterruptPriorityGap
 end
 
+-- Affordability is judged on the better of the instantaneous and the smoothed
+-- income, so a rising economy is not held back by smoothing lag and a single
+-- dipped sample cannot cancel a multi-minute investment decision.
 local function CanAfford(state, massIncome, energyIncome)
+    local mass = math.max(state.MassIncome, state.SmoothedMassIncome or 0)
+    local energy = math.max(state.EnergyIncome, state.SmoothedEnergyIncome or 0)
     return not state.StallRisk
-        and state.MassIncome >= massIncome
-        and state.EnergyIncome >= energyIncome
+        and mass >= massIncome
+        and energy >= energyIncome
 end
 
 local function BlueprintThreat(unit)
@@ -523,6 +528,8 @@ StrategyDirector = ClassSimple {
             MissingT3Coverage = 2,
             Experimentals = 0,
             Nukes = 0,
+            ExperimentalsUnderConstruction = 0,
+            NukesUnderConstruction = 0,
         }
         if not self.Brain.GetCurrentUnits or not categories then
             return result
@@ -530,6 +537,22 @@ StrategyDirector = ClassSimple {
 
         local function Count(category)
             return self.Brain:GetCurrentUnits(category) or 0
+        end
+
+        -- Incomplete units only. GetCurrentUnits counts finished ones too, and
+        -- a finished experimental must not keep asserting demand forever.
+        local function CountUnderConstruction(category)
+            if not self.Brain.GetListOfUnits then
+                return 0
+            end
+            local units = self.Brain:GetListOfUnits(category, false, false) or {}
+            local count = 0
+            for _, unit in pairs(units) do
+                if unit.GetFractionComplete and unit:GetFractionComplete() < 1 then
+                    count = count + 1
+                end
+            end
+            return count
         end
 
         local t2OrT3 = categories.TECH2 + categories.TECH3
@@ -545,6 +568,10 @@ StrategyDirector = ClassSimple {
         result.T3Engineers = Count(categories.ENGINEER * categories.TECH3)
         result.Experimentals = Count(categories.EXPERIMENTAL)
         result.Nukes = Count(categories.NUKE * categories.STRUCTURE)
+        result.ExperimentalsUnderConstruction = CountUnderConstruction(categories.EXPERIMENTAL)
+        result.NukesUnderConstruction = CountUnderConstruction(
+            categories.NUKE * categories.STRUCTURE
+        )
 
         local relevant = 0
         local t2Coverage = 0
@@ -577,11 +604,34 @@ StrategyDirector = ClassSimple {
             end
         end
 
-        local current = self.ProductionDemand.PrimaryFocus or "Army"
+        local demand = self.ProductionDemand
+        local current = demand.PrimaryFocus or "Army"
         local currentScore = weights[current] or 0
+
+        -- Downward hysteresis. An experimental or a nuclear launcher takes
+        -- minutes to build, so an endgame focus must hold for a dwell period
+        -- before it is abandoned for army or tier production. Without it the
+        -- focus tracked every several-second swing in alert state and no
+        -- project ever finished. Trading one endgame focus for the other is a
+        -- genuine strategic re-evaluation, not flapping, so it stays free.
+        local function IsEndgame(focus)
+            return focus == "Experimental" or focus == "Nuke"
+        end
+        if IsEndgame(current) and not IsEndgame(best) then
+            local since = GetGameTick() - (demand.PrimaryFocusTick or 0)
+            if currentScore > 0
+                and since < Constants.Policy.StrategicFocusDwellSeconds * 10
+            then
+                return current
+            end
+        end
+
         if currentScore < Constants.Policy.StrategicFocusMinimumScore
             or weights[best] >= currentScore + Constants.Policy.StrategicFocusSwitchMargin
         then
+            if best ~= current then
+                demand.PrimaryFocusTick = GetGameTick()
+            end
             return best
         end
         return current
@@ -647,9 +697,12 @@ StrategyDirector = ClassSimple {
             if lossPressure then tech2 = tech2 - 10 end
         end
 
+        -- Tech 3 is deliberately not gated on baseDanger. Local threat is the
+        -- normal condition of a contested midgame, and vetoing tier investment
+        -- whenever it appears is what left match 27741743 building 925 Tech 1
+        -- units against 669 Tech 3 across 73 minutes.
         local tech3 = 0
-        if not baseDanger
-            and forces.T2Factories > 0
+        if forces.T2Factories > 0
             and forces.MissingT3Coverage > 0
             and CanAfford(
                 state,
@@ -737,14 +790,49 @@ StrategyDirector = ClassSimple {
 
         local defenseAlert = self.DefenseAlert or { Active = false }
         if defenseAlert.Active then
+            -- Only a credible attack on the commander in Assassination is an
+            -- absolute veto: losing the ACU ends the match, so nothing else is
+            -- worth starting. Every other alert taxes endgame investment in
+            -- proportion to how badly the anchor is outmatched, rather than
+            -- zeroing it. The old binary veto held army 6 of match 27741743 at
+            -- zero experimental weight for all thirty of its alert samples
+            -- while it sat on 41-67 mass income, so it finished no project at
+            -- all across a 69-minute game.
+            local commanderEmergency = defenseAlert.AnchorKind == "Commander"
+                and self.Context.VictoryCondition == "Assassination"
             weights.Army = 100
-            weights.Experimental = 0
-            weights.Nuke = 0
             demand.PrimaryFocus = "Army"
-            demand.MajorProjectSlots = 0
-            demand.DesiredExperimentals = 0
-            demand.DesiredNukes = 0
-            demand.FocusReason = "defense-pressure"
+            if commanderEmergency then
+                weights.Tech3 = 0
+                weights.Experimental = 0
+                weights.Nuke = 0
+                demand.MajorProjectSlots = 0
+                demand.DesiredExperimentals = 0
+                demand.DesiredNukes = 0
+                demand.FocusReason = "commander-emergency"
+            else
+                local retention = math.max(
+                    Constants.Policy.DefenseAlertMinimumEndgameRetention,
+                    1 - (math.max(1, defenseAlert.Severity or 1) - 1)
+                        * Constants.Policy.DefenseAlertEndgameTaxPerSeverity
+                )
+                weights.Experimental = Score(weights.Experimental * retention)
+                weights.Nuke = Score(weights.Nuke * retention)
+                demand.MajorProjectSlots = math.min(
+                    demand.MajorProjectSlots,
+                    math.max(weights.Experimental, weights.Nuke)
+                        >= Constants.Policy.StrategicFocusMinimumScore and 1 or 0
+                )
+                demand.DesiredExperimentals = weights.Experimental
+                    >= Constants.Policy.StrategicFocusMinimumScore
+                    and math.min(demand.DesiredExperimentals, 1)
+                    or 0
+                demand.DesiredNukes = weights.Nuke
+                    >= Constants.Policy.StrategicFocusMinimumScore
+                    and math.min(demand.DesiredNukes, 1)
+                    or 0
+                demand.FocusReason = "defense-pressure"
+            end
         elseif baseDanger then
             demand.FocusReason = "base-danger"
         elseif demand.PrimaryFocus == "Tech2" or demand.PrimaryFocus == "Tech3" then
@@ -762,6 +850,28 @@ StrategyDirector = ClassSimple {
         else
             demand.FocusReason = "field-pressure"
         end
+
+        -- A pause gates new starts, never work already under way. Withdrawing
+        -- the target from a half-built experimental strands its engineers and
+        -- wastes everything already spent, which is how match 27741743 built
+        -- four experimentals in 73 minutes while flipping the target between
+        -- zero and two every few seconds.
+        demand.DesiredExperimentals = math.max(
+            demand.DesiredExperimentals,
+            forces.ExperimentalsUnderConstruction or 0
+        )
+        demand.DesiredNukes = math.max(
+            demand.DesiredNukes,
+            forces.NukesUnderConstruction or 0
+        )
+        -- Slots are a concurrency budget, so work in flight consumes one each.
+        -- Taking the maximum rather than the sum would leave an experimental
+        -- and a nuclear launcher sharing a single slot.
+        demand.MajorProjectSlots = math.max(
+            demand.MajorProjectSlots,
+            (forces.ExperimentalsUnderConstruction or 0)
+                + (forces.NukesUnderConstruction or 0)
+        )
     end,
 
     UpdateDemand = function(self, objective)

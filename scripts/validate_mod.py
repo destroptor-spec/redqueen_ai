@@ -93,6 +93,10 @@ fortification_source = (ROOT / "lua/AI/RedQueen/FortificationBuilders.lua").read
 combat_source = (ROOT / "lua/AI/RedQueen/CombatManager.lua").read_text(encoding="utf-8")
 context_source = (ROOT / "lua/AI/RedQueen/MatchContext.lua").read_text(encoding="utf-8")
 analyzer_source = (ROOT / "scripts/analyze-log.py").read_text(encoding="utf-8")
+if not re.search(r"(?m)^function ShouldTechToT2\(", counter_source):
+    fail("T2 upgrade eligibility must be exported for production policy")
+if "CounterBuilders.ShouldTechToT2(self.Brain, profile.Domain)" not in production_source:
+    fail("T1 suppression must share its domain's T2 upgrade eligibility")
 for required in ("GetBlip", "IsSeenNow", "IsSeenEver", "IsOnRadar"):
     if required not in intel_source:
         fail(f"verified intel contract is missing: {required}")
@@ -102,6 +106,63 @@ if "- categories.TRANSPORTFOCUS" not in combat_source:
     fail("combat waves must leave transports available to native transport plans")
 if "IsOwnedByBrain" not in production_source or "GetRebuildableForwardBaseSites" not in production_source:
     fail("forward-base lifecycle must enforce ownership and support destroyed-site rebuilding")
+# FAF forwards AIExecuteBuildStructure's fourth argument into
+# aiBrain:FindPlaceToBuild, whose matching parameter is a game object. Passing a
+# boolean makes the engine raise "Expected a game object" and kill the calling
+# scheduler task, so every call must go through the containing wrapper.
+direct_build_calls = re.findall(
+    r"AIBuildStructures\.AIExecuteBuildStructure",
+    production_source,
+)
+if len(direct_build_calls) != 1:
+    fail(
+        "AIExecuteBuildStructure must be reached only through the "
+        "ExecuteBuildStructure wrapper, which supplies a nil game-object "
+        "argument and contains engine rejections"
+    )
+if "local function ExecuteBuildStructure" not in production_source:
+    fail("the contained AIExecuteBuildStructure wrapper is missing")
+if "PruneForwardBaseRecords" not in production_source:
+    fail("forward-base records must be pruned so failures cannot accumulate")
+# The factory cap must never veto a builder whose real job is creating an
+# expansion or naval base; only builders that build nothing but factories.
+if "RedQueenFactoryPure" not in production_source:
+    fail("the factory cap must distinguish pure factory builders from base packages")
+if "ShouldSuppressLowTierMainline" not in production_source:
+    fail("Tech 1 mainline must be suppressed against an observed Tech 3 enemy")
+# Forward-base engineers come from base managers, not just ArmyPool, which FAF
+# drains by claiming every new engineer for a base.
+if "ForwardEngineerCandidates" not in production_source:
+    fail("forward-base engineers must be sourced from base managers, not ArmyPool alone")
+if "ForwardBaseSourceMinimumEngineers" not in production_source:
+    fail("sourcing an engineer must respect a per-base retention floor")
+# FAF's own T3 Sub Commander builder names an unregistered platoon template, so
+# Red Queen registers its own rather than inheriting a silent no-op.
+if 'Name = "RedQueenSupportCommander"' not in counter_source:
+    fail("support commander production needs its own registered platoon template")
+if 'PlatoonTemplate = "T3LandSubCommander"' in counter_source:
+    fail("T3LandSubCommander is not a registered FAF platoon template")
+if 'BuilderType = "Gate"' not in counter_source:
+    fail("support commanders must be produced by a Quantum Gateway factory builder")
+if "RedQueenSupportCommanderBuilders" not in production_source:
+    fail("the support commander builder group must be registered with the managers")
+brain_source = (ROOT / "lua/AI/RedQueenBrain.lua").read_text(encoding="utf-8")
+if "RedQueenRetireBuilders" not in brain_source:
+    fail("registered builders must be retired on teardown")
+if "RedQueenRetired" not in production_source:
+    fail("the builder priority guard must honour retirement")
+# The endgame veto must be graded, with the commander emergency as the only
+# absolute case; a blanket zeroing is what stalled V8's late game.
+if "commander-emergency" not in strategy_source:
+    fail("only a commander emergency may veto endgame investment absolutely")
+if "ExperimentalsUnderConstruction" not in strategy_source:
+    fail("a project under construction must never have its target withdrawn")
+combat_source_extra = combat_source
+if "CommitmentThreatRatio" not in combat_source_extra:
+    fail("offensive commitment must be gated on observed threat at the destination")
+economy_source = (ROOT / "lua/AI/RedQueen/EconomyManager.lua").read_text(encoding="utf-8")
+if "ArmyDeficit" in economy_source.split("CanExpandProduction", 1)[-1][:400]:
+    fail("factory expansion must not be gated on the army deficit")
 if 'GetNumCategoryUnits("Engineers", category)' not in fortification_source:
     fail("emergency engineer tier checks must use the location engineer manager")
 if 'BuilderName = "Red Queen Emergency T1 Point Defense"' not in fortification_source:

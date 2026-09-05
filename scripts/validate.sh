@@ -22,4 +22,5 @@ luajit tests/intel_manager_spec.lua
 luajit tests/production_manager_spec.lua
 luajit tests/strategy_director_spec.lua
 luajit tests/world_model_spec.lua
+python3 tests/analyze_log_spec.py
 echo "All Red Queen validation checks passed"

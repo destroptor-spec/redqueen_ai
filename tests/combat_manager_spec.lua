@@ -60,9 +60,12 @@ local constants = {
         UnitOrderLifetimeTicks = 50,
         ForwardBaseSiteRadius = 60,
         ForwardBaseGarrisonSeconds = 60,
+        CommitmentThreatRatio = 1.10,
+        CommitmentThreatRadius = 60,
+        CommitmentDiagnosticSeconds = 30,
     },
 }
-local logger = { Debug = function() end }
+local logger = { Debug = function() end, Info = function() end }
 
 function import(path)
     if path == "/mods/TheRedQueen/lua/AI/RedQueen/Constants.lua" then
@@ -88,6 +91,141 @@ assert(pressure[1].EntityId == 1, "task-force selection must remain deterministi
 local smallWave = manager:SelectTaskForce({ units[1], units[2], units[3] }, false)
 assert(table.getn(smallWave) == 3, "three available combat units must leave the pool as a wave")
 assert(not manager:SelectTaskForce({ units[1], units[2] }, false), "undersized offensive waves must still wait for one more unit")
+
+-- Tactical commitment gate. Feeding three-unit packets into a formed army is
+-- what produced 998 land units built against 141 kills in match 27741743.
+local observedThreat = 0
+local gatedManager = Create({}, {}, {}, {
+    Intel = { GetThreatNear = function() return observedThreat end },
+})
+local function ThreateningUnit(entityId, threat)
+    return {
+        EntityId = entityId,
+        GetBlueprint = function()
+            return { Defense = { SurfaceThreatLevel = threat } }
+        end,
+    }
+end
+local wave = {}
+for entityId = 1, 10 do
+    table.insert(wave, ThreateningUnit(entityId, 10))
+end
+local target = { Type = "Raid", Position = { 100, 0, 100 } }
+
+observedThreat = 0
+assert(
+    gatedManager:SelectTaskForce(wave, false, target),
+    "an undefended objective must be attacked immediately"
+)
+
+observedThreat = 500
+assert(
+    not gatedManager:SelectTaskForce(wave, false, target),
+    "an offensive wave must not commit below the threat ratio"
+)
+assert(
+    gatedManager:SelectTaskForce(wave, true, target),
+    "a defensive response must never be gated on enemy threat"
+)
+
+observedThreat = 50
+assert(
+    gatedManager:SelectTaskForce(wave, false, target),
+    "a wave that clears the threat ratio must commit"
+)
+
+-- Economy must never hold a unit back, only tactics.
+local economyStarved = Create({}, {}, { State = { StallRisk = true, MassIncome = 0 } }, {
+    Intel = { GetThreatNear = function() return 0 end },
+})
+assert(
+    economyStarved:SelectTaskForce(wave, false, target),
+    "a stalled economy must never hold existing combat units back"
+)
+
+-- A full task force always commits rather than hoarding past the cap.
+local fullWave = {}
+for entityId = 1, constants.Policy.MaximumTaskForceUnits + 20 do
+    table.insert(fullWave, ThreateningUnit(entityId, 1))
+end
+observedThreat = 100000
+assert(
+    gatedManager:SelectTaskForce(fullWave, false, target),
+    "a full task force must commit rather than hoard past the cap"
+)
+
+-- Selection is by contribution, with EntityId only breaking ties.
+local mixedWave = {
+    ThreateningUnit(1, 5),
+    ThreateningUnit(2, 90),
+    ThreateningUnit(3, 40),
+}
+observedThreat = 0
+local ordered = gatedManager:SelectTaskForce(mixedWave, false, target)
+assert(ordered[1].EntityId == 2, "the highest-contribution unit must lead the task force")
+assert(ordered[2].EntityId == 3, "task forces must be ordered by contribution")
+
+local tiedWave = { ThreateningUnit(7, 20), ThreateningUnit(4, 20), ThreateningUnit(9, 20) }
+local tied = gatedManager:SelectTaskForce(tiedWave, false, target)
+assert(tied[1].EntityId == 4, "equal contributions must fall back to a deterministic EntityId order")
+
+-- Integrate the actual intel calculation with dispatch: the objective's layer
+-- describes the target, and must not substitute for the attacking wave layer.
+local intelModule = setmetatable({}, { __index = _G })
+setfenv(assert(loadfile("lua/AI/RedQueen/IntelManager.lua")), intelModule)()
+local layerIntel = intelModule.Create({})
+local defense = { Land = 100, Air = 0, Naval = 0 }
+layerIntel.Observations = {
+    { Position = target.Position, Confidence = 1, Threat = defense },
+}
+local dispatchUnits = {}
+for _, layer in ipairs({ "Air", "Land", "Water", "Amphibious" }) do
+    for index = 1, 3 do
+        local hash = { [layer == "Water" and "NAVAL" or string.upper(layer)] = true }
+        table.insert(dispatchUnits, {
+            EntityId = table.getn(dispatchUnits) + 100,
+            IsCombat = true,
+            GetPosition = function() return { 0, 0, 0 } end,
+            GetBlueprint = function()
+                return { CategoriesHash = hash, Defense = { SurfaceThreatLevel = 1 } }
+            end,
+        })
+    end
+end
+local dispatchPool = { GetPlatoonUnits = function() return dispatchUnits end }
+local layerStrategy = { Intel = layerIntel, ProductionDemand = {}, CurrentObjective = target }
+local layerManager = Create(
+    { GetPlatoonUniquelyNamed = function() return dispatchPool end },
+    { CanPath = function() return true end }, {}, layerStrategy
+)
+target.Layer = "Land"
+local beforeDispatch = table.getn(aggressiveOrders)
+layerManager:Update()
+assert(table.getn(aggressiveOrders) == beforeDispatch + 1, "three bombers must raid ground-only point defense")
+assert(aggressiveOrders[beforeDispatch + 1].Units[1].EntityId == 100, "only the air wave can clear ground defense")
+
+defense.Land = 0
+defense.Air = 100
+for _, unit in ipairs(dispatchUnits) do unit.RedQueenOrderUntil = nil end
+beforeDispatch = table.getn(aggressiveOrders)
+layerManager:Update()
+assert(table.getn(aggressiveOrders) == beforeDispatch + 2, "land and amphibious waves must ignore AA-only threat")
+assert(not dispatchUnits[1].RedQueenOrderUntil, "bombers must wait against sufficient anti-air")
+for _, unit in ipairs(dispatchUnits) do unit.RedQueenOrderUntil = nil end
+target.Layer = "Water"
+beforeDispatch = table.getn(aggressiveOrders)
+layerManager:Update()
+assert(table.getn(aggressiveOrders) == beforeDispatch + 2, "water and amphibious waves must ignore AA-only threat")
+assert(dispatchUnits[7].RedQueenOrderUntil, "water dispatch must pass its wave layer into commitment")
+assert(not dispatchUnits[4].RedQueenOrderUntil, "ordinary land units cannot join water dispatch")
+for _, unit in ipairs(dispatchUnits) do unit.RedQueenOrderUntil = nil end
+target.DefenseLayers = { Land = true, Water = true, Amphibious = true }
+target.LayerPositions = { Land = target.Position, Water = target.Position, Amphibious = target.Position }
+beforeDispatch = table.getn(aggressiveOrders)
+layerManager:Update()
+assert(table.getn(aggressiveOrders) == beforeDispatch + 3, "layer-specific destinations must also use each wave's threat layer")
+-- Keep the subsequent independent dispatch fixtures' order counts local.
+aggressiveOrders = {}
 
 local fighter = {
     EntityId = 20,

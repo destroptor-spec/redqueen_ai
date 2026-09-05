@@ -125,7 +125,9 @@ local function DomainIsRelevant(aiBrain, domain)
     return mapType ~= "Land"
 end
 
-local function ShouldTechToT2(aiBrain, domain)
+-- Shared with production suppression so fallback units remain buildable
+-- whenever this domain's upgrade is ineligible.
+function ShouldTechToT2(aiBrain, domain)
     local demand, economy = GetDemand(aiBrain)
     local tier = demand
         and demand.TierPolicy
@@ -512,6 +514,34 @@ BuilderGroup {
             },
         },
     },
+    -- FAF gates the Quantum Gateway behind already owning more than one
+    -- experimental (T3 Gate Engineer, AIFactoryConstructionBuilders), which no
+    -- Red Queen match has ever reached: it built zero support commanders across
+    -- match 27741743 and its verification run while the two strongest humans
+    -- built 43 and 37. This gates on the tier and power that actually pay for a
+    -- gateway instead.
+    Builder {
+        BuilderName = "Red Queen Quantum Gateway",
+        PlatoonTemplate = "T3EngineerBuilder",
+        Priority = 910,
+        InstanceCount = 1,
+        BuilderType = "Any",
+        BuilderConditions = {
+            { InstantBuildConditions, "BrainNotLowPowerMode", {} },
+            { EconomyBuildConditions, "GreaterThanEconEfficiencyCombined", { 0.85, 1.0 } },
+            { UnitCountBuildConditions, "HaveGreaterThanUnitsWithCategory", { 0, categories.ENGINEER * categories.TECH3 } },
+            { UnitCountBuildConditions, "HaveGreaterThanUnitsWithCategory", { 1, categories.ENERGYPRODUCTION * categories.TECH3 } },
+            { UnitCountBuildConditions, "HaveLessThanUnitsWithCategory", { 1, categories.GATE * categories.STRUCTURE } },
+            { UnitCountBuildConditions, "UnitCapCheckLess", { 0.8 } },
+        },
+        BuilderData = {
+            Construction = {
+                BuildClose = true,
+                BuildStructures = { "T3QuantumGate" },
+                Location = "LocationType",
+            },
+        },
+    },
     Builder {
         BuilderName = "Red Queen Strategic Missile",
         PlatoonTemplate = "T3EngineerBuilder",
@@ -612,5 +642,40 @@ BuilderGroup {
             { EconomyBuildConditions, "GreaterThanEconEfficiencyOverTime", { 0.70, 0.95 } },
             { UnitCountBuildConditions, "LocationFactoriesBuildingLess", { "LocationType", 3, categories.AIR * categories.ANTIAIR - categories.BOMBER } },
         },
+    },
+}
+
+-- FAF's own T3 Sub Commander builder names PlatoonTemplate 'T3LandSubCommander',
+-- which is not a registered template -- only 'T3LandSubCommander1' exists, and
+-- that one is a three-unit HuntAI combat platoon. A support commander produced
+-- through it would never reach an engineer manager. This template produces a
+-- single support commander with no plan, so it returns to the pool, is claimed
+-- by a base manager like any other engineer, and becomes available to forward
+-- base construction with the highest build power on the field.
+PlatoonTemplate {
+    Name = "RedQueenSupportCommander",
+    FactionSquads = {
+        UEF = { { "uel0301", 1, 1, "support", "None" } },
+        Aeon = { { "ual0301", 1, 1, "support", "None" } },
+        Cybran = { { "url0301", 1, 1, "support", "None" } },
+        Seraphim = { { "xsl0301", 1, 1, "support", "None" } },
+    },
+}
+
+BuilderGroup {
+    BuilderGroupName = "RedQueenSupportCommanderBuilders",
+    BuildersType = "FactoryBuilder",
+
+    Builder {
+        BuilderName = "Red Queen Support Commander",
+        PlatoonTemplate = "RedQueenSupportCommander",
+        Priority = 900,
+        BuilderConditions = {
+            { InstantBuildConditions, "BrainNotLowMassMode", {} },
+            { EconomyBuildConditions, "GreaterThanEconEfficiencyOverTime", { 0.9, 1.1 } },
+            { UnitCountBuildConditions, "UnitCapCheckLess", { 0.8 } },
+            { UnitCountBuildConditions, "HaveLessThanUnitsWithCategory", { 6, categories.SUBCOMMANDER } },
+        },
+        BuilderType = "Gate",
     },
 }

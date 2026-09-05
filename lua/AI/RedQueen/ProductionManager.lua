@@ -5,7 +5,7 @@ local BuildingTemplates = import("/lua/buildingtemplates.lua")
 local Constants = import("/mods/TheRedQueen/lua/AI/RedQueen/Constants.lua")
 local Logger = import("/mods/TheRedQueen/lua/AI/RedQueen/Logger.lua")
 
-import("/mods/TheRedQueen/lua/AI/RedQueen/CounterBuilders.lua")
+local CounterBuilders = import("/mods/TheRedQueen/lua/AI/RedQueen/CounterBuilders.lua")
 import("/mods/TheRedQueen/lua/AI/RedQueen/FortificationBuilders.lua")
 
 local function FindBuildingId(buildingTemplate, buildingType)
@@ -65,6 +65,32 @@ local function HasExpansionBase(brain, baseName)
     return brain.BuilderManagers and brain.BuilderManagers[baseName] ~= nil
 end
 
+-- FAF's AIExecuteBuildStructure forwards its `closeToBuilder` argument straight
+-- into aiBrain:FindPlaceToBuild, whose matching parameter is a game object.
+-- Every FAF caller passes a unit or nil there. Lua `false` is a boolean, so the
+-- engine rejects it with "Expected a game object" and the error propagates out
+-- of the scheduler task. nil keeps the identical falsy control flow inside
+-- AIExecuteBuildStructure while satisfying the engine. The pcall contains any
+-- remaining engine rejection so one unbuildable site cannot abort the whole
+-- production pass.
+local function ExecuteBuildStructure(brain, builder, buildingType, buildingTemplate, baseTemplate, reference)
+    local completed, result = pcall(
+        AIBuildStructures.AIExecuteBuildStructure,
+        brain,
+        builder,
+        buildingType,
+        nil,
+        false,
+        buildingTemplate,
+        baseTemplate,
+        reference
+    )
+    if not completed then
+        return false, tostring(result)
+    end
+    return result and true or false, nil
+end
+
 local FactionNames = { "UEF", "Aeon", "Cybran", "Seraphim", "Nomads" }
 
 local function UnitTier(hash)
@@ -81,12 +107,12 @@ end
 
 local function UnitRole(hash)
     if hash.ENGINEER or hash.SCOUT then return "Utility" end
-    if hash.TRANSPORTFOCUS then return "Transport" end
+    if hash.TRANSPORTFOCUS and not hash.GROUNDATTACK then return "Transport" end
     if hash.SHIELD or hash.COUNTERINTELLIGENCE then return "Shield" end
     if hash.INDIRECTFIRE or hash.ARTILLERY or hash.TACTICALMISSILEPLATFORM then
         return "Artillery"
     end
-    if hash.AIR and hash.ANTIAIR and not hash.BOMBER then return "AirDefense" end
+    if (hash.AIR or hash.LAND) and hash.ANTIAIR and not hash.BOMBER then return "AirDefense" end
     if hash.AIR and hash.ANTINAVY then return "Torpedo" end
     if hash.AIR and hash.GROUNDATTACK then return "GroundAttack" end
     return "Mainline"
@@ -121,7 +147,12 @@ local function GuardBuilderPriority(builder)
     end
     builder.RedQueenOriginalCalculatePriority = builder.CalculatePriority
     builder.CalculatePriority = function(current, manager)
-        if current.RedQueenTierDisabled or current.RedQueenCapacityDisabled then
+        -- RedQueenRetired is set once at teardown and never cleared: a retired
+        -- builder must not be revived by FAF's own priority recalculation.
+        if current.RedQueenRetired
+            or current.RedQueenTierDisabled
+            or current.RedQueenCapacityDisabled
+        then
             local changed = current.Priority ~= 0
             current.Priority = 0
             return changed
@@ -136,10 +167,20 @@ local function DistanceSquared(a, b)
     return dx * dx + dz * dz
 end
 
+-- Returns the factory domains a builder can construct, and whether the builder
+-- is a *pure* factory builder.
+--
+-- FAF ships two very different kinds of builder that both mention a factory.
+-- The 20 pure ones (AIFactoryConstructionBuilders, AINavalBuilders) build
+-- exactly one structure: a factory. The 13 mixed ones (AIExpansionBuilders and
+-- two naval entries) create a whole expansion or naval base -- point defence,
+-- radar, anti-air, shields, tactical missiles -- with a factory as one late
+-- line item. Capping the mixed ones on factory count alone stops the AI taking
+-- and holding ground, which is what happened in match 27741743.
 local function BuilderConstructionDomains(builder)
     local cached = builder.RedQueenFactoryDomains
     if cached ~= nil then
-        return cached or nil
+        return cached or nil, builder.RedQueenFactoryPure
     end
     local structures = builder.RedQueenConstructionTypes
     if not structures and Builders and builder.BuilderName then
@@ -151,13 +192,18 @@ local function BuilderConstructionDomains(builder)
     end
     if not structures then
         builder.RedQueenFactoryDomains = false
-        return nil
+        builder.RedQueenFactoryPure = false
+        return nil, false
     end
 
     local domains = {}
     local found = false
+    local total = 0
+    local factories = 0
     for _, structureType in pairs(structures) do
+        total = total + 1
         if string.find(structureType, "Factory") then
+            factories = factories + 1
             if string.find(structureType, "Air") then
                 domains.Air = true
                 found = true
@@ -170,8 +216,10 @@ local function BuilderConstructionDomains(builder)
             end
         end
     end
+    local pure = found and factories == total
     builder.RedQueenFactoryDomains = found and domains or false
-    return found and domains or nil
+    builder.RedQueenFactoryPure = pure
+    return found and domains or nil, pure
 end
 
 ---@class RedQueenProductionManager
@@ -202,6 +250,8 @@ ProductionManager = ClassSimple {
         self.ForwardBaseSequence = 0
         self.LastForwardBaseBlockReason = nil
         self.LastForwardBaseBlockLogTick = -100000
+        self.LastFactoryCapSummary = ""
+        self.LastFactoryCapLogTick = -100000
     end,
 
     RegisterCounterBuilders = function(self)
@@ -257,6 +307,20 @@ ProductionManager = ClassSimple {
                         "RedQueenCounterFactoryBuilders"
                     )
                     manager.FactoryManager:SortBuilderList("Air")
+                end
+
+                -- "Gate" is a first-class factory type in FAF's
+                -- FactoryBuilderManager, which calls SetupNewFactory(unit, "Gate")
+                -- for a Quantum Gateway, so support commander production sorts
+                -- alongside the land, air and sea lists.
+                handles = manager.BuilderHandles or handles
+                if not handles.RedQueenSupportCommanderBuilders then
+                    AIAddBuilderTable.AddGlobalBuilderGroup(
+                        self.Brain,
+                        locationType,
+                        "RedQueenSupportCommanderBuilders"
+                    )
+                    manager.FactoryManager:SortBuilderList("Gate")
                 end
 
                 handles = manager.BuilderHandles or handles
@@ -357,6 +421,29 @@ ProductionManager = ClassSimple {
         return targets
     end,
 
+    -- How many managed base locations this map is worth. One main base plus one
+    -- per expansion-capable marker the world model found, bounded so a
+    -- marker-rich map cannot ask for an unbounded number of locations.
+    GetBaseAppetite = function(self)
+        local candidates = table.getn(
+            (self.World and self.World.ForwardBaseCandidates) or {}
+        )
+        return math.max(1, math.min(
+            Constants.Policy.MaximumManagedBases,
+            1 + candidates
+        ))
+    end,
+
+    CountManagedBases = function(self)
+        local count = 0
+        for _, manager in pairs(self.Brain.BuilderManagers or {}) do
+            if manager and manager.EngineerManager then
+                count = count + 1
+            end
+        end
+        return count
+    end,
+
     ApplyFactoryCapacityPolicy = function(self, counts)
         local targets = self:GetFactoryTargets(counts)
         counts.TargetTotal = targets.Total
@@ -367,19 +454,34 @@ ProductionManager = ClassSimple {
         end
         table.sort(locationTypes)
 
+        -- Mixed builders create bases, so they answer to the map's base
+        -- appetite rather than to the factory target.
+        local managedBases = self:CountManagedBases()
+        local baseAppetite = self:GetBaseAppetite()
+        local expansionSlotsRemaining = managedBases < baseAppetite
+        local mixedSkipped = 0
+
         for _, locationType in pairs(locationTypes) do
             local engineerManager = managers[locationType].EngineerManager
             if engineerManager and engineerManager.BuilderData then
                 for builderType, data in pairs(engineerManager.BuilderData) do
                     local changed = false
                     for _, builder in pairs(data.Builders or {}) do
-                        local domains = BuilderConstructionDomains(builder)
+                        local domains, pure = BuilderConstructionDomains(builder)
                         if domains then
                             local needed = false
                             for domain, _ in pairs(domains) do
                                 if (counts[domain] or 0) < (targets[domain] or 0) then
                                     needed = true
                                 end
+                            end
+                            -- A mixed builder's factory is incidental to the
+                            -- base it creates. It stays enabled while the map
+                            -- still has unclaimed base slots, however many
+                            -- factories its domain already holds.
+                            if not pure and expansionSlotsRemaining and not needed then
+                                needed = true
+                                mixedSkipped = mixedSkipped + 1
                             end
                             local disabled = not needed
                             if disabled and not builder.RedQueenCapacityDisabled then
@@ -412,6 +514,23 @@ ProductionManager = ClassSimple {
                 end
             end
         end
+
+        local summary = string.format(
+            "L%d/%d A%d/%d N%d/%d bases=%d/%d mixed=%d",
+            counts.Land or 0, targets.Land or 0,
+            counts.Air or 0, targets.Air or 0,
+            counts.Naval or 0, targets.Naval or 0,
+            managedBases, baseAppetite, mixedSkipped
+        )
+        local tick = GetGameTick()
+        if summary ~= self.LastFactoryCapSummary
+            and tick - self.LastFactoryCapLogTick
+                >= Constants.Policy.FactoryCapDiagnosticSeconds * 10
+        then
+            self.LastFactoryCapSummary = summary
+            self.LastFactoryCapLogTick = tick
+            Logger.Info(self.Brain, "factory cap " .. summary)
+        end
         return targets
     end,
 
@@ -433,6 +552,21 @@ ProductionManager = ClassSimple {
         end
         self.TierPolicy = policy
         self.Strategy.ProductionDemand.TierPolicy = policy
+
+        -- Counted once per pass and cached: IsObsoleteProfile runs per builder.
+        local previousTransports = self.TransportCount or 0
+        self.TransportCount = self.Brain.GetCurrentUnits
+            and self.Brain:GetCurrentUnits(categories.TRANSPORTFOCUS - categories.GROUNDATTACK)
+            or 0
+        local capped = self.TransportCount >= Constants.Policy.MaximumTransports
+        if capped ~= (previousTransports >= Constants.Policy.MaximumTransports) then
+            Logger.Info(self.Brain, string.format(
+                "transport budget %s count=%d cap=%d",
+                capped and "reached" or "released",
+                self.TransportCount,
+                Constants.Policy.MaximumTransports
+            ))
+        end
 
         local summary = string.format(
             "L%d/A%d/N%d",
@@ -469,7 +603,7 @@ ProductionManager = ClassSimple {
         local category = categories.MOBILE * domainCategory * categories["TECH" .. tostring(tier)]
             * factionCategory
         if role == "Transport" then
-            category = category * categories.TRANSPORTFOCUS
+            category = category * categories.TRANSPORTFOCUS - categories.GROUNDATTACK
         elseif role == "Shield" then
             category = category * (categories.SHIELD + categories.COUNTERINTELLIGENCE)
         elseif role == "Artillery" then
@@ -487,11 +621,45 @@ ProductionManager = ClassSimple {
         return available
     end,
 
+    -- Tech 1 mainline production against an observed Tech 3 enemy is mass
+    -- thrown away. UpdateTierPolicy only ever describes the highest *surviving*
+    -- factory, so a domain whose Tech 2 and Tech 3 factories have been killed
+    -- silently reverts to Tech 1 mainline -- which is how match 27741743 built
+    -- 925 Tech 1 units across 73 minutes while ending at tiers L3,A1,N1.
+    -- Suppressing the obsolete mainline leaves the surviving factory free to
+    -- take an upgrade instead. Gated on that domain's upgrade eligibility, so a
+    -- brain unable to upgrade retains fallback production, and scoped to Mainline
+    -- so specialist Tech 1 roles such as scouts and mobile anti-air survive.
+    ShouldSuppressLowTierMainline = function(self, profile, highest)
+        if profile.Role ~= "Mainline" or profile.Tier > 1 or highest > 1 then
+            return false
+        end
+        if (self.Intel.HighestObservedTech or 1) < 3 then
+            return false
+        end
+        return CounterBuilders.ShouldTechToT2(self.Brain, profile.Domain) or false
+    end,
+
     IsObsoleteProfile = function(self, profile)
         if not profile or profile.Role == "Utility" then
             return false
         end
+
+        -- Transports are excluded from combat waves and from forward-base
+        -- garrisons, so a surplus does nothing but sit still. Match 27741743
+        -- built 50 across three brains for zero kills, and a mirror match had
+        -- one brain holding 30 by minute 24. Cap the fleet and let FAF's own
+        -- transport plans work within it.
+        if profile.Role == "Transport"
+            and (self.TransportCount or 0) >= Constants.Policy.MaximumTransports
+        then
+            return true
+        end
+
         local highest = (self.TierPolicy[profile.Domain] or {}).Highest or 1
+        if self:ShouldSuppressLowTierMainline(profile, highest) then
+            return true
+        end
         if profile.Tier >= highest then
             return false
         end
@@ -827,7 +995,23 @@ ProductionManager = ClassSimple {
         local alert = self.Strategy.ProductionDemand.DefenseAlert
         local tick = GetGameTick()
         if not alert or not alert.Active or not alert.AnchorPosition then return end
-        if self:HasManagedEmergencyDefense(alert) then return end
+        if self:HasManagedEmergencyDefense(alert) then
+            -- Deferral is a decision, not inaction: the registered fortification
+            -- builders own this anchor. Match 27741743 logged nothing at all
+            -- here across nineteen defence alerts, so the log could not say
+            -- whether defences were being built or silently skipped.
+            if tick - self.LastEmergencyDefenseLogTick
+                >= Constants.Policy.EmergencyDefenseLogCooldownSeconds * 10
+            then
+                self.LastEmergencyDefenseLogTick = tick
+                Logger.Info(self.Brain, string.format(
+                    "emergency defense deferred anchor=%s manager=%s",
+                    tostring(alert.AnchorKind),
+                    tostring(alert.AnchorLocationType or "nearby")
+                ))
+            end
+            return
+        end
         if tick - self.LastEmergencyDefenseTick
             < Constants.Policy.EmergencyDefenseCooldownSeconds * 10
         then
@@ -893,15 +1077,21 @@ ProductionManager = ClassSimple {
             return
         end
 
-        local started = AIBuildStructures.AIExecuteBuildStructure(
+        local started, buildError = ExecuteBuildStructure(
             self.Brain,
             selectedEngineer,
             selectedType,
-            false,
-            false,
             buildingTemplate,
             movedTemplate
         )
+        if buildError then
+            Logger.Error(self.Brain, string.format(
+                "emergency defense build failed anchor=%s type=%s error=%s",
+                tostring(alert.AnchorKind),
+                selectedType,
+                buildError
+            ))
+        end
         if started then
             self.LastEmergencyDefenseTick = tick
             selectedEngineer.RedQueenEmergencyDefenseUntil = tick
@@ -948,15 +1138,20 @@ ProductionManager = ClassSimple {
             return
         end
 
-        local started = AIBuildStructures.AIExecuteBuildStructure(
+        local started, buildError = ExecuteBuildStructure(
             self.Brain,
             builder,
             buildingType,
-            false,
-            false,
             buildingTemplate,
             baseTemplate
         )
+        if buildError then
+            Logger.Error(self.Brain, string.format(
+                "production expansion failed type=%s error=%s",
+                buildingType,
+                buildError
+            ))
+        end
         if started then
             self.LastFactoryRequestTick = tick
             Logger.Info(self.Brain, string.format(
@@ -969,28 +1164,93 @@ ProductionManager = ClassSimple {
         end
     end,
 
-    FindForwardEngineer = function(self)
-        local pool = self.Brain:GetPlatoonUniquelyNamed("ArmyPool")
-        if not pool then
-            return nil
-        end
-        local engineers = {}
-        for _, unit in pairs(pool:GetPlatoonUnits()) do
-            if IsAvailable(unit)
-                and EntityCategoryContains(categories.ENGINEER - categories.COMMAND, unit)
+    -- Engineers are almost never in ArmyPool. EngineerManager:AddUnit claims
+    -- every newly built engineer for a base the moment it finishes, so the pool
+    -- holds one or two units in transit -- which is why match 27741743 and its
+    -- verification run blocked on no-idle-engineer 82 times while wanting six
+    -- factory assistants and finding one.
+    --
+    -- Base managers are the real supply, and taking an engineer from one is
+    -- FAF's own expansion flow: AINewExpansionBase already performs the
+    -- RemoveUnit/AddUnit handoff to the new base. A manager keeps a retention
+    -- floor so a base is never stripped of the engineers it needs to work.
+    --
+    -- Support commanders carry the ENGINEER category, so once one reaches a
+    -- manager it is selected here like any other engineer, with the highest
+    -- build power available.
+    ForwardEngineerCandidates = function(self)
+        local candidates = {}
+        local seen = {}
+        local tick = GetGameTick()
+
+        local function Consider(unit)
+            if not IsAlive(unit) or seen[unit.EntityId] then
+                return
+            end
+            if not EntityCategoryContains(categories.ENGINEER - categories.COMMAND, unit) then
+                return
+            end
+            -- AINewExpansionBase dereferences the engineer's manager, and an
+            -- engineer without one cannot hand itself over to the new base.
+            if not unit.BuilderManagerData or not unit.BuilderManagerData.EngineerManager then
+                return
+            end
+            if unit.RedQueenEmergencyDefenseUntil
+                and unit.RedQueenEmergencyDefenseUntil > tick
             then
-                table.insert(engineers, unit)
+                return
+            end
+            seen[unit.EntityId] = true
+            table.insert(candidates, {
+                Unit = unit,
+                Idle = (unit.IsIdleState and unit:IsIdleState()) and true or false,
+                Tech = UnitTech(unit),
+            })
+        end
+
+        local pool = self.Brain:GetPlatoonUniquelyNamed("ArmyPool")
+        for _, unit in pairs(pool and pool:GetPlatoonUnits() or {}) do
+            Consider(unit)
+        end
+
+        local managers = self.Brain.BuilderManagers or {}
+        local locationTypes = {}
+        for locationType, _ in pairs(managers) do
+            table.insert(locationTypes, locationType)
+        end
+        table.sort(locationTypes)
+        local floor = Constants.Policy.ForwardBaseSourceMinimumEngineers
+        for _, locationType in pairs(locationTypes) do
+            local engineerManager = managers[locationType].EngineerManager
+            if engineerManager and engineerManager.GetUnits then
+                local units = engineerManager:GetUnits(
+                    "Engineers",
+                    categories.ENGINEER - categories.COMMAND
+                ) or {}
+                -- Only one engineer is ever taken, so the floor decides whether
+                -- this base can spare one at all, not which one. Capping by
+                -- position instead would hide an idle engineer behind busy ones.
+                if table.getn(units) > floor then
+                    for _, unit in pairs(units) do
+                        Consider(unit)
+                    end
+                end
             end
         end
-        table.sort(engineers, function(a, b)
-            local aTech = UnitTech(a)
-            local bTech = UnitTech(b)
-            if aTech ~= bTech then
-                return aTech > bTech
-            end
-            return (a.EntityId or 0) < (b.EntityId or 0)
+        return candidates
+    end,
+
+    FindForwardEngineer = function(self)
+        local candidates = self:ForwardEngineerCandidates()
+        table.sort(candidates, function(a, b)
+            -- An idle engineer costs nothing to take. Beyond that the highest
+            -- tier wins, because the forward-base package scales with it.
+            if a.Idle ~= b.Idle then return a.Idle end
+            if a.Tech ~= b.Tech then return a.Tech > b.Tech end
+            return (a.Unit.EntityId or 0) < (b.Unit.EntityId or 0)
         end)
-        return engineers[1]
+        local selected = candidates[1]
+        return selected and selected.Unit or nil
     end,
 
     GetForwardBaseBlockReason = function(self, engineer)
@@ -1165,24 +1425,85 @@ ProductionManager = ClassSimple {
                 active.SiteName,
                 active.Tech
             ))
-        elseif not IsAlive(active.Engineer)
-            or GetGameTick() - active.StartTick
-                >= Constants.Policy.ForwardBaseCooldownSeconds * 30
-        then
-            active.State = "Failed"
-            self.ForwardBaseActive = nil
-            Logger.Info(self.Brain, string.format(
-                "forward base failed name=%s site=%s",
-                active.Name,
-                active.SiteName
-            ))
+        else
+            -- Separate the two failure modes. A dead engineer means the route
+            -- was not actually safe; a timeout means the package was queued but
+            -- never produced a factory. They call for different fixes, and
+            -- "failed" alone cannot tell them apart.
+            -- A base whose engineer is alive and whose expansion manager still
+            -- exists is simply still being built: the engineer has to travel to
+            -- a remote site before it can lay a factory. The old window was
+            -- ForwardBaseCooldownSeconds * 30, six minutes, which retired bases
+            -- that were alive and fighting -- RQFB_6_1 kept answering defence
+            -- alerts as an anchor for over twelve minutes after being recorded
+            -- as failed, and a retired record gets no garrison.
+            local engineerLost = not IsAlive(active.Engineer)
+            local managerLost = not HasExpansionBase(self.Brain, active.Name)
+            local elapsed = GetGameTick() - active.StartTick
+            local timedOut = elapsed
+                >= Constants.Policy.ForwardBaseEstablishSeconds * 10
+            if engineerLost or managerLost or timedOut then
+                local reason = engineerLost and "engineer-lost"
+                    or managerLost and "manager-lost"
+                    or "no-factory"
+                active.State = "Failed"
+                active.FailedTick = GetGameTick()
+                active.Failure = reason
+                self.ForwardBaseActive = nil
+                Logger.Info(self.Brain, string.format(
+                    "forward base failed name=%s site=%s reason=%s queued=%d elapsed=%.0fs routeThreat=%.1f",
+                    active.Name,
+                    active.SiteName,
+                    reason,
+                    active.Queued or 0,
+                    elapsed / 10,
+                    active.RouteThreat or 0
+                ))
+            end
         end
+    end,
+
+    -- Terminal records are kept only long enough for GetRebuildableForwardBaseSites
+    -- to offer the site back at close range. Beyond that they are dropped, so a
+    -- long match cannot accumulate records or stale claims without bound.
+    PruneForwardBaseRecords = function(self)
+        local tick = GetGameTick()
+        local retention = Constants.Policy.ForwardBaseRecordRetentionSeconds * 10
+        local retained = {}
+        local liveSites = {}
+        local expiredSites = {}
+        for _, base in pairs(self.ForwardBases) do
+            local terminalTick = base.FailedTick or base.DestroyedTick
+            if not terminalTick or tick - terminalTick < retention then
+                table.insert(retained, base)
+                if base.SiteName and (base.State == "Preparing"
+                    or base.State == "Building" or base.State == "Established")
+                then
+                    liveSites[base.SiteName] = true
+                end
+            elseif base.SiteName then
+                expiredSites[base.SiteName] = true
+            end
+        end
+        -- A replacement can own the same marker as an expired attempt.
+        -- Resolve all retained owners before releasing any shared claim.
+        for siteName, _ in pairs(expiredSites) do
+            if not liveSites[siteName] then
+                self.ForwardBaseClaims[siteName] = nil
+            end
+        end
+        self.ForwardBases = retained
     end,
 
     CountViableForwardBases = function(self)
         local count = 0
         for _, base in pairs(self.ForwardBases) do
-            if base.State == "Building" or base.State == "Established" then
+            -- Preparing counts too: an attempt in flight has already queued
+            -- structures and claimed its site, so it occupies a map slot.
+            if base.State == "Preparing"
+                or base.State == "Building"
+                or base.State == "Established"
+            then
                 count = count + 1
             end
         end
@@ -1197,23 +1518,66 @@ ProductionManager = ClassSimple {
             return false
         end
 
+        -- Throttle from the attempt, not from success. A site the engine
+        -- refuses must not be retried on the very next production pass.
+        self.LastForwardBaseTick = GetGameTick()
+
         local movedTemplate = AIBuildStructures.AIBuildBaseTemplateFromLocation(
             baseTemplate,
             site.Position
         )
         local tech = UnitTech(engineer)
         local package = self:ForwardBasePackage(tech)
-        self.ForwardBaseSequence = self.ForwardBaseSequence + 1
         local baseName = string.format(
             "RQFB_%d_%d",
             self.Brain:GetArmyIndex(),
-            self.ForwardBaseSequence
+            self.ForwardBaseSequence + 1
         )
         local constructionData = {
             ExpansionRadius = Constants.Policy.ForwardBaseSiteRadius,
             NearMarkerType = site.Type,
             BuildStructures = package,
         }
+
+        -- Nothing is recorded and no site is claimed until at least one
+        -- structure is actually queued, so a failed attempt leaves no leaked
+        -- record and no permanently claimed site behind.
+        local queued = 0
+        local buildError = nil
+        for _, buildingType in pairs(package) do
+            local started, failure = ExecuteBuildStructure(
+                self.Brain,
+                engineer,
+                buildingType,
+                buildingTemplate,
+                movedTemplate,
+                site.Position
+            )
+            if started then
+                queued = queued + 1
+            elseif failure then
+                buildError = buildError or failure
+            end
+        end
+        if queued == 0 then
+            Logger.Warning(self.Brain, string.format(
+                "forward base aborted site=%s reason=%s error=%s",
+                site.Name,
+                buildError and "engine-rejected" or "no-structures-queued",
+                tostring(buildError)
+            ))
+            return false
+        end
+        if buildError then
+            Logger.Warning(self.Brain, string.format(
+                "forward base partial site=%s queued=%d error=%s",
+                site.Name,
+                queued,
+                buildError
+            ))
+        end
+
+        self.ForwardBaseSequence = self.ForwardBaseSequence + 1
         local record = {
             Name = baseName,
             SiteName = site.Name,
@@ -1224,37 +1588,11 @@ ProductionManager = ClassSimple {
             Tech = tech,
             StartTick = GetGameTick(),
             State = "Preparing",
-            Queued = 0,
+            Queued = queued,
             Registered = false,
         }
         table.insert(self.ForwardBases, record)
         self.ForwardBaseClaims[site.Name] = true
-
-        for _, buildingType in pairs(package) do
-            if AIBuildStructures.AIExecuteBuildStructure(
-                self.Brain,
-                engineer,
-                buildingType,
-                false,
-                false,
-                buildingTemplate,
-                movedTemplate,
-                site.Position
-            ) then
-                record.Queued = record.Queued + 1
-            end
-        end
-        if record.Queued == 0 then
-            self.ForwardBaseClaims[site.Name] = nil
-            table.remove(self.ForwardBases, table.getn(self.ForwardBases))
-            Logger.Warning(self.Brain, string.format(
-                "forward base aborted name=%s site=%s reason=no-structures-queued",
-                baseName,
-                site.Name
-            ))
-            return false
-        end
-        self.LastForwardBaseTick = GetGameTick()
 
         local registrationCompleted, registrationError = pcall(
             AIBuildStructures.AINewExpansionBase,
@@ -1268,6 +1606,10 @@ ProductionManager = ClassSimple {
         if not registrationCompleted or not record.Registered then
             record.State = "Failed"
             record.Failure = "ExpansionRegistration"
+            -- The claim is kept: structures are already queued at the site, so
+            -- a second base must not target it. PruneForwardBaseRecords
+            -- releases it once the record ages out.
+            record.FailedTick = GetGameTick()
             Logger.Error(self.Brain, string.format(
                 "forward base registration failed name=%s site=%s queued=%d error=%s",
                 baseName,
@@ -1293,6 +1635,7 @@ ProductionManager = ClassSimple {
 
     UpdateForwardBases = function(self)
         self:UpdateForwardBaseStatus()
+        self:PruneForwardBaseRecords()
         local plan = {
             Active = self.ForwardBaseActive ~= nil,
             Sites = self.ForwardBases,
