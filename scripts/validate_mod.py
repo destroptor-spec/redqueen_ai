@@ -126,6 +126,22 @@ if "RedQueenFactoryPure" not in production_source:
     fail("the factory cap must distinguish pure factory builders from base packages")
 if "ShouldSuppressLowTierMainline" not in production_source:
     fail("Tech 1 mainline must be suppressed against an observed Tech 3 enemy")
+# Forward-base engineers come from base managers, not just ArmyPool, which FAF
+# drains by claiming every new engineer for a base.
+if "ForwardEngineerCandidates" not in production_source:
+    fail("forward-base engineers must be sourced from base managers, not ArmyPool alone")
+if "ForwardBaseSourceMinimumEngineers" not in production_source:
+    fail("sourcing an engineer must respect a per-base retention floor")
+# FAF's own T3 Sub Commander builder names an unregistered platoon template, so
+# Red Queen registers its own rather than inheriting a silent no-op.
+if 'Name = "RedQueenSupportCommander"' not in counter_source:
+    fail("support commander production needs its own registered platoon template")
+if 'PlatoonTemplate = "T3LandSubCommander"' in counter_source:
+    fail("T3LandSubCommander is not a registered FAF platoon template")
+if 'BuilderType = "Gate"' not in counter_source:
+    fail("support commanders must be produced by a Quantum Gateway factory builder")
+if "RedQueenSupportCommanderBuilders" not in production_source:
+    fail("the support commander builder group must be registered with the managers")
 brain_source = (ROOT / "lua/AI/RedQueenBrain.lua").read_text(encoding="utf-8")
 if "RedQueenRetireBuilders" not in brain_source:
     fail("registered builders must be retired on teardown")

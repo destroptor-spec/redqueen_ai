@@ -28,6 +28,12 @@ function BuilderGroup(definition)
     return definition
 end
 
+local platoonTemplates = {}
+function PlatoonTemplate(definition)
+    platoonTemplates[definition.Name] = definition
+    return definition
+end
+
 local constants = {
     Policy = {
         StrategicFocusMinimumScore = 35,
@@ -167,3 +173,40 @@ demand.MajorProjectSlots = 2
 assert(projectSlotCondition(brain), "exceptional safe headroom must allow a second major project")
 
 print("Red Queen counter builder contracts passed")
+
+-- Support commander production. FAF's own T3 Sub Commander builder names a
+-- platoon template that is not registered, and the one real SACU template is a
+-- three-unit HuntAI combat platoon whose units never reach an engineer manager.
+local sacuTemplate = platoonTemplates["RedQueenSupportCommander"]
+assert(sacuTemplate, "support commander production needs its own platoon template")
+assert(not sacuTemplate.Plan, "a support commander must return to the pool, not take a combat plan")
+for _, faction in pairs({ "UEF", "Aeon", "Cybran", "Seraphim" }) do
+    local squad = sacuTemplate.FactionSquads[faction]
+    assert(squad, "support commanders must be buildable by every faction: " .. faction)
+    assert(squad[1][2] == 1 and squad[1][3] == 1, "one support commander per platoon: " .. faction)
+end
+
+local sacuBuilder = builders["Red Queen Support Commander"]
+assert(sacuBuilder, "support commander builder must be registered")
+assert(sacuBuilder.BuilderType == "Gate", "support commanders are produced by a Quantum Gateway")
+assert(
+    sacuBuilder.PlatoonTemplate == "RedQueenSupportCommander",
+    "the support commander builder must use the registered template"
+)
+assert(groups["RedQueenSupportCommanderBuilders"], "support commander group must exist")
+assert(
+    groups["RedQueenSupportCommanderBuilders"].BuildersType == "FactoryBuilder",
+    "gateway production is factory production"
+)
+
+local gateway = builders["Red Queen Quantum Gateway"]
+assert(gateway, "a Quantum Gateway builder is required before support commanders can exist")
+local gatewayConditions = ""
+for _, condition in pairs(gateway.BuilderConditions) do
+    gatewayConditions = gatewayConditions .. tostring(condition[2])
+end
+assert(
+    not string.find(gatewayConditions, "Experimental"),
+    "the gateway must not inherit FAF's requirement to already own experimentals"
+)
+print("Red Queen support commander contracts passed")

@@ -309,6 +309,20 @@ ProductionManager = ClassSimple {
                     manager.FactoryManager:SortBuilderList("Air")
                 end
 
+                -- "Gate" is a first-class factory type in FAF's
+                -- FactoryBuilderManager, which calls SetupNewFactory(unit, "Gate")
+                -- for a Quantum Gateway, so support commander production sorts
+                -- alongside the land, air and sea lists.
+                handles = manager.BuilderHandles or handles
+                if not handles.RedQueenSupportCommanderBuilders then
+                    AIAddBuilderTable.AddGlobalBuilderGroup(
+                        self.Brain,
+                        locationType,
+                        "RedQueenSupportCommanderBuilders"
+                    )
+                    manager.FactoryManager:SortBuilderList("Gate")
+                end
+
                 handles = manager.BuilderHandles or handles
                 if manager.PlatoonFormManager
                     and not handles.RedQueenTechUpgradeBuilders
@@ -1155,28 +1169,93 @@ ProductionManager = ClassSimple {
         end
     end,
 
-    FindForwardEngineer = function(self)
-        local pool = self.Brain:GetPlatoonUniquelyNamed("ArmyPool")
-        if not pool then
-            return nil
-        end
-        local engineers = {}
-        for _, unit in pairs(pool:GetPlatoonUnits()) do
-            if IsAvailable(unit)
-                and EntityCategoryContains(categories.ENGINEER - categories.COMMAND, unit)
+    -- Engineers are almost never in ArmyPool. EngineerManager:AddUnit claims
+    -- every newly built engineer for a base the moment it finishes, so the pool
+    -- holds one or two units in transit -- which is why match 27741743 and its
+    -- verification run blocked on no-idle-engineer 82 times while wanting six
+    -- factory assistants and finding one.
+    --
+    -- Base managers are the real supply, and taking an engineer from one is
+    -- FAF's own expansion flow: AINewExpansionBase already performs the
+    -- RemoveUnit/AddUnit handoff to the new base. A manager keeps a retention
+    -- floor so a base is never stripped of the engineers it needs to work.
+    --
+    -- Support commanders carry the ENGINEER category, so once one reaches a
+    -- manager it is selected here like any other engineer, with the highest
+    -- build power available.
+    ForwardEngineerCandidates = function(self)
+        local candidates = {}
+        local seen = {}
+        local tick = GetGameTick()
+
+        local function Consider(unit)
+            if not IsAlive(unit) or seen[unit.EntityId] then
+                return
+            end
+            if not EntityCategoryContains(categories.ENGINEER - categories.COMMAND, unit) then
+                return
+            end
+            -- AINewExpansionBase dereferences the engineer's manager, and an
+            -- engineer without one cannot hand itself over to the new base.
+            if not unit.BuilderManagerData or not unit.BuilderManagerData.EngineerManager then
+                return
+            end
+            if unit.RedQueenEmergencyDefenseUntil
+                and unit.RedQueenEmergencyDefenseUntil > tick
             then
-                table.insert(engineers, unit)
+                return
+            end
+            seen[unit.EntityId] = true
+            table.insert(candidates, {
+                Unit = unit,
+                Idle = (unit.IsIdleState and unit:IsIdleState()) and true or false,
+                Tech = UnitTech(unit),
+            })
+        end
+
+        local pool = self.Brain:GetPlatoonUniquelyNamed("ArmyPool")
+        for _, unit in pairs(pool and pool:GetPlatoonUnits() or {}) do
+            Consider(unit)
+        end
+
+        local managers = self.Brain.BuilderManagers or {}
+        local locationTypes = {}
+        for locationType, _ in pairs(managers) do
+            table.insert(locationTypes, locationType)
+        end
+        table.sort(locationTypes)
+        local floor = Constants.Policy.ForwardBaseSourceMinimumEngineers
+        for _, locationType in pairs(locationTypes) do
+            local engineerManager = managers[locationType].EngineerManager
+            if engineerManager and engineerManager.GetUnits then
+                local units = engineerManager:GetUnits(
+                    "Engineers",
+                    categories.ENGINEER - categories.COMMAND
+                ) or {}
+                -- Only one engineer is ever taken, so the floor decides whether
+                -- this base can spare one at all, not which one. Capping by
+                -- position instead would hide an idle engineer behind busy ones.
+                if table.getn(units) > floor then
+                    for _, unit in pairs(units) do
+                        Consider(unit)
+                    end
+                end
             end
         end
-        table.sort(engineers, function(a, b)
-            local aTech = UnitTech(a)
-            local bTech = UnitTech(b)
-            if aTech ~= bTech then
-                return aTech > bTech
-            end
-            return (a.EntityId or 0) < (b.EntityId or 0)
+        return candidates
+    end,
+
+    FindForwardEngineer = function(self)
+        local candidates = self:ForwardEngineerCandidates()
+        table.sort(candidates, function(a, b)
+            -- An idle engineer costs nothing to take. Beyond that the highest
+            -- tier wins, because the forward-base package scales with it.
+            if a.Idle ~= b.Idle then return a.Idle end
+            if a.Tech ~= b.Tech then return a.Tech > b.Tech end
+            return (a.Unit.EntityId or 0) < (b.Unit.EntityId or 0)
         end)
-        return engineers[1]
+        local selected = candidates[1]
+        return selected and selected.Unit or nil
     end,
 
     GetForwardBaseBlockReason = function(self, engineer)

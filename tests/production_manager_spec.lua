@@ -97,6 +97,7 @@ local constants = {
         ForwardBaseDiagnosticSeconds = 60,
         ForwardBaseRecordRetentionSeconds = 300,
         ForwardBaseEstablishSeconds = 900,
+        ForwardBaseSourceMinimumEngineers = 2,
         FactoryCapDiagnosticSeconds = 60,
         MaximumManagedBases = 8,
         MaximumTransports = 10,
@@ -157,6 +158,9 @@ local engineer = {
     EntityId = 2,
     IsEngineer = true,
     IsCommander = false,
+    -- AINewExpansionBase hands the engineer to the new base through its own
+    -- manager, so a forward-base engineer must always have one.
+    BuilderManagerData = { EngineerManager = {} },
     IsIdleState = function() return true end,
     CanBuild = function() return true end,
     GetBlueprint = function()
@@ -229,6 +233,67 @@ dofile("lua/AI/RedQueen/ProductionManager.lua")
 
 local manager = Create(brain, { FactionIndex = 1, ArmyDeficit = 2 }, world, economy, {}, strategy)
 assert(manager:FindForwardEngineer() == engineer, "destroyed ArmyPool engineers must be skipped safely")
+
+-- Base managers are the real engineer supply: EngineerManager:AddUnit claims
+-- every new engineer, so ArmyPool holds one or two in transit. Sourcing only
+-- from the pool blocked 82 forward-base attempts on no-idle-engineer.
+local function ManagedEngineer(entityId, tier, idle)
+    return {
+        EntityId = entityId,
+        IsEngineer = true,
+        IsCommander = false,
+        BuilderManagerData = { EngineerManager = {} },
+        IsIdleState = function() return idle end,
+        CanBuild = function() return true end,
+        GetBlueprint = function()
+            return { CategoriesHash = { ["TECH" .. tostring(tier)] = true } }
+        end,
+    }
+end
+
+local baseEngineers = {}
+local sourceManager = {
+    GetUnits = function() return baseEngineers end,
+    GetLocationCoords = function() return { 64, 0, 64 } end,
+}
+brain.BuilderManagers.SOURCE = { EngineerManager = sourceManager }
+
+-- At the retention floor nothing may be taken: a base must keep working.
+baseEngineers = { ManagedEngineer(60, 3, false), ManagedEngineer(61, 3, false) }
+poolUnits = { commander, destroyedEngineer }
+assert(
+    manager:FindForwardEngineer() == nil,
+    "a base at its engineer retention floor must not be stripped"
+)
+
+-- Above the floor the surplus becomes available, even though none is idle.
+baseEngineers = {
+    ManagedEngineer(60, 3, false), ManagedEngineer(61, 3, false),
+    ManagedEngineer(62, 3, false),
+}
+local sourced = manager:FindForwardEngineer()
+assert(sourced, "a base above its retention floor must supply a forward-base engineer")
+assert(sourced.EntityId == 60, "manager sourcing must be deterministic")
+
+-- An idle engineer costs nothing to take, so it wins over a busy higher tier.
+baseEngineers = {
+    ManagedEngineer(60, 3, false), ManagedEngineer(61, 3, false),
+    ManagedEngineer(62, 3, false), ManagedEngineer(63, 1, true),
+}
+assert(
+    manager:FindForwardEngineer().EntityId == 63,
+    "an idle engineer must be preferred over one taken off base duty"
+)
+
+-- Emergency defense outranks forward-base construction.
+baseEngineers[4].RedQueenEmergencyDefenseUntil = 100000
+assert(
+    manager:FindForwardEngineer().EntityId ~= 63,
+    "an engineer held for emergency defense must not be taken"
+)
+
+brain.BuilderManagers.SOURCE = nil
+poolUnits = { commander, engineer, destroyedEngineer }
 manager:RegisterCounterBuilders()
 assert(table.getn(addedCounterGroups) == 0, "custom builders must wait for FAF's native base setup")
 ScenarioInfo.ArmySetup.ARMY_1.AIBase = "RushMainBalanced"

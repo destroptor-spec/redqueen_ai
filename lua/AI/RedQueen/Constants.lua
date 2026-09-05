@@ -119,6 +119,9 @@ Policy = {
     -- bases that were alive and defending; this is the absolute deadline, and a
     -- lost engineer or manager still fails immediately.
     ForwardBaseEstablishSeconds = 900,
+    -- A base keeps this many engineers before any may be taken for a forward
+    -- base, so sourcing one never strips a base of the engineers it needs.
+    ForwardBaseSourceMinimumEngineers = 2,
     StrategicFocusMinimumScore = 35,
     StrategicFocusSwitchMargin = 15,
     StrategicFocusDwellSeconds = 90,
