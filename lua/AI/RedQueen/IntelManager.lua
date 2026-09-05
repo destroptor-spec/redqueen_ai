@@ -235,12 +235,19 @@ IntelManager = ClassSimple {
         self.HighestObservedTech = highestObservedTech
     end,
 
-    GetThreatNear = function(self, position, radius)
+    GetThreatNear = function(self, position, radius, layer)
         local radiusSquared = radius * radius
         local total = 0
         for _, observation in pairs(self.Observations) do
             if DistanceSquared(position, observation.Position) <= radiusSquared then
-                total = total + (observation.Threat.Land + observation.Threat.Air + observation.Threat.Naval) * observation.Confidence
+                local threat = observation.Threat
+                local relevant = threat.Land + threat.Naval
+                if layer == "Air" then
+                    relevant = threat.Air
+                elseif not layer then
+                    relevant = relevant + threat.Air
+                end
+                total = total + relevant * observation.Confidence
             end
         end
         return total

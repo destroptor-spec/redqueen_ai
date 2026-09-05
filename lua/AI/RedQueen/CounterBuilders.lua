@@ -125,7 +125,9 @@ local function DomainIsRelevant(aiBrain, domain)
     return mapType ~= "Land"
 end
 
-local function ShouldTechToT2(aiBrain, domain)
+-- Shared with production suppression so fallback units remain buildable
+-- whenever this domain's upgrade is ineligible.
+function ShouldTechToT2(aiBrain, domain)
     local demand, economy = GetDemand(aiBrain)
     local tier = demand
         and demand.TierPolicy

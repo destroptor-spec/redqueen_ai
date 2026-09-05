@@ -5,7 +5,7 @@ local BuildingTemplates = import("/lua/buildingtemplates.lua")
 local Constants = import("/mods/TheRedQueen/lua/AI/RedQueen/Constants.lua")
 local Logger = import("/mods/TheRedQueen/lua/AI/RedQueen/Logger.lua")
 
-import("/mods/TheRedQueen/lua/AI/RedQueen/CounterBuilders.lua")
+local CounterBuilders = import("/mods/TheRedQueen/lua/AI/RedQueen/CounterBuilders.lua")
 import("/mods/TheRedQueen/lua/AI/RedQueen/FortificationBuilders.lua")
 
 local function FindBuildingId(buildingTemplate, buildingType)
@@ -107,12 +107,12 @@ end
 
 local function UnitRole(hash)
     if hash.ENGINEER or hash.SCOUT then return "Utility" end
-    if hash.TRANSPORTFOCUS then return "Transport" end
+    if hash.TRANSPORTFOCUS and not hash.GROUNDATTACK then return "Transport" end
     if hash.SHIELD or hash.COUNTERINTELLIGENCE then return "Shield" end
     if hash.INDIRECTFIRE or hash.ARTILLERY or hash.TACTICALMISSILEPLATFORM then
         return "Artillery"
     end
-    if hash.AIR and hash.ANTIAIR and not hash.BOMBER then return "AirDefense" end
+    if (hash.AIR or hash.LAND) and hash.ANTIAIR and not hash.BOMBER then return "AirDefense" end
     if hash.AIR and hash.ANTINAVY then return "Torpedo" end
     if hash.AIR and hash.GROUNDATTACK then return "GroundAttack" end
     return "Mainline"
@@ -556,7 +556,7 @@ ProductionManager = ClassSimple {
         -- Counted once per pass and cached: IsObsoleteProfile runs per builder.
         local previousTransports = self.TransportCount or 0
         self.TransportCount = self.Brain.GetCurrentUnits
-            and self.Brain:GetCurrentUnits(categories.TRANSPORTFOCUS)
+            and self.Brain:GetCurrentUnits(categories.TRANSPORTFOCUS - categories.GROUNDATTACK)
             or 0
         local capped = self.TransportCount >= Constants.Policy.MaximumTransports
         if capped ~= (previousTransports >= Constants.Policy.MaximumTransports) then
@@ -603,7 +603,7 @@ ProductionManager = ClassSimple {
         local category = categories.MOBILE * domainCategory * categories["TECH" .. tostring(tier)]
             * factionCategory
         if role == "Transport" then
-            category = category * categories.TRANSPORTFOCUS
+            category = category * categories.TRANSPORTFOCUS - categories.GROUNDATTACK
         elseif role == "Shield" then
             category = category * (categories.SHIELD + categories.COUNTERINTELLIGENCE)
         elseif role == "Artillery" then
@@ -627,8 +627,8 @@ ProductionManager = ClassSimple {
     -- silently reverts to Tech 1 mainline -- which is how match 27741743 built
     -- 925 Tech 1 units across 73 minutes while ending at tiers L3,A1,N1.
     -- Suppressing the obsolete mainline leaves the surviving factory free to
-    -- take an upgrade instead. Gated on being able to afford that upgrade, so a
-    -- stalled brain is never left with nothing to build, and scoped to Mainline
+    -- take an upgrade instead. Gated on that domain's upgrade eligibility, so a
+    -- brain unable to upgrade retains fallback production, and scoped to Mainline
     -- so specialist Tech 1 roles such as scouts and mobile anti-air survive.
     ShouldSuppressLowTierMainline = function(self, profile, highest)
         if profile.Role ~= "Mainline" or profile.Tier > 1 or highest > 1 then
@@ -637,12 +637,7 @@ ProductionManager = ClassSimple {
         if (self.Intel.HighestObservedTech or 1) < 3 then
             return false
         end
-        local state = self.Economy.State
-        if state.StallRisk then
-            return false
-        end
-        return math.max(state.MassIncome or 0, state.SmoothedMassIncome or 0)
-            >= Constants.Policy.Tech2MinimumMassIncome
+        return CounterBuilders.ShouldTechToT2(self.Brain, profile.Domain) or false
     end,
 
     IsObsoleteProfile = function(self, profile)
@@ -1475,12 +1470,26 @@ ProductionManager = ClassSimple {
         local tick = GetGameTick()
         local retention = Constants.Policy.ForwardBaseRecordRetentionSeconds * 10
         local retained = {}
+        local liveSites = {}
+        local expiredSites = {}
         for _, base in pairs(self.ForwardBases) do
             local terminalTick = base.FailedTick or base.DestroyedTick
             if not terminalTick or tick - terminalTick < retention then
                 table.insert(retained, base)
-            elseif base.SiteName and self.ForwardBaseClaims[base.SiteName] then
-                self.ForwardBaseClaims[base.SiteName] = nil
+                if base.SiteName and (base.State == "Preparing"
+                    or base.State == "Building" or base.State == "Established")
+                then
+                    liveSites[base.SiteName] = true
+                end
+            elseif base.SiteName then
+                expiredSites[base.SiteName] = true
+            end
+        end
+        -- A replacement can own the same marker as an expired attempt.
+        -- Resolve all retained owners before releasing any shared claim.
+        for siteName, _ in pairs(expiredSites) do
+            if not liveSites[siteName] then
+                self.ForwardBaseClaims[siteName] = nil
             end
         end
         self.ForwardBases = retained

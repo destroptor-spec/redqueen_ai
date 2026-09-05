@@ -10,7 +10,7 @@ After an in-game run, summarize the log with:
 ./scripts/analyze-log.py "/path/to/game.log"
 ```
 
-The analyzer fails on Red Queen errors, on engine Lua errors it can attribute to this mod, and on any Lua error after the first defeat marker. Engine Lua errors it cannot attribute are reported as `Unattributed Lua failures` and do not fail the gate, so a stock-AI comparison run is not rejected for someone else's stack trace. If it prints `Post-defeat Lua failures: not checked`, the log carried no recognizable defeat marker and the task-leak check did not run.
+The analyzer fails on Red Queen errors and on engine Lua errors attributed to this mod by their source or traceback. Engine Lua errors it cannot attribute are reported as `Unattributed Lua failures` and do not fail the gate, including after defeat. Post-defeat counts are subsets of these totals: each occurrence is counted once. If it prints `Post-defeat Lua failures: not checked`, the log carried no recognizable defeat marker and the task-leak check did not run.
 
 ## In-game smoke test
 

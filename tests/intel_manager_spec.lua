@@ -103,6 +103,19 @@ assert(observingManager.Observations[101].BlueprintId == "enemy-101", "blueprint
 assert(observingManager.Observations[102].Position[1] == 20, "positions must come from verified blips")
 
 local manager = Create({})
+local threatManager = Create({})
+threatManager.Observations = {
+    { Position = { 0, 0, 0 }, Confidence = 1, Threat = { Land = 10, Air = 0, Naval = 0 } },
+    { Position = { 60, 0, 0 }, Confidence = 0.5, Threat = { Land = 2, Air = 8, Naval = 4 } },
+    { Position = { 61, 0, 0 }, Confidence = 1, Threat = { Land = 100, Air = 100, Naval = 100 } },
+}
+assert(threatManager:GetThreatNear({ 0, 0, 0 }, 60) == 17, "omitting a layer preserves aggregate threat")
+assert(threatManager:GetThreatNear({ 0, 0, 0 }, 60, "Air") == 4, "air threat respects confidence and radius")
+for _, layer in ipairs({ "Land", "Amphibious", "Water" }) do
+    assert(threatManager:GetThreatNear({ 0, 0, 0 }, 60, layer) == 13,
+        "surface waves must exclude AA while retaining weighted surface threat: " .. layer)
+end
+
 manager.Observations = {
     [1] = {
         EntityId = 1,

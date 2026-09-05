@@ -83,22 +83,23 @@ for index, line in enumerate(lines):
 other_red_queen_errors = Counter(
     normalise(line)
     for line in lines
-    if RED_QUEEN_ERROR.search(line) and not SCHEDULER_FAILURE.search(line)
+    if RED_QUEEN_ERROR.search(line)
+    and not SCHEDULER_FAILURE.search(line)
+    and not LUA_FAILURE.search(line)
 )
 
 engine_lua_failures = [line for line in lines if LUA_FAILURE.search(line)]
-red_queen_lua_failures = Counter(
-    normalise(line) for line in engine_lua_failures if RED_QUEEN_SOURCE.search(line)
+red_queen_lua_failures: Counter[str] = Counter()
+foreign_lua_failures: Counter[str] = Counter()
+desyncs = Counter(
+    normalise(line) for line in lines
+    if DESYNC.search(line) and not LUA_FAILURE.search(line)
+    and not RED_QUEEN_ERROR.search(line)
 )
-foreign_lua_failures = Counter(
-    normalise(line) for line in engine_lua_failures if not RED_QUEEN_SOURCE.search(line)
-)
-desyncs = Counter(normalise(line) for line in lines if DESYNC.search(line))
 
 defeat_indices = [i for i, line in enumerate(lines) if DEFEAT_MARKER.search(line)]
 first_defeat_index = min(defeat_indices) if defeat_indices else None
-# Post-defeat failures are split by attribution. Only those naming Red Queen
-# fail the gate.
+# Post-defeat counters are subsets of the primary attribution counters.
 #
 # FAF's own BaseManagersDistressAI (platoon.lua:1555) dereferences
 # locData.EngineerManager:GetLocationCoords() for every BuilderManagers entry
@@ -108,21 +109,28 @@ first_defeat_index = min(defeat_indices) if defeat_indices else None
 # permanently red and bury a genuine Red Queen leak in noise.
 post_defeat_lua_failures: Counter[str] = Counter()
 post_defeat_foreign: Counter[str] = Counter()
-if first_defeat_index is not None:
-    for index in range(first_defeat_index, len(lines)):
-        line = lines[index]
-        if not LUA_FAILURE.search(line):
-            continue
-        frames = lines[index : index + 12]
-        # Attribute on traceback frames only. RED_QUEEN_SOURCE also matches the
-        # "[RedQueen]" prefix of ordinary log lines, and the sim interleaves
-        # those with tracebacks, so using it here would blame this mod for any
-        # engine failure that happened to be logged next to its own output.
-        attributed = any(RED_QUEEN_PATH.search(frame) for frame in frames)
-        if attributed:
-            post_defeat_lua_failures[normalise(line)] += 1
-        else:
-            post_defeat_foreign[normalise(line)] += 1
+for index, line in enumerate(lines):
+    if not LUA_FAILURE.search(line):
+        continue
+    attributed = bool(RED_QUEEN_SOURCE.search(line))
+    for frame in lines[index + 1 : index + 12]:
+        # Never borrow attribution from the next failure. Interleaved ordinary
+        # Red Queen diagnostics are not traceback evidence either.
+        if LUA_FAILURE.search(frame) or SCHEDULER_FAILURE.search(frame):
+            break
+        if "[RedQueen]" not in frame and RED_QUEEN_PATH.search(frame):
+            attributed = True
+            break
+    message = normalise(line)
+    primary = red_queen_lua_failures if attributed else foreign_lua_failures
+    primary[message] += 1
+    if not attributed and DESYNC.search(line):
+        # Desyncs still fail independently of mod attribution, but an already
+        # attributed Lua failure must not enter the gate a second time.
+        desyncs[message] += 1
+    if first_defeat_index is not None and index >= first_defeat_index:
+        subset = post_defeat_lua_failures if attributed else post_defeat_foreign
+        subset[message] += 1
 
 # Invalid manager locations are a Red Queen contract concern: builders it
 # registered must be retired when their location's managers go away.
@@ -242,36 +250,31 @@ if stats:
     print("  (exp = experimentals built/lost; K/L is destroyed mass over lost mass)")
 
 # --- Gate --------------------------------------------------------------------
-failures: list[tuple[int, str]] = []
+failures: Counter[str] = Counter()
 for key, count in scheduler_failures.most_common():
     named = scheduler_functions.get(key) or Counter()
     where = f" in {', '.join(name for name, _ in named.most_common(2))}" if named else ""
-    failures.append((count, f"scheduler task {key}{where}"))
+    failures[f"scheduler task {key}{where}"] += count
 for source in (
     other_red_queen_errors,
     red_queen_lua_failures,
-    post_defeat_lua_failures,
     desyncs,
 ):
     for message, count in source.most_common():
-        failures.append((count, message.strip()))
+        failures[message.strip()] += count
 if invalid_locations:
     for location, count in invalid_locations.most_common():
-        failures.append(
-            (count, f"invalid manager location - {location}")
-        )
+        failures[f"invalid manager location - {location}"] += count
 if not starts:
-    failures.append((1, "No Red Queen brain startup was found in the log"))
+    failures["No Red Queen brain startup was found in the log"] += 1
 
-print(f"\nFailures: {len(failures)} distinct, {sum(c for c, _ in failures)} occurrences")
-for count, message in sorted(failures, key=lambda item: -item[0])[:20]:
+print(f"\nFailures: {len(failures)} distinct, {sum(failures.values())} occurrences")
+for message, count in failures.most_common(20):
     print(f"  {count:5d}x  {message[:200]}")
 
-advisory = Counter(foreign_lua_failures)
-advisory.update(post_defeat_foreign)
-if advisory:
+if foreign_lua_failures:
     print("\nUnattributed engine failures (advisory, not gated):")
-    for message, count in advisory.most_common(10):
+    for message, count in foreign_lua_failures.most_common(10):
         print(f"  {count:5d}x  {message.strip()[:200]}")
 
 raise SystemExit(1 if failures else 0)

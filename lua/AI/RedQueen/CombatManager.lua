@@ -205,18 +205,19 @@ CombatManager = ClassSimple {
 
     -- Observed enemy threat at the destination. Only offensive commitment
     -- consults it; a defensive response is never gated.
-    GetObjectiveThreat = function(self, objective)
+    GetObjectiveThreat = function(self, objective, layer)
         local intel = self.Strategy and self.Strategy.Intel
         if not intel or not intel.GetThreatNear or not objective.Position then
             return 0
         end
         return intel:GetThreatNear(
             objective.Position,
-            Constants.Policy.CommitmentThreatRadius
+            Constants.Policy.CommitmentThreatRadius,
+            layer
         ) or 0
     end,
 
-    SelectTaskForce = function(self, units, defensive, objective)
+    SelectTaskForce = function(self, units, defensive, objective, layer)
         local available = table.getn(units)
         local minimum = defensive and 2 or Constants.Policy.MinimumAttackUnits
         if available < minimum then
@@ -254,7 +255,7 @@ CombatManager = ClassSimple {
         -- units, lost 1005 and killed 141. Units held here simply stay in the
         -- pool near base and join the next, larger wave.
         if not defensive and objective then
-            local enemyThreat = self:GetObjectiveThreat(objective)
+            local enemyThreat = self:GetObjectiveThreat(objective, layer)
             local required = enemyThreat * Constants.Policy.CommitmentThreatRatio
             -- A full wave always commits. Hoarding past the task-force cap
             -- buys nothing, because the surplus cannot be ordered anyway.
@@ -324,7 +325,7 @@ CombatManager = ClassSimple {
             and ObjectiveAt(objective, airPosition)
             or objective
         if objective.AirPosition then airObjective.Type = "AirRaid" end
-        local air = self:SelectTaskForce(groups.Air, defensive, airObjective)
+        local air = self:SelectTaskForce(groups.Air, defensive, airObjective, "Air")
         if self:IssueObjective(air, airObjective, "Air") then
             ordered = ordered + table.getn(air)
         end
@@ -334,40 +335,40 @@ CombatManager = ClassSimple {
         if defenseLayers then
             if defenseLayers.Water and layerPositions.Water then
                 local waterObjective = ObjectiveAt(objective, layerPositions.Water)
-                local naval = self:SelectTaskForce(groups.Water, defensive, waterObjective)
+                local naval = self:SelectTaskForce(groups.Water, defensive, waterObjective, "Water")
                 if self:IssueObjective(naval, waterObjective, "Water") then
                     ordered = ordered + table.getn(naval)
                 end
             end
             if defenseLayers.Land and layerPositions.Land then
                 local landObjective = ObjectiveAt(objective, layerPositions.Land)
-                local land = self:SelectTaskForce(groups.Land, defensive, landObjective)
+                local land = self:SelectTaskForce(groups.Land, defensive, landObjective, "Land")
                 if self:IssueObjective(land, landObjective, "Land") then
                     ordered = ordered + table.getn(land)
                 end
             end
             if defenseLayers.Amphibious and layerPositions.Amphibious then
                 local amphibiousObjective = ObjectiveAt(objective, layerPositions.Amphibious)
-                local amphibious = self:SelectTaskForce(groups.Amphibious, defensive, amphibiousObjective)
+                local amphibious = self:SelectTaskForce(groups.Amphibious, defensive, amphibiousObjective, "Amphibious")
                 if self:IssueObjective(amphibious, amphibiousObjective, "Amphibious") then
                     ordered = ordered + table.getn(amphibious)
                 end
             end
         elseif destinationLayer == "Water" then
-            local naval = self:SelectTaskForce(groups.Water, defensive, objective)
+            local naval = self:SelectTaskForce(groups.Water, defensive, objective, "Water")
             if self:IssueObjective(naval, objective, "Water") then
                 ordered = ordered + table.getn(naval)
             end
-            local amphibious = self:SelectTaskForce(groups.Amphibious, defensive, objective)
+            local amphibious = self:SelectTaskForce(groups.Amphibious, defensive, objective, "Amphibious")
             if self:IssueObjective(amphibious, objective, "Amphibious") then
                 ordered = ordered + table.getn(amphibious)
             end
         elseif destinationLayer ~= "Air" then
-            local land = self:SelectTaskForce(groups.Land, defensive, objective)
+            local land = self:SelectTaskForce(groups.Land, defensive, objective, "Land")
             if self:IssueObjective(land, objective, "Land") then
                 ordered = ordered + table.getn(land)
             end
-            local amphibious = self:SelectTaskForce(groups.Amphibious, defensive, objective)
+            local amphibious = self:SelectTaskForce(groups.Amphibious, defensive, objective, "Amphibious")
             if self:IssueObjective(amphibious, objective, "Amphibious") then
                 ordered = ordered + table.getn(amphibious)
             end

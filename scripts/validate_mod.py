@@ -93,6 +93,10 @@ fortification_source = (ROOT / "lua/AI/RedQueen/FortificationBuilders.lua").read
 combat_source = (ROOT / "lua/AI/RedQueen/CombatManager.lua").read_text(encoding="utf-8")
 context_source = (ROOT / "lua/AI/RedQueen/MatchContext.lua").read_text(encoding="utf-8")
 analyzer_source = (ROOT / "scripts/analyze-log.py").read_text(encoding="utf-8")
+if not re.search(r"(?m)^function ShouldTechToT2\(", counter_source):
+    fail("T2 upgrade eligibility must be exported for production policy")
+if "CounterBuilders.ShouldTechToT2(self.Brain, profile.Domain)" not in production_source:
+    fail("T1 suppression must share its domain's T2 upgrade eligibility")
 for required in ("GetBlip", "IsSeenNow", "IsSeenEver", "IsOnRadar"):
     if required not in intel_source:
         fail(f"verified intel contract is missing: {required}")
