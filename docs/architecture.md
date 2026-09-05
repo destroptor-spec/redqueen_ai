@@ -45,6 +45,34 @@ Fresh observed mobile combat contacts are clustered deterministically by movemen
 
 Forward bases use land-pathable defensive, expansion, and mass-cluster markers. A base starts only when the economy has positive trends, useful storage, no defense alert, and an observed-intel route from the selected engineer's actual position whose threat is supportable by its nearby escort. Bounded diagnostics report whether construction is blocked by objectives, alerts, engineers, economy, cooldown, cap, or site safety. The package scales with engineer tier and includes a factory, radar, point defense, AA, shields and artillery when available. Established bases remain valid only while both their expansion manager and a live self-owned local factory exist; losing either releases the marker for replacement and removes the site from garrison use. Released destroyed-base markers may bypass the normal minimum distance from the selected engineer, while pathing and route-threat checks still originate at that engineer. T2 tactical missile launchers and T3 strategic missile defense may be placed forward; strategic nuclear launchers remain rear-base investments. The number of forward bases scales from one to three with map size.
 
+## Builder mutation boundary
+
+Red Queen adjusts FAF's builders by priority and never by editing their
+definitions. That is a hard constraint, not a style choice.
+
+`Builders` is a single simulation-wide table declared in
+`/lua/system/GlobalBuilderTemplate.lua`, and registration stores the spec by
+reference. `Builder:Create` in `/lua/sim/Builder.lua` copies only `Priority`,
+`OriginalPriority`, `Brain`, `BuilderName`, `ReportFailure`,
+`DelayEqualBuildPlattons` and the build conditions onto the per-army instance;
+`BuilderData` is never assigned to it, and `GetBuilderData` re-reads
+`Builders[BuilderName].BuilderData` from the global on every call. Every army in
+the match shares one Lua state, so editing a `BuildStructures` list would change
+that builder for every army at once, Red Queen or not, plus FAF's own use of it.
+
+`Priority` is safe to change because Lua copies numbers by value: the instance
+holds its own number, and `SetPriority(0)` cannot reach another army. This is
+why the factory capacity policy suppresses whole builders rather than removing
+the factory entry from a builder that also creates an expansion, and why the
+cap instead distinguishes pure factory builders from base packages.
+
+One exception exists and does not apply here. `/lua/aibrains/templates/builders/builder.lua`
+deep-copies `BuilderData` per brain, but that system is imported only by
+`easy-ai.lua`. `BuilderManager` and `EngineerManager` both import
+`/lua/sim/builder.lua`, and Red Queen extends `adaptive-ai.lua`, so the shared
+path is the live one. Rebasing onto the template system would invalidate this
+section.
+
 ## Economy units
 
 Every economy figure the directors read comes from `GetEconomyIncome` and
