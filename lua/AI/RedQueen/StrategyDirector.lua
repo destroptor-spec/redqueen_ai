@@ -623,7 +623,8 @@ StrategyDirector = ClassSimple {
     -- and a point defence counted as an answer to a bomber. Splitting the
     -- denominator the same way the numerator is split is what lets each arm be
     -- judged against the defence that can actually reach it. See
-    -- docs/threat-accounting-plan.md; this has no caller yet.
+    -- docs/threat-accounting-plan.md. UpdateDefenseAlert consumes this split;
+    -- route escort callers retain the scalar GetOwnThreatNear contract.
     --
     -- Anti-air carries no reach test. AirThreatLevel is already the engine's
     -- own statement that the unit answers aircraft, and an aircraft comes to
@@ -1794,7 +1795,16 @@ StrategyDirector = ClassSimple {
 
             for _, layer in ipairs(layers) do
                 local candidate = self.Intel:GetBestKnownTarget(start, layer)
-                if candidate and self.World:CanPath(layer, start, candidate.Position) then
+                local pathOrigin = start
+                if candidate and layer == "Water" then
+                    -- A naval contact is already on water, but our army start
+                    -- is dry land. Resolve only the origin; reaching a nearby
+                    -- approach does not prove we can reach the contact itself.
+                    pathOrigin = self.World:NearestNavalApproach(start)
+                end
+                if candidate and pathOrigin
+                    and self.World:CanPath(layer, pathOrigin, candidate.Position)
+                then
                     preferredLayer, known = layer, candidate
                     break
                 end

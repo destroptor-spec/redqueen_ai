@@ -1468,6 +1468,82 @@ assert(not director.DefenseAlert.Active,
 director.GetOwnThreatByArm = nil
 director.GetOwnThreatNear = nil
 
+-- Drive alert selection through the actual defender accounting. The separate
+-- arithmetic tests above cannot catch the alert losing an arm at the call site
+-- or taking severity from a high ratio that never met the magnitude floor.
+local function defenders(unit, count)
+    local result = {}
+    for index = 1, count do
+        result[index] = { GetBlueprint = unit.GetBlueprint, GetPosition = unit.GetPosition }
+    end
+    return result
+end
+local function alertWithDefenders(units, naval, air)
+    brain.GetUnitsAroundPoint = function() return units end
+    observedPressure = {
+        FirstEntityId = 710, Position = { 350, 5, 350 }, AnchorIndex = 2,
+        DistanceToAnchor = 42, Threat = naval + air, Naval = naval, Land = 0, Air = air,
+        ClosingThreat = 0, Approaching = false,
+    }
+    waterPoint = observedPressure.Position
+    director.DefenseAlert = { Active = false }
+    director:UpdateDefenseAlert()
+    return director.DefenseAlert
+end
+
+local gunshipCover = defenders(gunship, 20)
+local integratedAlert = alertWithDefenders(gunshipCover, 100, 0)
+assert(not integratedAlert.Active,
+    "twenty gunships must count their 100 surface threat against a fleet of equal strength")
+
+integratedAlert = alertWithDefenders(gunshipCover, 50, 40)
+assert(integratedAlert.Active and integratedAlert.QualifiedArm == "air",
+    "a fleet's uncovered air escort must qualify even when the fleet is the main body")
+assert(integratedAlert.FriendlySurface == 100 and integratedAlert.FriendlyAir == 0,
+    "gunships must defend the surface arm without being mistaken for anti-air")
+assert(integratedAlert.Ratio == 40,
+    "the uncovered air escort must be judged against the air denominator")
+
+local interceptorCover = defenders(interceptor, 8)
+assert(not alertWithDefenders(interceptorCover, 6, 300).Active,
+    "real interceptor accounting must preserve the token-frigate regression")
+integratedAlert = alertWithDefenders(interceptorCover, 200, 10)
+assert(integratedAlert.Active and integratedAlert.QualifiedArm == "surface",
+    "interceptors must not suppress an unanswered surface fleet")
+assert(integratedAlert.FriendlySurface == 0 and integratedAlert.FriendlyAir == 400,
+    "interceptor strength belongs only to the air denominator")
+
+-- Reach is measured to the contact, not to the anchor the defenders stand on.
+-- `target` decides both which layer the guns are asked about and how far they
+-- must shoot, so passing the anchor makes every gun in range of itself and asks
+-- a land question about a fleet. Aircraft cannot catch this -- they skip the
+-- range test by design -- and anti-air carries no surface damage, so it needs a
+-- ground gun: 30 of reach, standing on the anchor, 42 from the contact.
+local shoreGun = stubUnit({ STRUCTURE = true, DEFENSE = true },
+    { SurfaceThreatLevel = 17 }, { Land = "Land|Water|Seabed" }, { 320, 5, 320 })
+integratedAlert = alertWithDefenders(defenders(shoreGun, 6), 100, 0)
+assert(integratedAlert.Active,
+    "a fleet of 100 against guns that cannot reach it must alert")
+assert(integratedAlert.FriendlySurface == 0,
+    "a gun 42 from the contact with 30 of reach defends nothing against it, got "
+        .. tostring(integratedAlert.FriendlySurface))
+
+local mixedCover = defenders(gunship, 4)
+for _, unit in ipairs(defenders(aaTower, 3)) do table.insert(mixedCover, unit) end
+integratedAlert = alertWithDefenders(mixedCover, 30, 30)
+assert(integratedAlert.Active and integratedAlert.QualifiedArm == "combined",
+    "two sub-threshold arms must qualify together against thin mixed cover")
+assert(math.abs(integratedAlert.Ratio - 60 / 41) < 0.000001,
+    "combined threat must use the sum of the actual surface and air defenders")
+
+integratedAlert = alertWithDefenders(defenders(gunship, 4), 40, 20)
+assert(integratedAlert.QualifiedArm == "combined" and integratedAlert.Ratio == 3,
+    "a token air arm's ratio of 20 must not replace the qualifying combined ratio of 3")
+assert(integratedAlert.Severity == 3 * integratedAlert.Criticality,
+    "endgame severity must follow the qualifying arm, not a sub-threshold escort")
+waterPoint = savedWater
+brain.GetUnitsAroundPoint = savedAround
+
 -- Leave the alert as the cases below found it: they read the same 701 cluster.
 observedPressure = {
     FirstEntityId = 701, Position = { 350, 5, 350 }, AnchorIndex = 2,
@@ -1573,6 +1649,81 @@ brain.GetUnitsAroundPoint = function() return {} end
 director.DefenseAlert = { Active = false }
 localThreat = 0
 knownTarget = nil
+
+-- A scored naval contact already has a destination on water. Only the route
+-- origin needs resolving: asking native navigation from the dry army start
+-- returns OriginUnpathable even when our fleet can reach the observed target.
+local originalKnownTarget = intel.GetBestKnownTarget
+local homeWater = { 20, 0, 20 }
+local navalContact = { EntityId = 900, Position = { 800, 0, 800 }, Layer = "Water" }
+local fallbackApproach = { 750, 0, 750 }
+local waterOrigin = homeWater
+local reachableContact = true
+local waterChecks = {}
+local approachChecks = 0
+intel.GetBestKnownTarget = function(_, origin, layer)
+    assert(origin == world.StartPosition, "naval target scoring must keep its existing origin")
+    return layer == "Water" and navalContact or nil
+end
+world.NearestNavalApproach = function(_, origin)
+    assert(origin == world.StartPosition, "the route origin must be resolved from our army start")
+    return waterOrigin
+end
+world.GetNavalApproach = function()
+    approachChecks = approachChecks + 1
+    return fallbackApproach
+end
+world.CanPath = function(_, layer, origin, destination)
+    if layer ~= "Water" then return layer == "Air" end
+    table.insert(waterChecks, { Origin = origin, Destination = destination })
+    if origin ~= homeWater then return false end
+    return reachableContact and destination == navalContact.Position
+end
+world.GetClosestEnemyStart = function(_, _, layer)
+    return layer == "Air" and { 900, 0, 900 } or nil
+end
+for _, mapType in ipairs({ "Naval", "Mixed" }) do
+    world.MapType = mapType
+    director.CurrentObjective = nil
+    director:Update()
+    local objective = director.CurrentObjective
+    assert(objective.Type == "Raid" and objective.Layer == "Water",
+        "a reachable observed naval target must produce a Water raid from a dry army start")
+    assert(objective.Position == navalContact.Position,
+        "the raid must attack the observed target rather than a nearby approach")
+    assert(waterChecks[table.getn(waterChecks)].Origin == homeWater,
+        "the naval route check must start on water")
+    assert(approachChecks == 0, "a reachable contact must not fall through to generic pressure")
+end
+
+local distantContact = navalContact.Position
+navalContact.Position = { 24, 0, 24 }
+director.CurrentObjective = nil
+director:Update()
+assert(director.CurrentObjective.Type == "Raid" and director.CurrentObjective.Position == navalContact.Position,
+    "an observed naval target near home must not be rejected by enemy-approach midpoint rules")
+navalContact.Position = distantContact
+
+-- A route to nearby water does not prove a route to a contact in another
+-- basin. Keep the exact destination check before calling the result a raid.
+reachableContact = false
+director.CurrentObjective = nil
+director:Update()
+assert(director.CurrentObjective.Type == "Pressure"
+    and director.CurrentObjective.Position == fallbackApproach,
+    "a disconnected naval contact must leave the ordinary pressure fallback available")
+
+-- No water origin must skip the route test, never substitute dry land or pass
+-- nil into native navigation. With no other surface route, Air still works.
+waterOrigin = nil
+fallbackApproach = nil
+waterChecks = {}
+director.CurrentObjective = nil
+director:Update()
+assert(director.CurrentObjective.Type == "Pressure" and director.CurrentObjective.Layer == "Air",
+    "a map without naval approaches must retain the Air fallback")
+assert(table.getn(waterChecks) == 0, "a missing water origin must not reach the path API")
+intel.GetBestKnownTarget = originalKnownTarget
 
 local navalApproach = { 900, 0, 900 }
 local approachRequests = {}

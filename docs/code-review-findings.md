@@ -27,7 +27,7 @@ than after.
 | 4 | high | `CombatManager.lua:420` | Air threat counted against a land-only escort | verified, seen live | [x] |
 | 5 | high | `StrategyDirector.lua:591` | One frigate blinds the base's entire air defence | verified | [x] |
 | 6 | high | `StrategyDirector.lua:87,1642` | On Mixed maps the fleet still never gets an objective | verified | [x] |
-| 7 | medium | `StrategyDirector.lua:1647` | Water target selection asks for a route out of dry land | verified | [ ] |
+| 7 | medium | `StrategyDirector.lua:1647` | Water target selection asks for a route out of dry land | verified | [x] |
 | 8 | medium | `StrategyDirector.lua:171` | Air units credited only `SubThreatLevel` | verified | [x] step 1 of `threat-accounting-plan.md` |
 | 9 | medium | `StrategyDirector.lua:635,696` | `Targets.Ground` rekeyed to `land + naval` | relayed | [ ] |
 | 10 | medium | `ProductionManager.lua:2241` | `UpdateEngineerRetreat` ignores the engineer holds | verified | [ ] |
@@ -443,6 +443,50 @@ never be set for the Water layer, so a scored `Raid` on a naval target is
 unreachable and the fleet falls through to a generic `Pressure` at a naval
 approach waypoint. Related: `docs/naval-weakness-investigation.md`.
 
+#### Fixed and verified — 2026-09-15
+
+The known-target route check now resolves its Water origin through
+`WorldModel:NearestNavalApproach(start)`. Scoring still uses the army start,
+and the route still ends at the exact observed target. A route to neighboring
+water cannot qualify a target in another basin. Missing naval markers skip the
+route check and leave the existing fallback available.
+
+The regression failed against the original code and passes with the fix.
+`tests/strategy_director_spec.lua` covers Naval and Mixed maps, exact target
+preservation, targets near home, disconnected targets, and missing origins.
+`./scripts/validate.sh` and `git diff --check` passed.
+
+A bounded Sludge (`SCMP_037`) fixture used native navigation and a genuinely
+visible enemy frigate, observed through its intel blip. It naturally selected
+the Naval map type, with UEF versus Cybran, seed 2071971, strict `income=1.00`.
+A separate director selected the contact and dispatched four real frigates:
+
+```text
+[RedQueenNavalTargetFixture] routes dry=nil reason=OriginUnpathable water=true source=88.0,88.0 target=168.0,88.0
+[RedQueen][INFO][army=2] strategy objective=Raid priority=75 layer=Water
+[RedQueenNavalTargetFixture] raid observed=807403520 layer=Water exact-target=true dispatched=4 queued=4 max-moved=0.15
+[RedQueenNavalTargetFixture] PASS observed-water-raid=true exact-target=true real-dispatch=true missing-origin-fallback=true
+```
+
+The missing-origin case deliberately cleared the fixture's naval marker list
+and confirmed the existing Air pressure fallback. The analyzer reported zero
+engine Lua, Red Queen Lua, and scheduler failures. The run lasted 15.1 wall-clock
+seconds and cleanup stopped only its exact test process. This proves target
+selection and initial dispatch; it does not establish arrival, match outcomes,
+balance, or full map-series coverage.
+
+Temporary artifacts: `/tmp/rq-finding7-20260915/run3/` (log, manifest, patch,
+overlay, analyzer output, and result). Base revision:
+`a0e1810d859266c6d8241e076fcb8ddcb77aff3d`, plus the recorded working-tree patch.
+Payload SHA-256, unchanged throughout the run:
+`cac34ae986959c585d29ca2982f934f1a5b8e185da450831ba1a3a34dea9843e`.
+Fixture SHA-256:
+`973305108cffc37b33ea9a74ff8dd6c6d0c65f7fae04db51ef6a7a7ad18ed971`.
+Earlier attempts stopped on fixture assumptions: a blip has a different entity
+ID from its source unit, and a single ship's position after two seconds is an
+unreliable movement check. The accepted run scores the actual observation and
+samples the fleet with a bounded turn-and-acceleration window.
+
 ### 8. Air units credited only `SubThreatLevel`
 
 **Scoped in `docs/threat-accounting-plan.md`.** This and the residual left at
@@ -450,6 +494,21 @@ the `defenseLayer` call site when finding 5 was fixed are one defect: the
 numerator of every defence decision is split by arm and the denominator is not.
 The plan carries the engine evidence, the three-test design, the blast radius
 across the six `GetOwnThreatNear` callers, and the sequencing.
+
+Integrated coverage added 2026-09-15: the alert is now driven through the real
+defender accounting rather than a stubbed `GetOwnThreatByArm`, which the
+arithmetic tests alone could not do. Verified load-bearing — dropping the air
+arm at the call site fails, and taking severity from the loudest ratio rather
+than the qualifying arm fails.
+
+One property those cases could not reach has been pinned separately. The reach
+test is measured to the **contact**, not to the anchor the defenders stand on:
+`target` decides both which layer the guns are asked about and how far they must
+shoot, so passing the anchor makes every gun in range of itself and asks a land
+question about a fleet. Aircraft skip the range test by design and anti-air
+carries no surface damage, so neither can discriminate; the contract uses a
+ground gun with 30 of reach standing on the anchor, 42 from the contact.
+Measuring at the anchor previously passed the whole suite.
 
 `StrategyDirector.lua:171` — `if hash.AIR then return defense.SubThreatLevel or 0 end`.
 
