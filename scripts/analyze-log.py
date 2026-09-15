@@ -34,8 +34,14 @@ LUA_FAILURE = re.compile(r"(?i)warning:\s+Error running lua script")
 SCHEDULER_FAILURE = re.compile(r"\[RedQueen\]\[ERROR\].*scheduler task '([a-z]+)' failed")
 RED_QUEEN_ERROR = re.compile(r"\[RedQueen\]\[ERROR\]")
 INVALID_LOCATION = re.compile(r"(?i)\*AI WARNING:\s*(\w+)\s*-\s*Invalid location\s*-\s*(.+)$")
-# The only location names this mod registers; see ProductionManager `RQFB_%d_%d`.
-RED_QUEEN_OWNED_LOCATION = re.compile(r"(?i)\bRQFB_\d+_\d+\b")
+# Locations this mod registers, matched the way the simulation matches them:
+# BaseLifecycle and StrategyDirector both test `string.sub(name, 1, 5) == "RQFB_"`,
+# so the prefix is the convention and the rest of the name is free. Keying this
+# on `RQFB_%d_%d` meant the lifecycle fixture's own site, RQFB_LIFECYCLE_TEST,
+# could not be attributed -- in the one run whose whole purpose is to destroy
+# and rebuild bases, an invalid-location warning for our own site was filed as
+# somebody else's advisory.
+RED_QUEEN_OWNED_LOCATION = re.compile(r"(?i)\bRQFB_\w+")
 DESYNC = re.compile(r"(?i)desync")
 # A Red Queen frame in an engine traceback names the failing module function,
 # which is what turns "a task failed" into "StartForwardBase failed". The engine

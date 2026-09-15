@@ -32,7 +32,7 @@ than after.
 | 9 | medium | `StrategyDirector.lua:635,696` | `Targets.Ground` rekeyed to `land + naval` | **not a defect** | [x] closed, see below |
 | 10 | medium | `ProductionManager.lua:2241` | `UpdateEngineerRetreat` ignores the engineer holds | verified | [x] |
 | 11 | medium | `CombatManager.lua:696` | Scout fallback only inspects `wanted[1]` | verified | [x] |
-| 12 | medium | `scripts/analyze-log.py:38` | Fixture base location invisible to the log attributor | verified | [ ] |
+| 12 | medium | `scripts/analyze-log.py:38` | Fixture base location invisible to the log attributor | verified | [x] |
 | 13 | medium | `ProductionManager.lua:2206` | Commander assist undone 5 s later | relayed | [ ] |
 | 14 | low | `CombatManager.lua:575` | `ScoutSummary` stale on early return | verified | [ ] |
 | 15 | low | `ProductionManager.lua:2377` | Claim released while a `Failed` record still owns it | relayed | [ ] |
@@ -622,6 +622,19 @@ Fix shape: take the first entry that *meets* the weight bar, not the first
 entry.
 
 ### 12. Fixture base location invisible to the log attributor
+
+**Fixed 2026-09-15.** `RED_QUEEN_OWNED_LOCATION` now matches the way the
+simulation matches: on the `RQFB_` prefix, which is what `BaseLifecycle.lua:80`
+and `StrategyDirector.lua:578` both test. The numeric form could not see
+`RQFB_LIFECYCLE_TEST`. A second contract keeps a native name like `MAIN` from
+being swallowed by the looser pattern.
+
+The more useful half is structural. Nothing connected the producer to the
+consumer, which is how they drifted in the first place, so `validate_mod.py` now
+extracts the analyzer's own pattern, collects every `RQFB_` literal the Lua
+actually registers — scoring `RQFB_%d_%d` as a name it would produce — and fails
+if the analyzer cannot attribute one of them. Restoring the numeric pattern
+fails the gate by name, not just the spec.
 
 `scripts/analyze-log.py:38`.
 

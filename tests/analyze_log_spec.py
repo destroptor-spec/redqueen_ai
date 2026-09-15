@@ -128,6 +128,28 @@ class AnalyzeLogSpec(unittest.TestCase):
         self.assertIn("invalid manager location - RQFB_2_1", result.stdout)
         self.assertEqual(result.returncode, 1)
 
+    def test_fixture_site_invalid_location_is_ours(self):
+        """The lifecycle fixture's own site is a Red Queen location.
+
+        The simulation matches these by the `RQFB_` prefix alone, and the
+        fixture registers `RQFB_LIFECYCLE_TEST` through AddBuilderManagers. A
+        numeric-only pattern left that site unattributed in precisely the run
+        built to destroy and rebuild bases, where an engine `*AI WARNING` often
+        carries no Lua traceback to fall back on.
+        """
+        result = self.analyze(
+            "warning: *AI WARNING: FactoryCapCheck - Invalid location - RQFB_LIFECYCLE_TEST",
+        )
+        self.assertIn("Invalid manager locations: 1 attributed, 0 in FAF code", result.stdout)
+        self.assertEqual(result.returncode, 1)
+
+    def test_native_location_names_are_still_not_ours(self):
+        """The prefix must not swallow FAF's own location names."""
+        result = self.analyze(
+            "warning: *AI WARNING: FactoryCapCheck - Invalid location - MAIN",
+        )
+        self.assertIn("Invalid manager locations: 0 attributed, 1 in FAF code", result.stdout)
+
     def test_traceback_attributes_invalid_location_at_native_name(self):
         """Our frame is evidence even when the location name is FAF's."""
         result = self.analyze(

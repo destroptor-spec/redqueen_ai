@@ -443,6 +443,35 @@ if "Constants.Policy.AnchorProximityTolerance" not in intel_source:
 for required in ("Engine Lua failures:", "Red Queen Lua failures:"):
     if required not in analyzer_source:
         fail(f"log analysis must report Lua failure attribution: {required}")
+
+# The analyzer decides whether an engine "Invalid location" warning is ours by
+# matching the location name; the simulation decides the same thing with
+# `string.sub(name, 1, 5) == "RQFB_"`. The two must agree, and they drifted: a
+# numeric-only pattern could not see the lifecycle fixture's RQFB_LIFECYCLE_TEST,
+# so in the one run built to destroy and rebuild bases our own failure was filed
+# as FAF's. Nothing but this connects the producer to the consumer.
+owned_location = re.search(
+    r'RED_QUEEN_OWNED_LOCATION = re\.compile\(r"([^"]+)"\)', analyzer_source
+)
+if not owned_location:
+    fail("analyze-log.py must define RED_QUEEN_OWNED_LOCATION to attribute invalid locations")
+owned_location_pattern = re.compile(owned_location.group(1))
+registered_locations = set()
+for source_path in sorted((ROOT / "lua").rglob("*.lua")):
+    for literal in re.findall(
+        r'"(RQFB_[A-Za-z0-9_%]+)"', source_path.read_text(encoding="utf-8")
+    ):
+        # `RQFB_%d_%d` is a format, so score it as a name it would produce.
+        registered_locations.add(literal.replace("%d", "7"))
+if not registered_locations:
+    fail("no RQFB_ location names found in lua/: the attribution contract checks nothing")
+for name in sorted(registered_locations):
+    if not owned_location_pattern.search(name):
+        fail(
+            f"analyze-log.py cannot attribute the location name {name}, which the "
+            "simulation registers: an invalid-location warning for our own site "
+            "would be reported as FAF's"
+        )
 for required in (
     "GetBestExposedEconomyTarget",
     "GetStrategicPicture",
