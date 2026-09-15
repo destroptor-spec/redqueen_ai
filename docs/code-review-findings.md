@@ -35,7 +35,7 @@ than after.
 | 12 | medium | `scripts/analyze-log.py:38` | Fixture base location invisible to the log attributor | verified | [x] |
 | 13 | medium | `ProductionManager.lua:2206` | Commander assist undone 5 s later | verified | [x] |
 | 14 | low | `CombatManager.lua:575` | `ScoutSummary` stale on early return | verified | [x] |
-| 15 | low | `ProductionManager.lua:2377` | Claim released while a `Failed` record still owns it | relayed | [ ] |
+| 15 | low | `ProductionManager.lua:2377` | Claim released while a `Failed` record still owns it | verified | [x] |
 | 16 | low | `CombatManager.lua:655` | Same-position scout candidates each consume a scout | relayed | [ ] |
 
 ## Fix verification — 2026-09-14
@@ -721,6 +721,23 @@ if current, and those figures feed the periodic state line
 (`Diagnostics.lua:132`, `scout=` / `scoutorders=`) that a matrix reads.
 
 ### 15. Claim released while a `Failed` record still owns it
+
+**Verified and fixed 2026-09-15.** The code states the intent at the failure
+path: "The claim is kept: structures are already queued at the site, so a second
+base must not target it. PruneForwardBaseRecords releases it once the record
+ages out." The prune released on site name instead, so any older attempt at the
+same marker ageing out dropped a live owner's claim before its own retention
+ran, and a third attempt could queue a second package onto the half-built one.
+
+A claim now lives exactly as long as the record holding it. That reading matches
+how claims are actually given up — a destroyed base releases its own claim
+immediately, a failed registration keeps its on purpose — and it subsumes the
+`liveSites`/`expiredSites` bookkeeping, which is gone.
+
+The existing contracts stored `true` as the claim value, where production stores
+the owning record; they were updated to the real shape, which is what makes the
+identity reading testable at all. Mutation-tested: restoring the site-name
+release fails, and never releasing fails too.
 
 `ProductionManager.lua:2377`. *(relayed)* `liveSites` covers only
 Preparing/Building/Established, so a retained terminal record that deliberately

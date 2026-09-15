@@ -2435,25 +2435,26 @@ ProductionManager = ClassSimple {
         local tick = GetGameTick()
         local retention = Constants.Policy.ForwardBaseRecordRetentionSeconds * 10
         local retained = {}
-        local liveSites = {}
-        local expiredSites = {}
+        local retainedRecords = {}
         for _, base in pairs(self.ForwardBases) do
             local terminalTick = base.FailedTick or base.DestroyedTick
             if not terminalTick or tick - terminalTick < retention then
                 table.insert(retained, base)
-                if base.SiteName and (base.State == "Preparing"
-                    or base.State == "Building" or base.State == "Established")
-                then
-                    liveSites[base.SiteName] = true
-                end
-            elseif base.SiteName then
-                expiredSites[base.SiteName] = true
+                retainedRecords[base] = true
             end
         end
-        -- A replacement can own the same marker as an expired attempt.
-        -- Resolve all retained owners before releasing any shared claim.
-        for siteName, _ in pairs(expiredSites) do
-            if not liveSites[siteName] then
+        -- A claim lives exactly as long as the record holding it, which is the
+        -- only reading that matches how claims are actually given up: a
+        -- destroyed base releases its own claim immediately, while a failed
+        -- registration keeps its claim on purpose, because its structures are
+        -- still queued at the marker.
+        --
+        -- Keying the release on site name instead meant any older attempt at
+        -- the same marker could drop a live owner's claim as it aged out --
+        -- so a failed record lost the site before its own retention ran, and a
+        -- third attempt could queue a second package onto the half-built one.
+        for siteName, owner in pairs(self.ForwardBaseClaims) do
+            if not retainedRecords[owner] then
                 self.ForwardBaseClaims[siteName] = nil
             end
         end

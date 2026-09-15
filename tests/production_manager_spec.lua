@@ -924,21 +924,46 @@ for _, state in ipairs({ "Preparing", "Building", "Established" }) do
         local expired = { State = "Destroyed", SiteName = "Rebuilt", DestroyedTick = -2000 }
         local replacement = { State = state, SiteName = "Rebuilt" }
         pruneManager.ForwardBases = reverse and { replacement, expired } or { expired, replacement }
-        pruneManager.ForwardBaseClaims = { Rebuilt = true }
+        pruneManager.ForwardBaseClaims = { Rebuilt = replacement }
         pruneManager:PruneForwardBaseRecords()
         assert(table.getn(pruneManager.ForwardBases) == 1, "the expired record must be pruned at retention")
         assert(pruneManager.ForwardBases[1] == replacement, "the replacement record must remain")
         assert(pruneManager.ForwardBaseClaims.Rebuilt, "a retained live replacement must keep its marker claim")
     end
 end
-pruneManager.ForwardBases = {
-    { State = "Failed", SiteName = "Expired", FailedTick = -2000 },
-    { State = "Destroyed", SiteName = "Recent", DestroyedTick = -1999 },
-}
-pruneManager.ForwardBaseClaims = { Expired = true, Recent = true }
+-- Claims are held by the record that took them, which is what production
+-- stores, so the fixtures hold records rather than a placeholder.
+local expiredOwner = { State = "Failed", SiteName = "Expired", FailedTick = -2000 }
+local recentOwner = { State = "Destroyed", SiteName = "Recent", DestroyedTick = -1999 }
+pruneManager.ForwardBases = { expiredOwner, recentOwner }
+pruneManager.ForwardBaseClaims = { Expired = expiredOwner, Recent = recentOwner }
 pruneManager:PruneForwardBaseRecords()
 assert(not pruneManager.ForwardBaseClaims.Expired, "an expired unowned site must release its claim")
 assert(pruneManager.ForwardBaseClaims.Recent, "a terminal record within retention keeps its claim")
+
+-- A failed registration keeps its claim deliberately: its structures are
+-- already queued at the marker, so a second base must not target it. It must
+-- keep it for its own retention and not lose it because an older attempt at the
+-- same marker aged out first -- which would let a third attempt queue a second
+-- package onto the half-built one.
+local agedOut = { State = "Destroyed", SiteName = "Shared", DestroyedTick = -2000 }
+local stillQueued = { State = "Failed", SiteName = "Shared", FailedTick = -10 }
+pruneManager.ForwardBases = { agedOut, stillQueued }
+pruneManager.ForwardBaseClaims = { Shared = stillQueued }
+pruneManager:PruneForwardBaseRecords()
+assert(table.getn(pruneManager.ForwardBases) == 1
+    and pruneManager.ForwardBases[1] == stillQueued,
+    "only the aged-out record may be pruned")
+assert(pruneManager.ForwardBaseClaims.Shared == stillQueued,
+    "a failed record within retention must keep the claim its queued structures rely on")
+
+-- And it does give the claim up once its own retention runs out.
+stillQueued.FailedTick = -2000
+pruneManager.ForwardBases = { stillQueued }
+pruneManager.ForwardBaseClaims = { Shared = stillQueued }
+pruneManager:PruneForwardBaseRecords()
+assert(not pruneManager.ForwardBaseClaims.Shared,
+    "and must release it when its own retention runs out")
 
 local forwardSite = {
     Name = "Forward Marker 1",
