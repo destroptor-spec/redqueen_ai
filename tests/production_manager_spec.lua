@@ -1932,6 +1932,35 @@ local athome = retreatUnit(3, { 10, 0, 10 })
 assert(retreatRun({ athome }, 0) == 0,
     "an engineer working at home must never be recalled, whatever the threat")
 
+-- An engineer another stage of this same pass dispatched is left where it was
+-- sent. UpdateEmergencyDefense posts one to a threatened anchor, and the threat
+-- that raised the alert is exactly what this test trips on -- so without the
+-- hold the point defence is never built, the cooldown holds the next attempt,
+-- and the cycle repeats for every alert outside the home radius.
+retreatThreatAt = { [900] = 90 }
+local defending = retreatUnit(4, { 900, 0, 900 })
+defending.RedQueenEmergencyDefenseUntil = GetGameTick() + 600
+assert(retreatRun({ defending }, 0) == 0,
+    "an engineer held to build emergency defence must not be recalled from it")
+assert(table.getn(defending.EngineerBuildQueue) == 1,
+    "and its build queue must survive")
+-- Skipped outright, not recalled-but-remembered: the route verdict reads lethal
+-- sites, so marking this anchor would refuse the next engineer sent to defend
+-- the very place under attack.
+assert(table.getn(lethalSites) == 0,
+    "the anchor it was sent to defend must not be remembered as lethal")
+
+-- The hold is bounded, so a genuinely stuck engineer is reconsidered.
+defending.RedQueenEmergencyDefenseUntil = GetGameTick() - 1
+assert(retreatRun({ defending }, 0) == 1,
+    "and it must be reconsidered as soon as the hold lapses")
+
+-- The capacity-expansion hold is honoured the same way.
+local expanding = retreatUnit(5, { 900, 0, 900 })
+expanding.RedQueenProductionBuildUntil = GetGameTick() + 600
+assert(retreatRun({ expanding }, 0) == 0,
+    "an engineer held to expand factory capacity must not be recalled either")
+
 -- Escort raises the tolerance, so a covered advance is not undone.
 retreatThreatAt = { [900] = 90 }
 local covered = retreatUnit(4, { 900, 0, 900 })

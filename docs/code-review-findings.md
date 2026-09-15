@@ -30,7 +30,7 @@ than after.
 | 7 | medium | `StrategyDirector.lua:1647` | Water target selection asks for a route out of dry land | verified | [x] |
 | 8 | medium | `StrategyDirector.lua:171` | Air units credited only `SubThreatLevel` | verified | [x] step 1 of `threat-accounting-plan.md` |
 | 9 | medium | `StrategyDirector.lua:635,696` | `Targets.Ground` rekeyed to `land + naval` | **not a defect** | [x] closed, see below |
-| 10 | medium | `ProductionManager.lua:2241` | `UpdateEngineerRetreat` ignores the engineer holds | verified | [ ] |
+| 10 | medium | `ProductionManager.lua:2241` | `UpdateEngineerRetreat` ignores the engineer holds | verified | [x] |
 | 11 | medium | `CombatManager.lua:696` | Scout fallback only inspects `wanted[1]` | verified | [ ] |
 | 12 | medium | `scripts/analyze-log.py:38` | Fixture base location invisible to the log attributor | verified | [ ] |
 | 13 | medium | `ProductionManager.lua:2206` | Commander assist undone 5 s later | relayed | [ ] |
@@ -561,6 +561,22 @@ structures ordered cannot reach what triggered them, while consuming the
 emergency-engineer roster and the cooldown slot that `UpdateShoreTorpedo` needs.
 
 ### 10. `UpdateEngineerRetreat` ignores the engineer holds
+
+**Fixed 2026-09-15.** The loop now skips an engineer whose
+`RedQueenEmergencyDefenseUntil` or `RedQueenProductionBuildUntil` is still
+running, matching the idiom every other consumer already used. Finding 2's fix
+had already repaired the forward-base half of the exemption set; these two holds
+were the remainder.
+
+Skipped outright rather than recalled-but-remembered. `RememberLethalSite` is
+what the engineer route verdict reads, so marking the anchor would refuse the
+next engineer sent to defend the very place under attack — the recall would
+have poisoned the ground it was reacting to.
+
+Both holds are bounded, so an engineer that is genuinely stuck is reconsidered
+as soon as its hold lapses; the contract covers that as well as the hold itself.
+Mutation-tested three ways: removing the check, honouring only the emergency
+hold, and ignoring expiry all fail.
 
 `ProductionManager.lua:2241`.
 

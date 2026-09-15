@@ -2276,11 +2276,34 @@ ProductionManager = ClassSimple {
             claimed[self.ForwardBaseActive.Engineer] = true
         end
 
+        -- An engineer under an active hold was sent somewhere by an earlier
+        -- stage of this very pass, and the hold is how that stage says so.
+        -- UpdateEmergencyDefense dispatches to a threatened anchor, and the
+        -- threat that raised the alert is exactly what trips the test below --
+        -- so without this the point defence is never built, the cooldown holds
+        -- the next attempt, and the cycle repeats for every alert outside the
+        -- home radius. Every other consumer already honours these holds; this
+        -- loop was the one that did not.
+        --
+        -- Skipped outright rather than recalled-but-remembered: marking the
+        -- anchor as a lethal site is what the route verdict reads, so it would
+        -- refuse the next engineer sent to defend the very place under attack.
+        -- Both holds are bounded, so an engineer that is genuinely stuck is
+        -- reconsidered as soon as its hold lapses.
+        local tick = GetGameTick()
+        local function Held(engineer)
+            return (engineer.RedQueenEmergencyDefenseUntil
+                    and engineer.RedQueenEmergencyDefenseUntil > tick)
+                or (engineer.RedQueenProductionBuildUntil
+                    and engineer.RedQueenProductionBuildUntil > tick)
+        end
+
         local engineers = self.Brain:GetListOfUnits(
             categories.MOBILE * categories.ENGINEER - categories.COMMAND, false)
         local recalled = 0
         for _, engineer in pairs(engineers or {}) do
             if IsAlive(engineer) and not claimed[engineer] and engineer.GetPosition
+                and not Held(engineer)
                 and not EngineerSurvival.IsRetreating(engineer)
             then
                 local position = engineer:GetPosition()
