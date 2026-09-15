@@ -36,7 +36,7 @@ than after.
 | 13 | medium | `ProductionManager.lua:2206` | Commander assist undone 5 s later | verified | [x] |
 | 14 | low | `CombatManager.lua:575` | `ScoutSummary` stale on early return | verified | [x] |
 | 15 | low | `ProductionManager.lua:2377` | Claim released while a `Failed` record still owns it | verified | [x] |
-| 16 | low | `CombatManager.lua:655` | Same-position scout candidates each consume a scout | relayed | [ ] |
+| 16 | low | `CombatManager.lua:655` | Same-position scout candidates each consume a scout | verified | [x] |
 
 ## Fix verification — 2026-09-14
 
@@ -747,6 +747,23 @@ site ages out, letting a third attempt queue a second package onto half-built
 structures.
 
 ### 16. Same-position scout candidates each consume a scout
+
+**Verified and fixed 2026-09-15.** The aliasing this finding was unsure about is
+real, and by identity rather than by value: `WorldModel:GetClosestEnemyStart`
+returns `enemy.Position` itself, and a `Pressure` objective is built from that
+return, so the objective candidate and the `start-N` candidate hold one position
+table between them.
+
+Carried-over reservations already matched by coordinate; only the in-pass path
+keyed on candidate identity. The two now agree — a coordinate is claimed once
+per pass, and since `wanted` is ordered by coverage then weight, the more
+important candidate is the one kept. The freed scout reaches the target nothing
+was looking at, which was the actual harm.
+
+The first version of the contract could not tell the key apart from one built on
+X alone, because every fixture position in this spec has X equal to Z. It now
+uses a cluster sharing the start's X and another sharing its Z, so a key built
+from either axis alone fails.
 
 `CombatManager.lua:655`. *(relayed, lower confidence)* Carried-over reservations
 are de-duplicated by coordinate (lines 633-638), but in-pass `Reserve` keys by

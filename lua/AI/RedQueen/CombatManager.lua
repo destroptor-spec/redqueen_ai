@@ -680,9 +680,23 @@ CombatManager = ClassSimple {
                 end
             end
         end
+        -- One scout per coordinate, not per candidate. The objective and an
+        -- enemy start are distinct candidates that can share a single position
+        -- table: GetClosestEnemyStart returns the start's own Position, and a
+        -- Pressure objective is built from exactly that. Reserving by candidate
+        -- identity alone therefore sent two scouts to one spot while a
+        -- genuinely unobserved target got none. The carried-over reservations
+        -- above already match by coordinate; this is the same rule applied
+        -- within the pass. `wanted` is ordered by coverage and then by weight,
+        -- so where two candidates coincide the more important one survives.
         local unassigned = {}
+        local claimedPositions = {}
         for _, target in ipairs(wanted) do
-            if not assigned[target] then table.insert(unassigned, target) end
+            local key = tostring(target.Position[1]) .. ":" .. tostring(target.Position[3])
+            if not assigned[target] and not claimedPositions[key] then
+                claimedPositions[key] = true
+                table.insert(unassigned, target)
+            end
         end
         local function Reserve(unit, target, fallback)
             unit.RedQueenScoutTarget = target.Name

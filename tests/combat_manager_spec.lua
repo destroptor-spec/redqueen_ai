@@ -1126,7 +1126,7 @@ end
 local scoutingConfig = setmetatable({}, { __index = _G })
 setfenv(assert(loadfile("lua/AI/RedQueen/ScoutingConfig.lua")), scoutingConfig)()
 
-local function scoutRun(coverageByX, scoutCount, objectivePosition, mode)
+local function scoutRun(coverageByX, scoutCount, objectivePosition, mode, clusters)
     local scouts = {}
     for index = 1, scoutCount do
         local unit = tieredUnit(500 + index, "TECH1", 1)
@@ -1142,7 +1142,7 @@ local function scoutRun(coverageByX, scoutCount, objectivePosition, mode)
         GetFactionIndex = function() return 2 end,
     }, {
         EnemyStarts = { { Army = 3, Position = { 900, 0, 900 } } },
-        MassClusters = { { Id = 1, Position = { 500, 0, 500 } } },
+        MassClusters = clusters or { { Id = 1, Position = { 500, 0, 500 } } },
         CanPath = function() return true end,
     }, {}, {
         CurrentObjective = objectivePosition
@@ -1169,6 +1169,39 @@ assert(blindSummary.Targets == 3, "objective, enemy start and cluster must all b
 assert(blindSummary.Blind == 3, "and all three must count as unseen")
 assert(blindAssigned[1] == "objective",
     "the objective destination must be scouted first, got " .. tostring(blindAssigned[1]))
+
+-- A Pressure objective aimed at an enemy start shares that start's own position
+-- table: GetClosestEnemyStart returns `enemy.Position` and the objective is
+-- built from it. They are two candidates standing on one coordinate, and
+-- reserving by candidate identity sent a scout to each while the mass cluster
+-- -- a genuinely unobserved place -- got none.
+local sharedAssigned, sharedSummary = scoutRun({}, 3, { 900, 0, 900 })
+assert(sharedSummary.Targets == 3, "the coincident candidates are still both candidates")
+assert(table.getn(sharedAssigned) == 2,
+    "two candidates on one coordinate must consume one scout, got " .. table.getn(sharedAssigned))
+local sawObjective, sawCluster, sawStart = false, false, false
+for _, name in ipairs(sharedAssigned) do
+    if name == "objective" then sawObjective = true end
+    if name == "cluster-1" then sawCluster = true end
+    if name == "start-3" then sawStart = true end
+end
+assert(sawObjective, "the more important of the coincident candidates must be the one kept")
+assert(not sawStart, "and the duplicate coordinate must not be scouted twice")
+assert(sawCluster,
+    "the scout freed by the duplicate must reach the target nothing is looking at")
+
+-- Both axes decide whether two candidates coincide. Mirrored maps routinely put
+-- distinct places on a shared X or Z, so collapsing on one axis would silently
+-- strand a target that nothing is looking at -- the very failure above, caused
+-- by the fix for it.
+-- One cluster shares the enemy start's X, the other shares its Z, so a key
+-- built from either axis alone collapses a pair that does not coincide.
+local axisAssigned = scoutRun({}, 4, { 800, 0, 800 }, nil, {
+    { Id = 1, Position = { 900, 0, 100 } },
+    { Id = 2, Position = { 100, 0, 900 } },
+})
+assert(table.getn(axisAssigned) == 4,
+    "four places on four coordinates must take four scouts, got " .. table.getn(axisAssigned))
 assert(blindSummary.Sent == 3, "every idle scout must be given somewhere to look")
 
 -- Everything already observed: no scout is sent anywhere.
