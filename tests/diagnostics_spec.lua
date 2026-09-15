@@ -212,7 +212,10 @@ local modules = {
             DesiredEngineers = 7,
             EngineerLossPressure = { Count = 2, Mass = 104 },
             EconomicReadiness = 0.5,
-            DefenseAlert = { Active = false },
+            DefenseAlert = {
+                Active = true, Threat = 210, Ratio = 2.5,
+                QualifiedArm = "surface", FriendlySurface = 84, FriendlyAir = 400,
+            },
             TierPolicy = {
                 Land = { Highest = 3 }, Air = { Highest = 3 }, Naval = { Highest = 1 },
             },
@@ -233,6 +236,7 @@ local modules = {
     Combat = {
         GarrisonSummary = { Sites = 2, Units = 9 },
         ScoutSummary = { Targets = 10, Blind = 6, Sent = 0, ScoutOrders = 11, FallbackOrders = 4 },
+        DispatchSummary = { Land = 12, Air = 3, Water = 0, Amphibious = 2, Hover = 1 },
     },
     Intel = { Observations = {} },
     World = {
@@ -278,6 +282,19 @@ assert(string.find(state, "mex=1/24", 1, true),
     "the state line must report extractors held against the map's mass points: " .. state)
 assert(string.find(state, "scout=10/6/0 scoutorders=11/4 scouts=1 scoutfraction=0.128", 1, true),
     "scouting must report coverage, cumulative orders, held scouts and requested fraction: " .. state)
+
+-- Which arm qualified, and what each arm actually has defending it. Alert counts
+-- alone cannot say whether a change came from the surface reading, the air
+-- reading or the combined one, and severity is taxed off the ratio -- so a
+-- matrix reading only "alerts raised" cannot attribute an endgame swing.
+assert(string.find(state, "alert=yes/210.0/2.50/surface/84/400", 1, true),
+    "the alert must report the qualifying arm and the defence each arm holds: " .. state)
+
+-- Units ordered per layer. The fleet is why this exists: a naval force with no
+-- destination receives no order at all, and no outcome figure shows it. W
+-- staying 0 across a match on a map with water is the symptom.
+assert(string.find(state, "dispatch=L12,A3,W0,M2,H1", 1, true),
+    "the state line must report units dispatched per layer: " .. state)
 
 -- With no surface route the amphibious Colossus is out and the air CZAR is the
 -- reachable assault choice, which is exactly the distinction the layer gating

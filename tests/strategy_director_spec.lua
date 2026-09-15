@@ -218,7 +218,8 @@ local team = {
 }
 local pings = { GetBestRequest = function() return nil end }
 
-dofile("lua/AI/RedQueen/StrategyDirector.lua")
+local strategyModule = setmetatable({}, { __index = _G })
+setfenv(assert(loadfile("lua/AI/RedQueen/StrategyDirector.lua")), strategyModule)()
 
 local commanderUnits = {}
 local brain = {
@@ -232,7 +233,7 @@ local brain = {
     GetListOfUnits = function() return commanderUnits end,
     GetUnitsAroundPoint = function() return {} end,
 }
-local director = Create(brain, { VictoryCondition = "Supremacy" }, world, intel, economy, team, pings)
+local director = strategyModule.Create(brain, { VictoryCondition = "Supremacy" }, world, intel, economy, team, pings)
 local ownForces = {
     T2Factories = 0,
     T3Factories = 0,
@@ -1611,5 +1612,79 @@ assert(director.CurrentObjective.Layer == "Land",
     "an inland map must keep pressing on the land layer")
 assert(not (director.CurrentObjective.LayerPositions or {}).Water,
     "and must invent no water destination where the fleet cannot sail")
+
+knownTarget = { Position = { 500, 0, 600 } }
+world.GetNavalApproach = function(_, origin, target)
+    assert(origin == world.StartPosition and target == knownTarget.Position,
+        "the fleet must approach the observed raid target rather than the enemy start")
+    return navalApproach
+end
+currentTick = 8200
+director:Update()
+assert(director.CurrentObjective.Type == "Raid" and director.CurrentObjective.Layer == "Land"
+    and (director.CurrentObjective.LayerPositions or {}).Water == navalApproach,
+    "a known land target on a mixed map must give the fleet a supporting destination")
+knownTarget = nil
+
+-- Allied attacks take precedence over local target selection. They need the
+-- same fleet destination, resolved from this army's start rather than borrowed
+-- from an ally that may sail in a different basin.
+local alliedPosition = { 700, 0, 800 }
+local alliedAttack = {
+    Position = alliedPosition, Layer = "Land", Priority = 75, LaunchTick = 8500,
+    LayerPositions = { Water = { 650, 0, 800 } },
+}
+team.GetCoordinatedAttack = function() return alliedAttack end
+world.GetNavalApproach = function(_, origin, target)
+    assert(origin == world.StartPosition, "the fleet route must start from this army")
+    assert(target == alliedPosition, "the fleet must approach the chosen attack target")
+    return navalApproach
+end
+for _, layer in ipairs({ "Land", "Air" }) do
+    alliedAttack.Layer = layer
+    director.CurrentObjective = nil
+    currentTick = 8400
+    director:Update()
+    local objective = director.CurrentObjective
+    assert(objective.Type == "JointAttack" and objective.Layer == layer,
+        "fleet support must preserve the coordinated attack and its leading layer")
+    assert((objective.LayerPositions or {}).Water == navalApproach,
+        "an allied land or air attack must give our fleet its own reachable approach")
+    assert(objective.Position == alliedPosition and objective.LaunchTick == 8500,
+        "fleet support must preserve the ally's target and launch coordination")
+end
+
+world.GetNavalApproach = function() return nil end
+director:Update()
+assert(not (director.CurrentObjective.LayerPositions or {}).Water,
+    "an ally's naval route must not be reused when our fleet cannot reach it")
+assert(alliedAttack.LayerPositions.Water[1] == 650,
+    "resolving our route must not mutate the shared allied proposal")
+team.GetCoordinatedAttack = function() return nil end
+
+-- Attack pings bypass local target selection too; defensive pings must keep
+-- their existing response semantics and must not acquire an offensive route.
+local ping = { Type = "Attack", Position = alliedPosition, Priority = 90, CreatedTick = 8600, OwnerArmy = 3 }
+pings.GetBestRequest = function() return ping end
+local navalRequests = 0
+world.GetNavalApproach = function(_, origin, target)
+    navalRequests = navalRequests + 1
+    assert(origin == world.StartPosition and target == alliedPosition)
+    return navalApproach
+end
+currentTick = 8600
+director:Update()
+assert(director.CurrentObjective.Type == "Attack"
+    and (director.CurrentObjective.LayerPositions or {}).Water == navalApproach,
+    "an attack ping on land must also dispatch the fleet toward that target")
+assert(director.CurrentObjective.RequestedBy == ping.OwnerArmy,
+    "the attack ping must retain its requesting ally")
+for _, kind in ipairs({ "Reinforce", "Investigate" }) do
+    ping.Type = kind
+    navalRequests = 0
+    director:Update()
+    assert(director.CurrentObjective.Type == kind and navalRequests == 0,
+        "defensive pings must not resolve an offensive naval approach")
+end
 
 print("Red Queen strategy director contracts passed")

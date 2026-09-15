@@ -129,7 +129,7 @@ Diagnostics = ClassSimple {
             or 0
 
         Logger.Info(self.Brain, string.format(
-            "state objective=%s eco=%s mass=%.1f energy=%.1f factories=%d/%d intel=%d doctrine=%s focus=%s weights=A=%d,T2=%d,T3=%d,X=%d,N=%d ready=%.2f slots=%d reason=%s landloss=%d/%.0f airloss=%d/%.0f airdrop=%s alert=%s/%.1f/%.2f momentum=%.0f/%.0f/%s tiers=L%d,A%d,N%d forward=%d/%s/%s exp=%s/%d/%d eng=%d/%d/%d cover=%d/%d engpolicy=%d/%d mex=%d/%d scout=%d/%d/%d scoutorders=%d/%d scouts=%d scoutfraction=%.3f",
+            "state objective=%s eco=%s mass=%.1f energy=%.1f factories=%d/%d intel=%d doctrine=%s focus=%s weights=A=%d,T2=%d,T3=%d,X=%d,N=%d ready=%.2f slots=%d reason=%s landloss=%d/%.0f airloss=%d/%.0f airdrop=%s alert=%s/%.1f/%.2f/%s/%.0f/%.0f momentum=%.0f/%.0f/%s tiers=L%d,A%d,N%d forward=%d/%s/%s exp=%s/%d/%d eng=%d/%d/%d cover=%d/%d engpolicy=%d/%d mex=%d/%d scout=%d/%d/%d scoutorders=%d/%d scouts=%d scoutfraction=%.3f dispatch=L%d,A%d,W%d,M%d,H%d",
             tostring(objective.Type or "none"),
             economy.Mode,
             economy.MassIncome,
@@ -155,6 +155,12 @@ Diagnostics = ClassSimple {
             alert.Active and "yes" or "no",
             alert.Threat or 0,
             alert.Ratio or 0,
+            -- Which arm qualified, and the defence each arm actually has.
+            -- Alert counts alone cannot say whether a change in them came from
+            -- the surface reading, the air reading or the combined one.
+            alert.QualifiedArm or "none",
+            alert.FriendlySurface or 0,
+            alert.FriendlyAir or 0,
             momentum.LostMass,
             momentum.DestroyedMass,
             momentum.Losing and "losing" or "stable",
@@ -204,7 +210,16 @@ Diagnostics = ClassSimple {
             self.Brain.GetCurrentUnits
                 and self.Brain:GetCurrentUnits(categories.MOBILE * categories.SCOUT)
                 or 0,
-            demand.Scouts or 0
+            demand.Scouts or 0,
+            -- Units ordered per layer on the last combat pass. The fleet is the
+            -- reason this is here: a naval force with no destination receives no
+            -- order at all, and an alert count cannot show that -- W staying 0
+            -- through a match on a map with water is the symptom.
+            (modules.Combat and modules.Combat.DispatchSummary or {}).Land or 0,
+            (modules.Combat and modules.Combat.DispatchSummary or {}).Air or 0,
+            (modules.Combat and modules.Combat.DispatchSummary or {}).Water or 0,
+            (modules.Combat and modules.Combat.DispatchSummary or {}).Amphibious or 0,
+            (modules.Combat and modules.Combat.DispatchSummary or {}).Hover or 0
         ))
     end,
 }

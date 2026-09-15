@@ -35,6 +35,31 @@ class AnalyzeLogSpec(unittest.TestCase):
         self.assertIn(f"Unattributed Lua failures: {foreign}\n", result.stdout)
         self.assertEqual(result.returncode, 1 if occurrences else 0)
 
+    def test_alert_arm_and_dispatch_are_reported(self):
+        """The state line's per-arm and per-layer figures must reach the report.
+
+        Defence is judged per arm, so an alert count cannot say which reading
+        moved; and a fleet given no destination receives no order at all, which
+        no outcome figure shows. Both are emitted by Diagnostics and parsed
+        here, so this pins the two sides together.
+        """
+        state = (
+            "info: [RedQueen][INFO][army=2] state objective=Raid eco=Stable "
+            "mass=5.0 energy=50.0 factories=3/4 intel=2 doctrine=None focus=Army "
+            "weights=A=60,T2=10,T3=5,X=20,N=0 ready=0.50 slots=1 reason=none "
+            "landloss=0/0 airloss=0/0 airdrop=None "
+            "alert=yes/210.0/2.50/{arm}/84/400 momentum=0/0/no tiers=L2,A1,N1 "
+            "forward=0/no/none exp=None/0/0 eng=1/7/2 cover=2/9 engpolicy=3/18 "
+            "mex=1/24 scout=10/6/0 scoutorders=11/4 scouts=1 scoutfraction=0.128 "
+            "dispatch=L{land},A3,W{water},M2,H1"
+        )
+        result = self.analyze(
+            state.format(arm="surface", land=12, water=0),
+            state.format(arm="combined", land=4, water=7),
+        )
+        self.assertIn("Alert samples by qualifying arm: combined 1, surface 1", result.stdout)
+        self.assertIn("Peak units dispatched per layer: L12, A3, W7, M2, H1", result.stdout)
+
     def test_clean_startup(self):
         result = self.analyze()
         self.assert_totals(result, 0, 0, 0, 0)

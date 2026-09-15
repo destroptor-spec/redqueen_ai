@@ -184,17 +184,27 @@ if it is measured.
    Several existing alert specs stubbed the scalar `GetOwnThreatNear`, which the
    alert no longer consults; they were converted to stub `GetOwnThreatByArm`
    with equivalent intent rather than deleted.
-4. **Report it.** `defenseLayer=` and `facing=` already reach the trace. Add the
-   per-arm figures and which test qualified, and put the qualifying test in the
-   periodic state line's `alert=` field — a figure a matrix has to read cannot
-   live at `Logger.Debug`.
+4. **Report it.** *(done, 2026-09-15)* The periodic state line carries
+   `alert=<active>/<threat>/<ratio>/<arm>/<surface>/<air>` and a new
+   `dispatch=L,A,W,M,H`. `analyze-log.py` reports alert samples by qualifying
+   arm and peak units dispatched per layer, so a matrix can attribute a change
+   to the surface reading, the air reading or the combined one.
+
+   The dispatch figure was not in the original scope and turned out to be
+   required: finding 6's mechanism — the fleet receiving an order at all — was
+   logged only at `Logger.Debug`, which behavioural runs do not carry, so a
+   mixed-map result would have been unattributable. `W` staying at zero across
+   a match on a map with water is the symptom.
+
+   `DispatchSummary` is zeroed **before** `Update`'s early returns. Mutation
+   testing caught that nothing enforced this, which is finding 14's defect
+   exactly, so a regression now pins it: a staging pass must report nothing
+   dispatched rather than the previous pass's counts.
 
 Steps 1 and 2 are safe to land together. Step 3 should land alone.
 
-Steps 1 to 3 are complete as of 2026-09-15 and none has been measured in a
-match. Step 4 is what makes that measurement possible: the per-arm figures
-reach the trace, which is Debug and therefore absent from a behavioural run,
-and `QualifiedArm` does not reach the periodic state line at all.
+All four steps are complete as of 2026-09-15. None of the behaviour has been
+measured in a match yet; step 4 is what makes that measurement possible.
 
 ## Tests
 

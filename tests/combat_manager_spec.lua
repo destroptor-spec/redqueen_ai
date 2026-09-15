@@ -311,6 +311,76 @@ assert(table.getn(aggressiveOrders) == beforeDispatch + landOnlyWaves + 1,
     "a water destination must add exactly one more wave for the fleet")
 assert(dispatchUnits[7].RedQueenOrderUntil,
     "and the fleet must actually receive the order")
+
+-- The ships must use their own destination for both threat and path checks.
+-- Allied land/air attacks obey the same contract, including their launch tick.
+local waterDestination = target.LayerPositions.Water
+local originalObservations = layerIntel.Observations
+local waterDefense = { Land = 0, Air = 0, Naval = 0 }
+layerIntel.Observations = {
+    { Position = target.Position, Confidence = 1, Threat = { Land = 500, Air = 100, Naval = 0 } },
+    { Position = waterDestination, Confidence = 1, Threat = waterDefense },
+}
+local waterReachable = true
+layerManager.World.CanPath = function(_, layer, origin, destination)
+    if layer == "Water" then
+        assert(origin[1] == 0 and origin[3] == 0, "the path must start from the selected ships")
+        assert(destination == waterDestination, "ships must path to their water destination")
+        return waterReachable
+    end
+    return true
+end
+target.Type = "JointAttack"
+target.LaunchTick = currentTick + 1
+for _, unit in ipairs(dispatchUnits) do unit.RedQueenOrderUntil = nil end
+beforeDispatch = table.getn(aggressiveOrders)
+layerManager:Update()
+assert(table.getn(aggressiveOrders) == beforeDispatch,
+    "fleet support must wait for the coordinated launch tick with the other forces")
+target.LaunchTick = currentTick
+for _, layer in ipairs({ "Land", "Air" }) do
+    target.Layer = layer
+    for _, unit in ipairs(dispatchUnits) do unit.RedQueenOrderUntil = nil end
+    beforeDispatch = table.getn(aggressiveOrders)
+    layerManager:Update()
+    assert(table.getn(aggressiveOrders) == beforeDispatch + 1,
+        "the fleet must judge threat at sea independently of the defended land target")
+    local order = aggressiveOrders[beforeDispatch + 1]
+    assert(order.Units[1] == dispatchUnits[7] and order.Position == waterDestination,
+        "the coordinated attack must send the ships to their water destination")
+end
+for _, reason in ipairs({ "threat", "path" }) do
+    waterDefense.Naval = reason == "threat" and 500 or 0
+    waterReachable = reason ~= "path"
+    for _, unit in ipairs(dispatchUnits) do unit.RedQueenOrderUntil = nil end
+    beforeDispatch = table.getn(aggressiveOrders)
+    layerManager:Update()
+    assert(table.getn(aggressiveOrders) == beforeDispatch and not dispatchUnits[7].RedQueenOrderUntil,
+        "a fleet destination must not bypass the " .. reason .. " gate")
+end
+layerIntel.Observations = originalObservations
+layerManager.World.CanPath = function() return true end
+target.Type = "Raid"
+target.Layer = "Land"
+target.LaunchTick = nil
+target.LayerPositions = nil
+
+-- The summary is zeroed before the early returns, not after them. A pass that
+-- dispatches nothing must report nothing, rather than leaving the previous
+-- pass's counts standing as though they were current -- the defect the cover
+-- and scout summaries both carried, and the reason this figure exists at all.
+for _, unit in ipairs(dispatchUnits) do unit.RedQueenOrderUntil = nil end
+target.Layer = "Land"
+target.LayerPositions = { Water = { 400, 0, 400 } }
+layerManager:Update()
+assert(layerManager.DispatchSummary.Water > 0,
+    "the fleet must have been dispatched on the pass this test builds on")
+local savedObjective = layerStrategy.CurrentObjective
+layerStrategy.CurrentObjective = { Type = "Stage", Position = target.Position, Layer = "Land" }
+layerManager:Update()
+assert(layerManager.DispatchSummary.Water == 0 and layerManager.DispatchSummary.Land == 0,
+    "a staging pass must report nothing dispatched, not the previous pass's counts")
+layerStrategy.CurrentObjective = savedObjective
 target.LayerPositions = nil
 
 -- Keep the subsequent independent dispatch fixtures' order counts local.

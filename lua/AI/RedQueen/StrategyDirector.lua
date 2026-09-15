@@ -1826,27 +1826,6 @@ StrategyDirector = ClassSimple {
                 position = self.World:GetClosestEnemyStart(start, "Air")
             end
 
-            -- A Land or Air objective dispatches Land, Amphibious and Hover
-            -- and never the fleet, because a ship cannot sail to a land
-            -- coordinate. On a Mixed map the Land layer resolves first, so the
-            -- objective is always Land and every ship built sits in the
-            -- ArmyPool for the whole match while naval production keeps
-            -- running. Give the fleet the water beside the same target.
-            --
-            -- GetNavalApproach resolves both ends onto water and returns nil
-            -- when the only route it can find stays inside our own basin, so
-            -- this never invents a destination: with no reachable water the
-            -- field is absent and the fleet is dispatched exactly as before.
-            local function OffensiveWaterPosition(target)
-                if not target or preferredLayer == "Water" then
-                    return nil
-                end
-                if not self.World.GetNavalApproach then
-                    return nil
-                end
-                return self.World:GetNavalApproach(start, target)
-            end
-
             if known then
                 objective = {
                     Type = "Raid",
@@ -1854,9 +1833,6 @@ StrategyDirector = ClassSimple {
                     Layer = preferredLayer,
                     Priority = 75,
                     CreatedTick = GetGameTick(),
-                    LayerPositions = {
-                        Water = OffensiveWaterPosition(known.Position),
-                    },
                 }
             elseif position then
                 objective = {
@@ -1865,9 +1841,6 @@ StrategyDirector = ClassSimple {
                     Layer = preferredLayer,
                     Priority = 60,
                     CreatedTick = GetGameTick(),
-                    LayerPositions = {
-                        Water = OffensiveWaterPosition(position),
-                    },
                 }
             end
         end
@@ -1880,6 +1853,22 @@ StrategyDirector = ClassSimple {
                 Priority = 0,
                 CreatedTick = GetGameTick(),
             }
+        end
+
+        -- Mixed maps usually lead on Land, leaving ships without a destination
+        -- unless they receive the water beside the same target. Resolve this
+        -- for allied attacks and attack pings too: both bypass local targeting.
+        -- Each army checks its own route; an ally may sail in a different basin.
+        -- GetNavalApproach resolves both ends onto water and returns nil when
+        -- only our home basin is reachable. Combat still checks the route from
+        -- the selected ships and the observed threat at this destination.
+        if (OffensiveObjectives[objective.Type] or objective.Type == "Attack")
+            and objective.Layer ~= "Water"
+            and objective.Position
+            and self.World.GetNavalApproach
+        then
+            objective.LayerPositions = objective.LayerPositions or {}
+            objective.LayerPositions.Water = self.World:GetNavalApproach(start, objective.Position)
         end
 
         if airDrop

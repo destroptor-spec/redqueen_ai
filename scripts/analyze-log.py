@@ -194,6 +194,30 @@ alert_with_experimental = [
     if re.search(r"X=(?!0\b)\d+", line)
 ]
 
+# Which arm each alert qualified on. Defence is judged per arm -- surface, air,
+# and the combined force -- so an alert count alone cannot say whether a change
+# came from the fleet reading, the air reading or the two together, and severity
+# is taxed off that arm's ratio.
+alert_arms = Counter(
+    match.group(1)
+    for line in alert_samples
+    for match in [re.search(r"alert=yes/[\d.]+/[\d.]+/(\w+)/", line)]
+    if match
+)
+
+# Units dispatched per layer. The fleet is the reason: a naval force given no
+# destination receives no order at all, and no outcome figure shows it. Water
+# staying at zero for a whole match on a map with water is the symptom.
+dispatch_layers = {"L": 0, "A": 0, "W": 0, "M": 0, "H": 0}
+dispatch_samples = 0
+for line in states:
+    match = re.search(r"dispatch=L(\d+),A(\d+),W(\d+),M(\d+),H(\d+)", line)
+    if not match:
+        continue
+    dispatch_samples += 1
+    for key, value in zip("LAWMH", match.groups()):
+        dispatch_layers[key] = max(dispatch_layers[key], int(value))
+
 
 def parse_json_stats() -> list[dict]:
     """Return the per-army stats block the engine emits at game end."""
@@ -231,6 +255,17 @@ if alert_samples:
     print(
         f"Endgame investment under alert: {len(alert_with_experimental)}"
         f"/{len(alert_samples)} alert samples kept a non-zero experimental weight"
+    )
+if alert_arms:
+    print(
+        "Alert samples by qualifying arm: "
+        + ", ".join(f"{arm} {count}" for arm, count in sorted(alert_arms.items()))
+    )
+if dispatch_samples:
+    print(
+        "Peak units dispatched per layer: "
+        + ", ".join(f"{key}{dispatch_layers[key]}" for key in "LAWMH")
+        + f" over {dispatch_samples} samples"
     )
 print(f"Engine Lua failures: {len(engine_lua_failures)}")
 print(f"Red Queen Lua failures: {sum(red_queen_lua_failures.values())}")

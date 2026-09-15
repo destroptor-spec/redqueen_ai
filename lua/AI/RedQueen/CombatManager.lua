@@ -738,6 +738,12 @@ CombatManager = ClassSimple {
     Update = function(self)
         self:MaintainForwardGarrisons()
         self:MaintainScouts()
+        -- Zeroed before the early returns below, not after them. A summary that
+        -- survives a pass which dispatched nothing reports the previous pass as
+        -- though it were this one -- the defect the cover and scout summaries
+        -- both carried. Without this figure the fleet reaching an objective is
+        -- invisible outside Logger.Debug, which behavioural runs do not carry.
+        self.DispatchSummary = { Land = 0, Air = 0, Water = 0, Amphibious = 0, Hover = 0 }
         local objective = self.Strategy.CurrentObjective
         if not objective or objective.Type == "Recover" or objective.Type == "Stage" then
             self:TraceDecision(objective, "all", "held", "staging")
@@ -763,6 +769,13 @@ CombatManager = ClassSimple {
         local air = self:SelectTaskForce(groups.Air, defensive, airObjective, "Air")
         if self:IssueObjective(air, airObjective, "Air") then
             ordered = ordered + table.getn(air)
+            self.DispatchSummary.Air = self.DispatchSummary.Air + table.getn(air)
+        end
+
+        local function Dispatch(layer, layerObjective)
+            local count = self:DispatchLayer(groups, layer, layerObjective, defensive)
+            self.DispatchSummary[layer] = (self.DispatchSummary[layer] or 0) + count
+            return count
         end
 
         local destinationLayer = objective.Layer
@@ -770,13 +783,13 @@ CombatManager = ClassSimple {
         if defenseLayers then
             for _, layer in ipairs(DefenseDispatchLayers) do
                 if defenseLayers[layer] and layerPositions[layer] then
-                    ordered = ordered + self:DispatchLayer(
-                        groups, layer, ObjectiveAt(objective, layerPositions[layer]), defensive)
+                    ordered = ordered + Dispatch(
+                        layer, ObjectiveAt(objective, layerPositions[layer]))
                 end
             end
         elseif destinationLayer == "Water" then
             for _, layer in ipairs(WaterDispatchLayers) do
-                ordered = ordered + self:DispatchLayer(groups, layer, objective, defensive)
+                ordered = ordered + Dispatch(layer, objective)
             end
         else
             -- Land, Air, or unset. An Air objective still offers the surface
@@ -787,7 +800,7 @@ CombatManager = ClassSimple {
             -- packets at somewhere they can reach is what cost match 27741743
             -- 1005 units for 141 kills.
             for _, layer in ipairs(LandDispatchLayers) do
-                ordered = ordered + self:DispatchLayer(groups, layer, objective, defensive)
+                ordered = ordered + Dispatch(layer, objective)
             end
             -- The fleet is not in LandDispatchLayers and cannot sail to a land
             -- coordinate, so without a destination of its own it receives no
@@ -795,8 +808,8 @@ CombatManager = ClassSimple {
             -- the whole match. The director supplies this only where a naval
             -- route actually exists, so nothing is invented here.
             if layerPositions.Water then
-                ordered = ordered + self:DispatchLayer(
-                    groups, "Water", ObjectiveAt(objective, layerPositions.Water), defensive)
+                ordered = ordered + Dispatch(
+                    "Water", ObjectiveAt(objective, layerPositions.Water))
             end
         end
 
