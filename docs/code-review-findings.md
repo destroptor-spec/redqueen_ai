@@ -186,12 +186,18 @@ the broader map series remains outstanding.
 
 Artifacts: `/tmp/rq-finding6-20260915/run2/` (`game.log`, manifest, overlay
 sources, `analysis.txt`, and `result.json`); these are temporary files. Revision:
-`fefe92beed02c17434b251b10fe0b48400fdcd15`. Payload SHA-256:
+`cff3d35adcd2463574e7dc41548c10af9e6a0a8b`. Payload SHA-256:
 `a883f4d6b49489a799812e6672c6bfa4e69919641240d7f81600d2a3f53d6e95`.
 Fixture SHA-256:
 `4011de79570ca7e3136378f654ce19f12584bfed1ef5634653048eb90d478b5c`.
 The first attempt's movement calculation was invalid; the figures above are
 from the corrected rerun, which also recorded the before/after coordinates.
+
+The revision above was originally recorded as `fefe92b`. That commit's message
+was later rewritten to describe this follow-up, which it carried but did not
+mention, so the hash changed to `cff3d35`. The tree did not: both point at
+`c0143a3c`, and the payload hash below is unchanged, so the run above is still
+attributable to exactly the code it was measured on.
 
 Reviewed 2026-09-15. The gate's coverage of `JointAttack` and `Attack` is
 load-bearing: narrowing it back to `Raid`/`Pressure` fails the strategy
