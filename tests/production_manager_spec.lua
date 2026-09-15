@@ -1448,6 +1448,30 @@ assert(countedAt[1] == torpedoAnchor,
 assert(countedAt[2] >= 48,
     "the count radius must cover the whole water-probe area or the drift returns at its edge")
 
+-- Each response holds its own cooldown. Point defence is deliberately the first
+-- call on the same engineers and the same mass, and Targets.Ground is keyed on
+-- land + naval so a fleet shelling the base raises a defence at all. But a
+-- destroyer at 60 to 80 outranges point defence -- 26 at Tech 1, 50 at Tech 2 --
+-- and the launchers that do reach it must not be locked out by the point
+-- defence that just built. Three separate timers is what makes that true, and
+-- nothing else pinned it: folding them into one shared tick would silently let
+-- point defence starve the only answer to a standoff fleet.
+staticAnchorAttempts = {}
+manager.Strategy.ProductionDemand.DefenseAlert = {
+    Active = true,
+    AnchorKind = "NavalBase",
+    AnchorPosition = torpedoAnchor,
+    Position = { 200, 0, 120 },
+    WaterPosition = { 244, 0, 200 },
+    Targets = { Ground = 8, Torpedo = 4 },
+}
+-- Point defence has just built and stamped its own cooldown.
+manager.LastEmergencyDefenseTick = GetGameTick()
+manager.LastShoreTorpedoTick = -100000
+manager:UpdateShoreTorpedo({})
+assert(attempted("ueb2205"),
+    "a torpedo launcher must still be sited in the window the point defence just built in")
+
 -- Artillery is a late supplement, never a first response. Two independent
 -- brakes: the economy must have reached the late game, and the anchor's primary
 -- point defence must already be standing. Building it early put eight batteries

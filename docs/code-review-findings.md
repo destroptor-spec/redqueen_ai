@@ -29,7 +29,7 @@ than after.
 | 6 | high | `StrategyDirector.lua:87,1642` | On Mixed maps the fleet still never gets an objective | verified | [x] |
 | 7 | medium | `StrategyDirector.lua:1647` | Water target selection asks for a route out of dry land | verified | [x] |
 | 8 | medium | `StrategyDirector.lua:171` | Air units credited only `SubThreatLevel` | verified | [x] step 1 of `threat-accounting-plan.md` |
-| 9 | medium | `StrategyDirector.lua:635,696` | `Targets.Ground` rekeyed to `land + naval` | relayed | [ ] |
+| 9 | medium | `StrategyDirector.lua:635,696` | `Targets.Ground` rekeyed to `land + naval` | **not a defect** | [x] closed, see below |
 | 10 | medium | `ProductionManager.lua:2241` | `UpdateEngineerRetreat` ignores the engineer holds | verified | [ ] |
 | 11 | medium | `CombatManager.lua:696` | Scout fallback only inspects `wanted[1]` | verified | [ ] |
 | 12 | medium | `scripts/analyze-log.py:38` | Fixture base location invisible to the log attributor | verified | [ ] |
@@ -518,6 +518,39 @@ anchor while the army holds 20 Tech 2 gunships yields `ownThreat ~ 0` and a
 permanent maximum-severity alert for as long as any ship is observed.
 
 ### 9. `Targets.Ground` rekeyed to `land + naval`
+
+**Closed 2026-09-15: verified and rejected.** This was a `relayed` claim and it
+does not survive checking. The rekey is deliberate, documented at the site, and
+fixed a real bug — keying point defence on `land` alone meant a fleet shelling
+the base produced a target of zero and no defence was built at all. On a land
+map `naval` is 0, so nothing changes there.
+
+The harm the finding asserted is factually wrong. It claimed point defence
+consumes the `EmergencyDefenseCooldownSeconds` slot that `UpdateShoreTorpedo`
+needs. The three responses hold **separate** timers — `LastEmergencyDefenseTick`,
+`LastShoreArtilleryTick`, `LastShoreTorpedoTick` — each read and written only by
+its own function. They share a constant, not a slot.
+
+The comment it cited as contradicting the code is artillery's justification for
+existing, not an argument against point defence: artillery covers the standoff
+band precisely *because* point defence cannot. And engineer ordering is a stated
+decision, not an oversight — "point defence is cheaper, fires from zero range
+and answers the attackers artillery cannot reach, so it is always the first call
+on the same engineers and the same mass". The supplement is gated behind half
+the point-defence target being established, because demanding the full count
+turned "supplemental" into "never" on Syrtis Major.
+
+What is true is the geometry: a destroyer at 60 to 80 outranges point defence at
+26 (Tech 1) or 50 (Tech 2). Artillery and torpedo answer that band, each on its
+own timer. Changing the sizing would be a balance decision needing a matrix, and
+it would contradict recorded in-game evidence, so nothing was changed.
+
+One real risk did come out of it, and is now closed: **nothing pinned the timers
+being independent.** Folding them into one shared tick would make the finding's
+imagined harm real — point defence would starve the only answer to a standoff
+fleet. `tests/production_manager_spec.lua` now asserts a torpedo launcher is
+still sited in the window point defence just built in, and that contract fails
+if the timers are merged.
 
 `StrategyDirector.lua:635,696-697`. *(relayed)*
 
