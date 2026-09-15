@@ -145,6 +145,72 @@ half alone and re-running:
   fleet unordered, and the same objective carrying a water destination must add
   exactly one more wave and actually order the ships.
 
+### Finding 6 follow-up — 2026-09-15
+
+The initial fix was already present, but only enriched locally selected `Raid`
+and `Pressure` objectives. `JointAttack` and allied `Attack` pings bypass that
+selection block and still left the fleet without a destination. Naval approach
+resolution now happens after objective selection for all four attack types.
+Each army resolves the route from its own start to the selected target; it does
+not inherit another army's potentially disconnected naval route. Defensive
+requests keep their existing destinations.
+
+The new coordinated-attack regression failed before this change and passes
+afterward. Strategy contracts cover land raids, coordinated Land/Air attacks,
+attack pings, missing naval routes, and unchanged defensive pings. Combat
+contracts verify the actual water destination, its own threat reading, the
+ships' path check, and the coordinated launch tick. The strategy spec now loads
+the module through an environment table, matching FAF's import semantics.
+
+A bounded SCMP_009 fixture, seed 2071971, UEF versus Cybran, exercised real
+frigates through `StrategyDirector:Update` and `CombatManager:Update` using
+native terrain and navigation. It supplied controlled allied requests and an
+empty intel store to a separate director and set that director's map type to
+Mixed; the map's natural classification remained Naval. Both its land route
+and connected water approach were checked in the engine.
+
+```text
+[RedQueenFleetFixture] case=Pressure layer=Land dispatched=4 queued=4 moved=2.69
+[RedQueenFleetFixture] case=JointAttack layer=Land dispatched=4 queued=4 moved=6.86
+[RedQueenFleetFixture] case=JointAttack layer=Air dispatched=4 queued=4 moved=6.08
+[RedQueenFleetFixture] case=Attack layer=Land dispatched=4 queued=4 moved=4.62
+[RedQueenFleetFixture] PASS pressure=true joint-land=true joint-air=true ping=true launch-wait=true no-route-held=true
+```
+
+`./scripts/validate.sh` and `git diff --check` passed. The analyzer reported
+zero engine Lua, Red Queen Lua, or scheduler failures. The test ended after
+17.1 wall-clock seconds, stopping only its exact `/redqueen` and `/log` process.
+Payload hashes matched before and after the run. This proves the controlled
+dispatch mechanism, not full-match results, balance, or multiplayer behavior;
+the broader map series remains outstanding.
+
+Artifacts: `/tmp/rq-finding6-20260915/run2/` (`game.log`, manifest, overlay
+sources, `analysis.txt`, and `result.json`); these are temporary files. Revision:
+`fefe92beed02c17434b251b10fe0b48400fdcd15`. Payload SHA-256:
+`a883f4d6b49489a799812e6672c6bfa4e69919641240d7f81600d2a3f53d6e95`.
+Fixture SHA-256:
+`4011de79570ca7e3136378f654ce19f12584bfed1ef5634653048eb90d478b5c`.
+The first attempt's movement calculation was invalid; the figures above are
+from the corrected rerun, which also recorded the before/after coordinates.
+
+Reviewed 2026-09-15. The gate's coverage of `JointAttack` and `Attack` is
+load-bearing: narrowing it back to `Raid`/`Pressure` fails the strategy
+contracts. `start` resolves to this army's own `StartPosition` inside `Update`,
+so the route really is per-army.
+
+Two guards were unpinned, and one of them mattered. Dropping
+`objective.Layer ~= "Water"` changes no behaviour — a Water objective dispatches
+through `WaterDispatchLayers` and never reads `LayerPositions` — so that guard
+saves redundant pathfinding rather than protecting a contract. But letting the
+block reach a `Defend` **did** pass the suite: `CombatManager` sends naval
+defenders to `layerPositions.Water`, and the alert sets that to a threat-biased
+intercept when naval threat is observed, so an accidental widening would hold
+the fleet at the anchor instead of intercepting, with nothing in an outcome to
+show it. A contract now pins it, using a land-led defence — a naval-led one
+carries Layer `Water` and is excluded by the other guard, so it cannot
+discriminate. The first version of that test passed either way and was rewritten;
+it now asserts the water position exists before asserting what it is not.
+
 ### Finding 5 regression
 
 `tests/strategy_director_spec.lua` adds two cases with a layer-aware

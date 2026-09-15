@@ -605,6 +605,41 @@ director:Update()
 assert(director.CurrentObjective.Layer == "Land", "land invasions must not inherit a shoreline anchor's water layer")
 assert(director.CurrentObjective.DefenseLayers.Land, "land defenders must remain eligible at water-adjacent bases")
 assert(director.CurrentObjective.LayerPositions.Land == observedPressure.Position, "land defenders must intercept at the observed land position")
+
+-- A defence keeps the destinations the alert computed for it. The offensive
+-- naval-approach resolution runs after objective selection and must not reach a
+-- Defend: with naval threat observed the alert biases the fleet's position
+-- toward the threat, while an approach resolved from our own start is water
+-- beside the anchor. Overwriting one with the other holds the fleet at home
+-- instead of intercepting, and no outcome figure would show it.
+--
+-- Land-led on purpose. A naval-led defence carries Layer "Water" and is already
+-- excluded by that guard, so it cannot discriminate; land >= naval leads on Land
+-- while naval > 0 still earns the threat-biased water position.
+local offensiveApproach = { 777, 0, 777 }
+local savedApproach = world.GetNavalApproach
+world.GetNavalApproach = function() return offensiveApproach end
+local shoreAnchor = { 320, 5, 320 }
+brain.BuilderManagers.NAVAL = {
+    EngineerManager = { GetLocationCoords = function() return shoreAnchor end },
+}
+waterPoint = shoreAnchor
+observedPressure = {
+    FirstEntityId = 801, Position = { 350, 5, 350 }, AnchorIndex = 2,
+    DistanceToAnchor = 42, Threat = 70, Land = 60, Naval = 10, Air = 0,
+    ClosingThreat = 40, Approaching = true,
+}
+director.DefenseAlert = { Active = false }
+director.CurrentObjective = nil
+currentTick = 5050
+director:Update()
+assert(director.CurrentObjective.Type == "Defend" and director.CurrentObjective.Layer == "Land",
+    "the land-led defence this case needs must actually be produced")
+assert(director.CurrentObjective.LayerPositions.Water,
+    "and it must carry a water position at all, or this proves nothing")
+assert(director.CurrentObjective.LayerPositions.Water ~= offensiveApproach,
+    "a defence must keep the water position its alert computed, not an offensive approach")
+world.GetNavalApproach = savedApproach
 brain.BuilderManagers.NAVAL = nil
 waterPoint = nil
 
