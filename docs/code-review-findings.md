@@ -34,7 +34,7 @@ than after.
 | 11 | medium | `CombatManager.lua:696` | Scout fallback only inspects `wanted[1]` | verified | [x] |
 | 12 | medium | `scripts/analyze-log.py:38` | Fixture base location invisible to the log attributor | verified | [x] |
 | 13 | medium | `ProductionManager.lua:2206` | Commander assist undone 5 s later | relayed | [ ] |
-| 14 | low | `CombatManager.lua:575` | `ScoutSummary` stale on early return | verified | [ ] |
+| 14 | low | `CombatManager.lua:575` | `ScoutSummary` stale on early return | verified | [x] |
 | 15 | low | `ProductionManager.lua:2377` | Claim released while a `Failed` record still owns it | relayed | [ ] |
 | 16 | low | `CombatManager.lua:655` | Same-position scout candidates each consume a scout | relayed | [ ] |
 
@@ -674,6 +674,20 @@ every 45 seconds and the state line claims the whole time.
 ## Low
 
 ### 14. `ScoutSummary` stale on early return
+
+**Fixed 2026-09-15.** The early return now publishes a summary instead of
+leaving the previous pass's standing.
+
+Not simply zeroed, though. `Targets`, `Blind`, `Sent` and `Idle` are per-pass
+and must reset; `ScoutOrders` and `FallbackOrders` are match cumulative, and a
+pass that could not look has not undone them. Zeroing everything would have
+traded a stale reading for a false one. Both halves are pinned: leaving the
+summary untouched fails, and resetting the order totals fails too.
+
+The two readings now come from one `ScoutSummaryOf` constructor, so the quiet
+path and the measured path cannot drift apart as fields are added — which is how
+this class of defect keeps recurring. `DispatchSummary`, added for step 4 of the
+threat-accounting plan, had the same bug and was caught the same way.
 
 `CombatManager.lua:575`. `MaintainForwardGarrisons` sets
 `self.GarrisonSummary = { Sites = 0, Units = 0 }` *before* its early return

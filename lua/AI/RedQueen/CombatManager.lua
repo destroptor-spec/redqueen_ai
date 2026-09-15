@@ -107,6 +107,23 @@ local function AvailableScout(unit, tick)
         and (not unit.RedQueenGarrisonUntil or unit.RedQueenGarrisonUntil <= tick)
 end
 
+-- One shape for the scout summary, so the reading taken when nothing could be
+-- measured and the reading taken when something was cannot drift apart. The
+-- per-pass figures default to zero; the order totals are match cumulative and
+-- survive a pass that measured nothing.
+local function ScoutSummaryOf(previous, measured)
+    previous = previous or {}
+    measured = measured or {}
+    return {
+        Targets = measured.Targets or 0,
+        Blind = measured.Blind or 0,
+        Sent = measured.Sent or 0,
+        Idle = measured.Idle or 0,
+        ScoutOrders = previous.ScoutOrders or 0,
+        FallbackOrders = previous.FallbackOrders or 0,
+    }
+end
+
 local function ObjectiveAt(objective, position)
     return {
         Type = objective.Type,
@@ -596,6 +613,12 @@ CombatManager = ClassSimple {
             or nil
         local intel = self.Strategy and self.Strategy.Intel
         if not pool or not pool.GetPlatoonUnits or not intel or not intel.GetScoutTargets then
+            -- Nothing was measured, so report nothing measured. Leaving the
+            -- previous pass's figures standing reports coverage the army never
+            -- took, and these feed the state line a matrix reads -- the same
+            -- defect the cover summary carried. The order totals are match
+            -- cumulative and a quiet pass has not undone them.
+            self.ScoutSummary = ScoutSummaryOf(self.ScoutSummary)
             return
         end
         local tick = GetGameTick()
@@ -624,15 +647,11 @@ CombatManager = ClassSimple {
         -- Coverage feeds adaptive production, even when directed dispatch is
         -- disabled. Keep measuring in the production-only arm. Totals survive
         -- quiet passes so the slower diagnostic cycle cannot miss dispatches.
-        local previous = self.ScoutSummary or {}
-        local summary = {
+        local summary = ScoutSummaryOf(self.ScoutSummary, {
             Targets = table.getn(targets),
             Blind = table.getn(wanted),
-            Sent = 0,
             Idle = table.getn(idle),
-            ScoutOrders = previous.ScoutOrders or 0,
-            FallbackOrders = previous.FallbackOrders or 0,
-        }
+        })
         self.ScoutSummary = summary
         local scouting = self.Brain.RedQueenScouting
         if scouting and not scouting.DirectedDispatch then

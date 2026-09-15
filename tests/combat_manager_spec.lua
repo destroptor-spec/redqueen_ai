@@ -1284,6 +1284,24 @@ local unworthy = fallbackRun({ [800] = 0.90 }, { 800, 0, 800 }, 6)
 assert(unworthy == 0,
     "no ordinary unit may be diverted when nothing meets the weight bar, got " .. unworthy)
 
+-- A pass that could not look must report that it did not look. The cover
+-- summary carried this defect and was fixed; the scout summary kept it, and
+-- these figures feed the state line a matrix reads -- so a pass with no pool
+-- reported the previous pass's coverage as its own. The order totals are match
+-- cumulative and a quiet pass has not undone them, so they must survive.
+local _, _, _, staleManager = fallbackRun({}, { 800, 0, 800 }, 6)
+staleManager.ScoutSummary = {
+    Targets = 26, Blind = 12, Sent = 3, Idle = 4,
+    ScoutOrders = 11, FallbackOrders = 4,
+}
+staleManager.Brain.GetPlatoonUniquelyNamed = function() return nil end
+staleManager:MaintainScouts()
+local quiet = staleManager.ScoutSummary
+assert(quiet.Targets == 0 and quiet.Blind == 0 and quiet.Sent == 0 and quiet.Idle == 0,
+    "an absent pool must not leave stale scouting statistics")
+assert(quiet.ScoutOrders == 11 and quiet.FallbackOrders == 4,
+    "but the match's cumulative order totals must survive a pass that measured nothing")
+
 local savedScoutTick = currentTick
 for pass = 1, 6 do
     currentTick = savedScoutTick + pass * 30
