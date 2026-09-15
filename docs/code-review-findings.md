@@ -33,7 +33,7 @@ than after.
 | 10 | medium | `ProductionManager.lua:2241` | `UpdateEngineerRetreat` ignores the engineer holds | verified | [x] |
 | 11 | medium | `CombatManager.lua:696` | Scout fallback only inspects `wanted[1]` | verified | [x] |
 | 12 | medium | `scripts/analyze-log.py:38` | Fixture base location invisible to the log attributor | verified | [x] |
-| 13 | medium | `ProductionManager.lua:2206` | Commander assist undone 5 s later | relayed | [ ] |
+| 13 | medium | `ProductionManager.lua:2206` | Commander assist undone 5 s later | verified | [x] |
 | 14 | low | `CombatManager.lua:575` | `ScoutSummary` stale on early return | verified | [x] |
 | 15 | low | `ProductionManager.lua:2377` | Claim released while a `Failed` record still owns it | relayed | [ ] |
 | 16 | low | `CombatManager.lua:655` | Same-position scout candidates each consume a scout | relayed | [ ] |
@@ -659,6 +659,28 @@ lifecycle. `validate_mod.py` does not cross-check the analyzer regex against the
 name producers.
 
 ### 13. Commander assist undone 5 s later
+
+**Verified and fixed 2026-09-15.** This was `relayed`; it checked out, against
+the installed engine rather than by reading ours alone.
+
+`ReleaseEngineer` ends by scheduling `DelayAssign(engineer, 50)`. That is right
+for a retreat — the `EngineerManager` hook defers the poll until the unit is
+home and native work resumes there — but the deferral keys on
+`RedQueenRetreatPosition`, which only a caller passing `home` sets. The assist
+passes `nil`, so nothing deferred it. Native `Wait` then calls
+`AssignEngineerTask`, which re-platoons the unit; the engine's COMMAND exception
+there is commented out, and a bare `IssueGuard` does not set `UnitBeingAssist`,
+which is the only flag that would have made native leave it alone.
+`RedQueenAssistUntil` is 450 ticks, so Red Queen reported the commander as
+assisting for the remaining forty seconds.
+
+`ReleaseEngineer` now takes `resume`, defaulting to true. Only the assist passes
+false; the three retreat callers are unchanged. The existing contract could not
+have caught this — its ACU stub had no `BuilderManagerData`, so no manager
+resolved and no poll was ever scheduled, though `StrategyDirector.lua:599`
+already reads `commander.BuilderManagerData.LocationType` in production. The
+helper now supplies one. Mutation-tested both ways: restoring the poll fails,
+and suppressing it for every caller fails on the recall case.
 
 `ProductionManager.lua:2206`. *(relayed)*
 

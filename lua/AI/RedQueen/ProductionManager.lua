@@ -154,7 +154,14 @@ local MotionLayers = {
 -- Both recall paths use this one implementation: the native build queue, the
 -- callbacks and threads that would re-issue the order, and platoon ownership
 -- all have to go before the move, or the engineer turns around and walks back.
-local function ReleaseEngineer(engineer, home)
+-- `resume` schedules the native re-poll that hands the engineer back to FAF's
+-- own work. A retreat wants it: the hook defers that poll until the unit is
+-- home, and native picks it up from there. A caller that is about to issue its
+-- own order does not -- the poll lands fifty ticks later and replaces it.
+local function ReleaseEngineer(engineer, home, resume)
+    if resume == nil then
+        resume = true
+    end
     return pcall(function()
         if home then
             engineer.RedQueenRetreatPosition = { home[1], home[2], home[3] }
@@ -183,7 +190,7 @@ local function ReleaseEngineer(engineer, home)
             IssueMove({ engineer }, home)
         end
         local manager = engineer.BuilderManagerData and engineer.BuilderManagerData.EngineerManager
-        if manager and manager.DelayAssign then
+        if resume and manager and manager.DelayAssign then
             -- The hook defers this poll until arrival, then restores native work.
             manager:DelayAssign(engineer, 50)
         end
@@ -2213,7 +2220,17 @@ ProductionManager = ClassSimple {
         -- Release native ownership before ordering the assist. Clearing engine
         -- orders while a build queue and its callbacks survive leaves them to
         -- re-issue the order, which is how the commander walked off again.
-        ReleaseEngineer(commander, nil)
+        -- No native re-poll: this caller issues its own order immediately and
+        -- holds the commander for CommanderAssistSeconds. Scheduling the poll
+        -- re-tasked the ACU about five seconds later -- AssignEngineerTask
+        -- re-platoons it, and a bare IssueGuard does not set UnitBeingAssist,
+        -- which is the only thing that would have made native leave it alone.
+        -- RedQueenAssistUntil then reported it as assisting for the remaining
+        -- forty, so the state line claimed a commander that had walked off.
+        -- It is not retreating either, so the EngineerManager hook's deferral
+        -- never applied: that defers on RedQueenRetreatPosition, which only a
+        -- caller passing `home` sets.
+        ReleaseEngineer(commander, nil, false)
         if IssueGuard then IssueGuard({ commander }, target) end
         commander.RedQueenAssistUntil = tick
             + Constants.Policy.CommanderAssistSeconds * 10

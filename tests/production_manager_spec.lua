@@ -2112,7 +2112,7 @@ end
 -- observed as an idle ACU through the early and mid game, and as an Aeon
 -- commander wandering alone to the centre of the map.
 local commanderHome = { 0, 0, 0 }
-local function commanderRun(position, idle, alertActive, factoryPositions)
+local function commanderRun(position, idle, alertActive, factoryPositions, nativeManager)
     local acu = {
         EntityId = 900,
         Dead = false,
@@ -2124,6 +2124,13 @@ local function commanderRun(position, idle, alertActive, factoryPositions)
         EngineerBuildQueue = { { "T1Resource", 1, 1 } },
         ProcessBuild = "thread-handle",
     }
+    -- The real ACU is a member of an EngineerManager -- StrategyDirector reads
+    -- its BuilderManagerData.LocationType -- so a case that cares whether
+    -- native is re-polled has to supply one. Without it the release path finds
+    -- no manager and schedules nothing, which is why this went unnoticed.
+    if nativeManager then
+        acu.BuilderManagerData = { EngineerManager = nativeManager }
+    end
     local factories = {}
     for index, factoryPosition in ipairs(factoryPositions or {}) do
         table.insert(factories, {
@@ -2183,6 +2190,33 @@ assert(assisted.RedQueenAssistUntil, "the assignment must be held for a period")
 -- above enforces the ordering.
 assert(table.getn(assisted.EngineerBuildQueue) == 0 and assisted.ProcessBuild == nil,
     "the commander's native build ownership must be released before assisting")
+
+-- The assist issues its own order and holds the commander for 45 seconds, so it
+-- must not also schedule the native re-poll. That poll lands about five seconds
+-- later, AssignEngineerTask re-platoons the ACU, and a bare IssueGuard does not
+-- set UnitBeingAssist -- the one thing that would have made native leave it
+-- alone. RedQueenAssistUntil then reports it as assisting for the other forty.
+local assistPolls = {}
+verdict = commanderRun({ 20, 0, 20 }, true, false, { { 40, 0, 40 } }, {
+    DelayAssign = function(_, unit, delay)
+        table.insert(assistPolls, { Unit = unit, Delay = delay })
+    end,
+})
+assert(verdict == "assist", "the assist case must still assist, got " .. tostring(verdict))
+assert(table.getn(assistPolls) == 0,
+    "assisting must not schedule the native re-poll that would replace its own guard")
+
+-- The recall still hands the engineer back: the hook defers that poll until the
+-- commander is home, and native work resumes from there.
+local recallPolls = {}
+verdict = commanderRun({ 600, 0, 600 }, true, false, { { 10, 0, 10 } }, {
+    DelayAssign = function(_, unit, delay)
+        table.insert(recallPolls, { Unit = unit, Delay = delay })
+    end,
+})
+assert(verdict == "recalled", "the recall case must still recall, got " .. tostring(verdict))
+assert(table.getn(recallPolls) == 1,
+    "a recall must still schedule the poll the hook defers until arrival")
 
 -- Already busy: native has usefully tasked it, so leave it alone.
 verdict = commanderRun({ 20, 0, 20 }, false, false, { { 40, 0, 40 } })
