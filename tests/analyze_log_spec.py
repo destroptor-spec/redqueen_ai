@@ -78,6 +78,40 @@ class AnalyzeLogSpec(unittest.TestCase):
         self.assert_totals(result, 1, 1, 1, 1)
         self.assertIn("Post-defeat Lua failures: 1 attributed, 1 in FAF code", result.stdout)
 
+    def test_native_invalid_location_after_defeat_is_advisory(self):
+        """A defeated army's manager teardown is FAF's, not ours.
+
+        All 11 of these in the 21-cell matrix named a native location after a
+        defeat, with a traceback wholly inside adaptive-ai.lua.
+        """
+        result = self.analyze(
+            DEFEAT,
+            "warning: *AI WARNING: FactoryCapCheck - Invalid location - MAIN",
+            r"warning: ...gamedata\lua.nx2\lua\aibrains\adaptive-ai.lua(498): in function `GetManagerCount'",
+        )
+        self.assert_totals(result, 0, 0, 0, 0)
+        self.assertIn("Invalid manager locations: 0 attributed, 1 in FAF code", result.stdout)
+        self.assertIn("invalid manager location - MAIN", result.stdout)
+
+    def test_own_site_invalid_location_still_fails_after_defeat(self):
+        """A leaked builder for one of our retired sites is our defect."""
+        result = self.analyze(
+            DEFEAT,
+            "warning: *AI WARNING: FactoryCapCheck - Invalid location - RQFB_2_1",
+        )
+        self.assertIn("Invalid manager locations: 1 attributed, 0 in FAF code", result.stdout)
+        self.assertIn("invalid manager location - RQFB_2_1", result.stdout)
+        self.assertEqual(result.returncode, 1)
+
+    def test_traceback_attributes_invalid_location_at_native_name(self):
+        """Our frame is evidence even when the location name is FAF's."""
+        result = self.analyze(
+            "warning: *AI WARNING: FactoryCapCheck - Invalid location - MAIN",
+            FRAME,
+        )
+        self.assertIn("Invalid manager locations: 1 attributed, 0 in FAF code", result.stdout)
+        self.assertEqual(result.returncode, 1)
+
     def test_scheduler_and_other_errors_keep_occurrence_counts(self):
         scheduler = "warning: [RedQueen][ERROR] scheduler task 'production' failed: missing value"
         result = self.analyze(scheduler, FRAME, scheduler, FRAME, "warning: [RedQueen][ERROR] broken contract")

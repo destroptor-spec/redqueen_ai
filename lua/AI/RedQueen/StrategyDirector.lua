@@ -1,5 +1,6 @@
 local Logger = import("/mods/TheRedQueen/lua/AI/RedQueen/Logger.lua")
 local Constants = import("/mods/TheRedQueen/lua/AI/RedQueen/Constants.lua")
+local EngineerSurvival = import("/mods/TheRedQueen/lua/AI/RedQueen/EngineerSurvival.lua")
 
 local function Clamp(value, minimum, maximum)
     return math.max(minimum, math.min(maximum, value))
@@ -16,6 +17,56 @@ local function PositionLayer(position)
     return "Land"
 end
 
+-- Fixed compass offsets, so probing terrain never depends on iteration order.
+local ProbeDirections = {
+    { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 },
+    { 0.7071, 0.7071 }, { 0.7071, -0.7071 },
+    { -0.7071, 0.7071 }, { -0.7071, -0.7071 },
+}
+
+-- Nearest water deep enough to found a torpedo launcher, biased toward the
+-- threat so the battery ends up on the approach rather than behind the base.
+-- Returns nil for a genuinely inland anchor, which is what gates the whole
+-- torpedo response: those structures cannot be placed on land at all.
+local function NearestWaterPosition(anchorPosition, threatPosition)
+    if not anchorPosition then
+        return nil
+    end
+    local depth = Constants.Policy.ShoreTorpedoMinimumDepth
+    local limit = Constants.Policy.ShoreTorpedoProbeRadius
+    local radius = 8
+    while radius <= limit do
+        local best, bestScore = nil, nil
+        for _, direction in ipairs(ProbeDirections) do
+            local x = anchorPosition[1] + direction[1] * radius
+            local z = anchorPosition[3] + direction[2] * radius
+            local surface = GetSurfaceHeight(x, z)
+            if surface - GetTerrainHeight(x, z) >= depth then
+                local candidate = { x, surface, z }
+                -- Prefer the candidate nearest the threat; fall back to a
+                -- stable coordinate order so the choice never drifts.
+                local score = 0
+                if threatPosition then
+                    local sx = candidate[1] - threatPosition[1]
+                    local sz = candidate[3] - threatPosition[3]
+                    score = sx * sx + sz * sz
+                end
+                if not bestScore
+                    or score < bestScore
+                    or (score == bestScore and (x < best[1] or (x == best[1] and z < best[3])))
+                then
+                    best, bestScore = candidate, score
+                end
+            end
+        end
+        if best then
+            return best
+        end
+        radius = radius + 8
+    end
+    return nil
+end
+
 local function PositionForLayer(layer, anchorPosition, threatPosition)
     if threatPosition and PositionLayer(threatPosition) == layer then
         return threatPosition
@@ -26,11 +77,61 @@ local function PositionForLayer(layer, anchorPosition, threatPosition)
     return nil
 end
 
-local function CanInterrupt(previous, objective, tick)
+-- Surface layers worth trying for an offensive, most appropriate first. Hover
+-- is deliberately absent: the combat manager already dispatches the hover task
+-- force alongside land and naval and path-gates it on the hover graph, so hover
+-- reaches what those layers cannot without an objective being sited for a force
+-- that only two of the four factions field.
+local OffensiveLayers = {
+    Naval = { "Water", "Land" },
+    Mixed = { "Land", "Water" },
+    Land = { "Land" },
+}
+
+-- Objectives that are attacks. An attack in contact is worth protecting from a
+-- marginal defensive reading; staging and recovery are not.
+local OffensiveObjectives = {
+    Pressure = true,
+    Raid = true,
+    JointAttack = true,
+}
+
+local function CanInterrupt(self, previous, objective, tick)
     if not previous or not previous.ExpiresTick or previous.ExpiresTick <= tick then
         return true
     end
-    if objective.RequestedBy or objective.Type == "Defend" then
+    if objective.RequestedBy then
+        return true
+    end
+    if objective.Type == "Defend" then
+        -- A real defence always preempts: an observed cluster threatening an
+        -- anchor, which is where `Critical` comes from.
+        if objective.Critical then
+            return true
+        end
+        -- The weak local-threat defence must not abandon an attack that has
+        -- already arrived. Observed: an army with the strength to cripple an
+        -- enemy base was recalled repeatedly and killed only a few engineers,
+        -- because `LocalDefenseThreat` is 25 -- a couple of raiders at home --
+        -- and any Defend used to preempt unconditionally. The objective then
+        -- expired after `ObjectiveLifetimeTicks` and the attack resumed, so the
+        -- army walked back and forth and never landed a blow.
+        --
+        -- Judged on our own strength at the destination, so the hold ends by
+        -- itself as that force dies or withdraws, and an attack that never
+        -- arrived is not protected at all.
+        if OffensiveObjectives[previous.Type] and previous.Position then
+            local committed = 0
+            if self and self.GetOwnThreatNear then
+                committed = self:GetOwnThreatNear(
+                    previous.Position,
+                    Constants.Policy.CommitmentThreatRadius
+                ) or 0
+            end
+            if committed > 0 then
+                return false
+            end
+        end
         return true
     end
     if previous.Type == "Stage" then
@@ -58,6 +159,87 @@ local function BlueprintThreat(unit)
         + (defense.AirThreatLevel or 0)
 end
 
+-- Can any weapon on this blueprint strike a target standing on `targetLayer`,
+-- fired from `firingLayer`? `ranged` additionally requires the target to be
+-- inside the weapon's reach, which is the right question for something that
+-- shoots from where it stands and the wrong one for something that flies to
+-- the fight.
+local function CanStrike(blueprint, firingLayer, targetLayer, distanceSquared, ranged)
+    for _, weapon in ipairs(blueprint.Weapon or {}) do
+        local caps = weapon.FireTargetLayerCapsTable or {}
+        local allowed = caps[firingLayer] or ""
+        if string.find(allowed, targetLayer, 1, true) then
+            if not ranged then
+                return true
+            end
+            local range = weapon.MaxRadius or 0
+            if distanceSquared <= range * range then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+-- The defenders any threat comparison is measured against. One definition, so
+-- the scalar and the per-arm readings can never drift apart.
+local function DefendersNear(brain, position, radius)
+    if not brain.GetUnitsAroundPoint then
+        return {}
+    end
+    local category = categories.MOBILE * (categories.LAND + categories.AIR + categories.NAVAL)
+        - categories.ENGINEER
+        - categories.COMMAND
+        - categories.SCOUT
+        + categories.STRUCTURE * categories.DEFENSE
+    return brain:GetUnitsAroundPoint(category, position, radius, "Ally") or {}
+end
+
+-- What this unit can do to a surface contact standing at `target`, which sits
+-- on `contactLayer`. Surface damage is the arm that has a reach constraint: a
+-- gun that cannot depress to the water, or that stands out of range, is not
+-- defending against a fleet.
+local function SurfaceDefenseThreat(unit, target, contactLayer)
+    local blueprint = unit:GetBlueprint()
+    local hash = blueprint.CategoriesHash or {}
+    local defense = blueprint.Defense or {}
+    local antiShip = (defense.SurfaceThreatLevel or 0) + (defense.SubThreatLevel or 0)
+    if hash.NAVAL then
+        -- A ship already stands on the water and moves to engage; against a
+        -- land contact it still has to be able to shell the shore.
+        if contactLayer == "Water" then
+            return antiShip
+        end
+        return CanStrike(blueprint, "Water", contactLayer, 0, false) and antiShip or 0
+    end
+    if hash.AIR then
+        -- Aircraft fire from the Air layer, which is the only key their caps
+        -- reliably carry, and they fly to the fight -- so weapon reach from
+        -- wherever the unit happens to be now is not the question.
+        --
+        -- Reading SubThreatLevel alone scored every gunship and bomber zero
+        -- and counted torpedo bombers only, which is how 20 gunships could sit
+        -- over a destroyer group while the anchor measured friendly=0 and
+        -- raised a maximum-severity alert. A UEF T2 gunship carries
+        -- SurfaceThreatLevel 5 with caps "Air|Land|Water|Seabed"; an
+        -- interceptor passes the same caps test on its blueprint but carries no
+        -- surface or sub damage at all, so the sum keeps it out on its own
+        -- rather than needing a category exception.
+        return CanStrike(blueprint, "Air", contactLayer, 0, false) and antiShip or 0
+    end
+    local position = unit.GetPosition and unit:GetPosition()
+    if not target or not position then return 0 end
+    local dx, dz = target[1] - position[1], target[3] - position[3]
+    local layer = PositionLayer(position)
+    return CanStrike(blueprint, layer, contactLayer, dx * dx + dz * dz, true) and antiShip or 0
+end
+
+-- Land forces only defend a naval contact when a weapon can actually reach
+-- its water position. Ships and naval aircraft can move to engage it.
+local function NavalDefenseThreat(unit, target)
+    return SurfaceDefenseThreat(unit, target, "Water")
+end
+
 local function ArmyStatValue(brain, name)
     if not brain.GetArmyStat then
         return 0
@@ -83,6 +265,10 @@ StrategyDirector = ClassSimple {
         self.RecentLandLosses = {}
         self.LandLossPressure = { Count = 0, Mass = 0 }
         self.RecentAirLosses = {}
+        self.RecentEngineerLosses = {}
+        self.EngineerLossPressure = { Count = 0, Mass = 0 }
+        self.RecentGarrisonLosses = {}
+        self.GarrisonLossPressure = {}
         self.AirLossPressure = { Count = 0, Mass = 0 }
         self.CumulativeAirLosses = { Count = 0, Mass = 0 }
         self.CounterDoctrineUntilTick = 0
@@ -116,6 +302,9 @@ StrategyDirector = ClassSimple {
             MajorProjectSlots = 0,
             DesiredExperimentals = 0,
             DesiredNukes = 0,
+            DesiredEngineers = Constants.Policy.EngineersMinimum,
+            EngineerLossPressure = { Count = 0, Mass = 0 },
+            GarrisonLossPressure = {},
             FocusReason = "field-pressure",
             DefenseAlert = self.DefenseAlert,
             TierPolicy = {},
@@ -130,6 +319,40 @@ StrategyDirector = ClassSimple {
 
         local blueprint = unit:GetBlueprint()
         local hash = blueprint.CategoriesHash or {}
+        local economy = blueprint.Economy or {}
+
+        -- A unit lost while covering a forward base is recorded against that
+        -- site as well as its layer. Cover has to be able to tell "this site is
+        -- killing what I send" from ordinary attrition, and only the dying unit
+        -- knows which site it was holding. Recorded before any category filter
+        -- so the attribution cannot be lost to one.
+        if unit.RedQueenGarrisonSite then
+            table.insert(self.RecentGarrisonLosses, {
+                Tick = GetGameTick(),
+                Mass = economy.BuildCostMass or 1,
+                Site = unit.RedQueenGarrisonSite,
+            })
+        end
+
+        -- An engineer death is not a combat casualty and must not inflate land
+        -- loss pressure, but it is the most expensive kind of loss to ignore:
+        -- it stalls expansion, economy and production together. Tracked in its
+        -- own window so production can answer it directly.
+        if hash.MOBILE and hash.ENGINEER and not hash.COMMAND then
+            table.insert(self.RecentEngineerLosses, {
+                Tick = GetGameTick(),
+                Mass = economy.BuildCostMass or 1,
+            })
+            -- Remember the ground that killed it. Without this the replacement
+            -- is posted straight back to the same place, which is the loop the
+            -- survival work exists to break.
+            if unit.GetPosition then
+                EngineerSurvival.RememberLethalSite(
+                    self.Brain, unit:GetPosition(), "engineer-lost")
+            end
+            return
+        end
+
         if not hash.MOBILE
             or hash.ENGINEER
             or hash.COMMAND
@@ -139,7 +362,6 @@ StrategyDirector = ClassSimple {
             return
         end
 
-        local economy = blueprint.Economy or {}
         local loss = { Tick = GetGameTick(), Mass = economy.BuildCostMass or 1 }
         if hash.LAND or hash.AMPHIBIOUS or hash.HOVER then
             table.insert(self.RecentLandLosses, loss)
@@ -167,6 +389,93 @@ StrategyDirector = ClassSimple {
 
         self.LandLossPressure = { Count = count, Mass = mass }
         return self.LandLossPressure
+    end,
+
+    -- How many engineers this army should have, on the same footing as factory
+    -- capacity rather than a fixed floor.
+    --
+    -- Three terms. The base need scales with the production it has to keep fed,
+    -- because an idle factory and an unbuilt extractor cost the same either
+    -- way. The expansion term is the engineers the forward-base plan actually
+    -- needs, so "I am expanding" is a stated requirement rather than a hope.
+    -- The replacement buffer is the one that stops a flatline: while losses
+    -- are still inside the window every engineer lost is queued again, times a
+    -- factor above one, so the army deliberately runs a surplus exactly while
+    -- it is bleeding and can afford the next loss without stalling.
+    --
+    -- The buffer decays on its own as losses age out of the window, so a quiet
+    -- stretch returns the target to its structural need without anything
+    -- having to cancel it.
+    UpdateEngineerDemand = function(self)
+        local demand = self.ProductionDemand
+        local pressure = self:UpdateEngineerLossPressure()
+        local production = self.Modules and self.Modules.Production
+        local counts = production and production.Counts or nil
+        local factories = counts and counts.Total or 0
+        local economy = self.Economy and self.Economy.State or {}
+
+        -- Fall back to planned capacity before any factory exists, so the
+        -- opening still asks for the engineers that will build it.
+        local feeding = math.max(factories, economy.DesiredFactories or 0)
+        local base = feeding * Constants.Policy.EngineersPerFactory
+
+        local plan = demand.ForwardBasePlan or {}
+        local expanding = plan.Active and 1 or 0
+        local expansion = expanding * Constants.Policy.EngineersPerForwardBase
+
+        local replacements = pressure.Count
+            * Constants.Policy.EngineerLossReplacementFactor
+
+        demand.EngineerLossPressure = pressure
+        demand.DesiredEngineers = math.max(
+            Constants.Policy.EngineersMinimum,
+            math.min(
+                Constants.Policy.EngineersMaximum,
+                math.ceil(base + expansion + replacements)
+            )
+        )
+        return demand.DesiredEngineers
+    end,
+
+    UpdateEngineerLossPressure = function(self)
+        local cutoff = GetGameTick() - Constants.Policy.EngineerLossWindowSeconds * 10
+        local count = 0
+        local mass = 0
+
+        for index = table.getn(self.RecentEngineerLosses), 1, -1 do
+            local loss = self.RecentEngineerLosses[index]
+            if loss.Tick < cutoff then
+                table.remove(self.RecentEngineerLosses, index)
+            else
+                count = count + 1
+                mass = mass + loss.Mass
+            end
+        end
+
+        self.EngineerLossPressure = { Count = count, Mass = mass }
+        return self.EngineerLossPressure
+    end,
+
+    -- Garrison losses within the window, per site.
+    UpdateGarrisonLossPressure = function(self)
+        local cutoff = GetGameTick() - Constants.Policy.GarrisonLossWindowSeconds * 10
+        local pressure = {}
+
+        for index = table.getn(self.RecentGarrisonLosses), 1, -1 do
+            local loss = self.RecentGarrisonLosses[index]
+            if loss.Tick < cutoff then
+                table.remove(self.RecentGarrisonLosses, index)
+            else
+                local site = pressure[loss.Site] or { Count = 0, Mass = 0 }
+                site.Count = site.Count + 1
+                site.Mass = site.Mass + loss.Mass
+                pressure[loss.Site] = site
+            end
+        end
+
+        self.GarrisonLossPressure = pressure
+        self.ProductionDemand.GarrisonLossPressure = pressure
+        return pressure
     end,
 
     UpdateAirLossPressure = function(self)
@@ -297,23 +606,39 @@ StrategyDirector = ClassSimple {
         return anchors
     end,
 
-    GetOwnThreatNear = function(self, position, radius)
-        if not self.Brain.GetUnitsAroundPoint then
-            return 0
-        end
-        local category = categories.MOBILE * (categories.LAND + categories.AIR + categories.NAVAL)
-            - categories.ENGINEER
-            - categories.COMMAND
-            - categories.SCOUT
-            + categories.STRUCTURE * categories.DEFENSE
-        local units = self.Brain:GetUnitsAroundPoint(category, position, radius, "Ally") or {}
+    GetOwnThreatNear = function(self, position, radius, layer, target)
         local threat = 0
-        for _, unit in pairs(units) do
+        for _, unit in pairs(DefendersNear(self.Brain, position, radius)) do
             if unit and not unit.Dead then
-                threat = threat + BlueprintThreat(unit)
+                threat = threat + (layer == "Water" and NavalDefenseThreat(unit, target) or BlueprintThreat(unit))
             end
         end
         return threat
+    end,
+
+    -- Friendly threat near `position`, split by the arm that can answer it.
+    --
+    -- Every cluster already reports Land, Naval and Air separately while this
+    -- reading was a single sum, so an AA tower counted as an answer to a tank
+    -- and a point defence counted as an answer to a bomber. Splitting the
+    -- denominator the same way the numerator is split is what lets each arm be
+    -- judged against the defence that can actually reach it. See
+    -- docs/threat-accounting-plan.md; this has no caller yet.
+    --
+    -- Anti-air carries no reach test. AirThreatLevel is already the engine's
+    -- own statement that the unit answers aircraft, and an aircraft comes to
+    -- it; a tower that has to be flown over is still defending.
+    GetOwnThreatByArm = function(self, position, radius, target)
+        local contactLayer = target and PositionLayer(target) or "Land"
+        local arms = { Surface = 0, Air = 0 }
+        for _, unit in pairs(DefendersNear(self.Brain, position, radius)) do
+            if unit and not unit.Dead then
+                local defense = unit:GetBlueprint().Defense or {}
+                arms.Air = arms.Air + (defense.AirThreatLevel or 0)
+                arms.Surface = arms.Surface + SurfaceDefenseThreat(unit, target, contactLayer)
+            end
+        end
+        return arms
     end,
 
     UpdateDefenseAlert = function(self)
@@ -325,6 +650,9 @@ StrategyDirector = ClassSimple {
             and self.Intel:GetObservedArmyClusters(anchors, self.World.Width)
             or {}
         local alert = { Active = false }
+        if self.Trace and table.getn(clusters) == 0 then
+            self.Trace:Safe(self.Trace.Observe, "defense", "clusters", "rejected", "reason=no-observed-cluster")
+        end
 
         for _, cluster in pairs(clusters) do
             local anchor = anchors[cluster.AnchorIndex or 1] or self.World.StartPosition
@@ -332,20 +660,105 @@ StrategyDirector = ClassSimple {
             local anchorKind = anchor.Kind or "Base"
             local anchorLayer = anchor.Layer or PositionLayer(anchorPosition)
             local criticality = anchor.Criticality or 1
-            local ownThreat = self:GetOwnThreatNear(anchorPosition, math.max(60, self.World.Width / 12))
-            local ratio = cluster.Threat / math.max(1, ownThreat)
-            local massive = cluster.Threat >= Constants.Policy.MassiveArmyThreat
-                and ratio >= Constants.Policy.MassiveArmyThreatRatio
-            local pressure = cluster.Threat >= Constants.Policy.PressureEscalationThreat
-                and ratio >= 1
+            -- Judge each arm against the defence that can actually answer it,
+            -- and the combined force against the whole of it. A single
+            -- undifferentiated sum could not: an AA tower counted as an answer
+            -- to a tank, a point defence as an answer to a bomber, and on the
+            -- water view the sum collapsed to nothing at all, so one frigate
+            -- escorting an air raid erased a base's entire air defence.
+            -- See docs/threat-accounting-plan.md.
+            --
+            -- Three tests rather than two, deliberately. Per-arm gating alone
+            -- stops a combined-arms push registering at all, because 30 of land
+            -- beside 30 of air clears no single arm's magnitude floor. A total
+            -- magnitude gate alone lets a six-mass frigate with nothing to
+            -- answer it raise a massive alert, which is the defect finding 5
+            -- closed. The combined row catches the first; keeping a magnitude
+            -- floor on each arm keeps the second out.
+            local radius = math.max(60, self.World.Width / 12)
+            local own = self:GetOwnThreatByArm(anchorPosition, radius, cluster.Position)
+            local ownThreat = own.Surface + own.Air
+            -- Back-filled the same way the role sizing below back-fills it.
+            local surfaceContact = (cluster.Land or 0) + (cluster.Naval or 0)
+            if cluster.Land == nil and cluster.Naval == nil then
+                surfaceContact = cluster.Surface or 0
+            end
+            local arms = {
+                {
+                    Name = "surface",
+                    Contact = surfaceContact,
+                    Ratio = surfaceContact / math.max(1, own.Surface),
+                },
+                {
+                    Name = "air",
+                    Contact = cluster.Air or 0,
+                    Ratio = (cluster.Air or 0) / math.max(1, own.Air),
+                },
+                {
+                    Name = "combined",
+                    Contact = cluster.Threat or 0,
+                    Ratio = (cluster.Threat or 0) / math.max(1, ownThreat),
+                },
+            }
+            -- The strongest arm clearing both its magnitude floor and the ratio
+            -- asked of it. Severity follows the arm that actually qualified and
+            -- never a louder one that did not: a token air force over an anchor
+            -- with no anti-air produces an enormous ratio, and must not be what
+            -- sets the severity of a land attack.
+            local function Qualifying(threshold, floor)
+                local best = nil
+                for _, arm in ipairs(arms) do
+                    if arm.Contact >= threshold
+                        and arm.Ratio >= floor
+                        and (not best or arm.Ratio > best.Ratio)
+                    then
+                        best = arm
+                    end
+                end
+                return best
+            end
+
+            local massiveArm = Qualifying(
+                Constants.Policy.MassiveArmyThreat,
+                Constants.Policy.MassiveArmyThreatRatio
+            )
+            local pressureArm = Qualifying(Constants.Policy.PressureEscalationThreat, 1)
+            local commanderArm = anchorKind == "Commander"
+                and Qualifying(
+                    Constants.Policy.CommanderEmergencyThreat,
+                    Constants.Policy.CommanderEmergencyThreatRatio
+                )
+                or nil
+
+            local massive = massiveArm ~= nil
+            local pressure = pressureArm ~= nil
                 and cluster.Approaching
                 and momentum.Losing
-            local commanderEmergency = anchorKind == "Commander"
-                and cluster.Threat >= Constants.Policy.CommanderEmergencyThreat
-                and ratio >= Constants.Policy.CommanderEmergencyThreatRatio
+            local commanderEmergency = commanderArm ~= nil
                 and (cluster.Approaching
                     or cluster.DistanceToAnchor <= Constants.Policy.CommanderEmergencyDistance)
 
+            local qualified = nil
+            if massive then qualified = massiveArm end
+            if pressure and (not qualified or pressureArm.Ratio > qualified.Ratio) then
+                qualified = pressureArm
+            end
+            if commanderEmergency and (not qualified or commanderArm.Ratio > qualified.Ratio) then
+                qualified = commanderArm
+            end
+            local qualifiedArm = qualified and qualified.Name or "none"
+            local ratio = qualified and qualified.Ratio
+                or math.max(arms[1].Ratio, arms[2].Ratio, arms[3].Ratio)
+            local facing = qualified and qualified.Contact or (cluster.Threat or 0)
+
+            if self.Trace then
+                local reason = (massive or pressure or commanderEmergency) and "qualified"
+                    or ratio < 1 and "strength-ratio" or not cluster.Approaching and "approach" or "threat-threshold"
+                self.Trace:Safe(self.Trace.Observe, "defense", cluster.FirstEntityId or "unknown", reason,
+                    string.format("reason=%s anchor=%s anchorLayer=%s arm=%s land=%.1f naval=%.1f air=%.1f threat=%.1f facing=%.1f friendly=%.1f surface=%.1f antiair=%.1f ratio=%.2f approaching=%s",
+                        reason, anchorKind, anchorLayer, qualifiedArm, cluster.Land or 0, cluster.Naval or 0, cluster.Air or 0,
+                        cluster.Threat, facing, ownThreat, own.Surface, own.Air, ratio, tostring(cluster.Approaching)))
+            end
             if massive or pressure or commanderEmergency then
                 local land = cluster.Land
                 local naval = cluster.Naval
@@ -362,6 +775,32 @@ StrategyDirector = ClassSimple {
                 naval = naval or 0
                 local air = cluster.Air or 0
                 local surface = cluster.Surface or 0
+                -- Derived from the normalised figures above, not from
+                -- cluster.Surface: that field is raw, so a cluster reporting
+                -- only Land/Naval leaves it zero and every role keyed on it
+                -- would silently evaluate to nothing.
+                local surfaceThreat = land + naval
+                -- Torpedo defences answer ships we have actually seen.
+                --
+                -- cluster.Naval is only ever set from layer-bucketed
+                -- observations, and observation confidence decays to zero as a
+                -- contact goes stale, so a non-nil value means scouts or units
+                -- are seeing ships now. The back-fill above deliberately treats
+                -- unclassified surface threat near a water anchor as naval --
+                -- fine for choosing which task force defends, but not for
+                -- committing mass to structures that shoot nothing else. An
+                -- unscouted contact must build no torpedo launchers.
+                local observedNaval = cluster.Naval or 0
+                local navalObserved =
+                    observedNaval >= Constants.Policy.TorpedoMinimumObservedNavalThreat
+                -- Water within reach of the anchor, biased toward the threat.
+                -- Torpedo launchers are water-only structures, so this is both
+                -- the gate on whether they can be built at all and the position
+                -- they are built at. An inland anchor yields nil and raises no
+                -- torpedo target, which keeps the build path off dry land.
+                local waterPosition = navalObserved
+                    and NearestWaterPosition(anchorPosition, cluster.Position)
+                    or nil
                 -- With no observed surface threat the anchor's own layer decides
                 -- how its defenders should be organized.
                 local primaryLayer
@@ -385,6 +824,9 @@ StrategyDirector = ClassSimple {
                     Surface = surface,
                     Air = air,
                     FriendlyThreat = ownThreat,
+                    FriendlySurface = own.Surface,
+                    FriendlyAir = own.Air,
+                    QualifiedArm = qualifiedArm,
                     Ratio = ratio,
                     Count = cluster.Count,
                     Approaching = cluster.Approaching,
@@ -395,12 +837,50 @@ StrategyDirector = ClassSimple {
                     DestroyedMass = momentum.DestroyedMass,
                     Severity = math.max(1, ratio) * criticality,
                     Targets = {
-                        Ground = land > 0 and math.max(4, math.min(12, math.ceil(land / 12))) or 0,
+                        -- Point defence and tactical missiles both engage ships
+                        -- as well as ground, so they answer the whole surface
+                        -- threat. Keying them on `land` alone meant a fleet
+                        -- shelling the base produced a target of zero and no
+                        -- defence was built at all. On a land map `naval` is 0,
+                        -- so these are unchanged there.
+                        Ground = surfaceThreat > 0
+                            and math.max(4, math.min(12, math.ceil(surfaceThreat / 12))) or 0,
                         AntiAir = air > 0 and math.max(2, math.min(8, math.ceil(air / 10))) or 0,
                         Shields = (ratio >= 2 or cluster.DistanceToAnchor <= 60) and 2 or 1,
                         StrategicMissileDefense = 1,
-                        TacticalMissiles = land > 0 and 2 or 0,
+                        TacticalMissiles = surfaceThreat > 0 and 2 or 0,
+                        -- Artillery covers the standoff band nothing else can:
+                        -- point defence reaches 26 (T1) or 50 (T2) and torpedo
+                        -- launchers 50 to 60, while a destroyer bombards from
+                        -- 60 to 80. T2 artillery reaches 115. Its 50 minimum is
+                        -- a dead zone around the gun, not around the base, so
+                        -- placement is offset away from the threat axis --
+                        -- see ProductionManager:ShoreArtilleryPosition.
+                        --
+                        -- What the threat would justify. Whether any of it is
+                        -- affordable is decided in production: artillery is a
+                        -- late supplement, never a first response, so
+                        -- UpdateShoreArtillery holds it behind the anchor's
+                        -- primary point defence and an economic ladder. Keying
+                        -- it here on surface threat alone once put eight
+                        -- batteries on a 0%-water map and turned a controlled
+                        -- Sentry Point win (K/L 1.43) into a defeat (1.00).
+                        Artillery = surfaceThreat > 0
+                            and math.max(1, math.min(4, math.ceil(surfaceThreat / 25))) or 0,
+                        -- Only ships, and only from water. A larger divisor
+                        -- than point defence because a launcher is individually
+                        -- stronger against the one thing it shoots at, and
+                        -- costs more than a Tech 2 point defence to build.
+                        Torpedo = (navalObserved and waterPosition)
+                            and math.max(2, math.min(8, math.ceil(observedNaval / 14))) or 0,
                     },
+                    -- Where an anti-navy structure can be founded, and the
+                    -- observed naval threat that justified looking. Both are
+                    -- nil/zero unless ships were actually seen: the probe only
+                    -- runs for an observed contact, so this is never a claim
+                    -- about terrain on its own.
+                    WaterPosition = waterPosition,
+                    ObservedNaval = observedNaval,
                     CreatedTick = previous.Active and previous.CreatedTick or tick,
                     ExpiresTick = tick + Constants.Policy.DefenseAlertHoldSeconds * 10,
                 }
@@ -459,7 +939,7 @@ StrategyDirector = ClassSimple {
         if previous and objective and previous.Type == objective.Type and previous.ExpiresTick > tick then
             objective.CreatedTick = previous.CreatedTick
             objective.ExpiresTick = previous.ExpiresTick
-        elseif previous and objective and not CanInterrupt(previous, objective, tick) then
+        elseif previous and objective and not CanInterrupt(self, previous, objective, tick) then
             return previous
         else
             objective.ExpiresTick = objective.ExpiresTick or tick + Constants.Policy.ObjectiveLifetimeTicks
@@ -475,6 +955,31 @@ StrategyDirector = ClassSimple {
             ))
         end
         return objective
+    end,
+
+    -- How far this army's income sits above the endgame gate, as 0 at the gate
+    -- and 1 at `EndgameWealthMultiple` times it.
+    --
+    -- Distinct from readiness, and the distinction is the whole point.
+    -- Readiness is *headroom* -- income minus what is already requested -- so
+    -- an army that spends what it earns reads as unready however rich it is.
+    -- Measured across the matrix, armies on 30-70 mass income held an
+    -- experimental weight of 10-20 against a threshold of 35 and crossed it in
+    -- 1 to 5 samples out of 45 to 98, building 2 experimentals across 21 full
+    -- matches. The one cell that crossed 13 times was the one that built
+    -- anything. Committing only when income is idle means never committing.
+    --
+    -- Keyed on income and never on elapsed time: relief is earned, not waited
+    -- for.
+    GetEconomicWealth = function(self)
+        local state = self.Economy.State or {}
+        local gate = Constants.Policy.ExperimentalMinimumMassIncome
+        local multiple = Constants.Policy.EndgameWealthMultiple
+        return Clamp(
+            ((state.MassIncome or 0) / gate - 1) / math.max(0.01, multiple - 1),
+            0,
+            1
+        )
     end,
 
     GetEconomicReadiness = function(self)
@@ -641,6 +1146,9 @@ StrategyDirector = ClassSimple {
         local demand = self.ProductionDemand
         local state = self.Economy.State
         local readiness = self:GetEconomicReadiness()
+        -- A rich army commits whether or not its income is idle; see
+        -- GetEconomicWealth for what this measures and why readiness cannot.
+        local wealth = self:GetEconomicWealth()
         local forces = self:GetOwnForces()
         local picture = self.Intel.GetStrategicPicture
             and self.Intel:GetStrategicPicture(self.World.StartPosition, self.World)
@@ -727,7 +1235,7 @@ StrategyDirector = ClassSimple {
                 Constants.Policy.ExperimentalMinimumEnergyIncome
             )
         then
-            experimental = 10 + readiness * 30
+            experimental = 10 + readiness * 30 + wealth * 30
             if picture.Fortified then experimental = experimental + 25 end
             if lossPressure then experimental = experimental + 20 end
             if picture.Experimentals > 0 then experimental = experimental + 15 end
@@ -754,7 +1262,7 @@ StrategyDirector = ClassSimple {
                 Constants.Policy.NukeMinimumEnergyIncome
             )
         then
-            nuke = 10 + readiness * 30
+            nuke = 10 + readiness * 30 + wealth * 30
             if picture.Fortified then nuke = nuke + 30 end
             if picture.HasUnreachableTarget then nuke = nuke + 15 end
             if picture.Experimentals > 0 or picture.Nukes > 0 then nuke = nuke + 15 end
@@ -781,11 +1289,36 @@ StrategyDirector = ClassSimple {
                 demand.MajorProjectSlots = 2
             end
         end
-        demand.DesiredExperimentals = weights.Experimental >= Constants.Policy.StrategicFocusMinimumScore
-            and (weights.Experimental >= 75 and demand.MajorProjectSlots or 1)
-            or 0
+        -- Nuclear siege keeps the readiness-derived allowance it was measured
+        -- with. The experimental branch below raises the shared concurrency, and
+        -- letting that silently raise the nuke target too would change a
+        -- behaviour nothing here has measured.
+        local nukeProjectSlots = demand.MajorProjectSlots
+
+        -- Experimental volume is a flow, not a stock: keep one or two in
+        -- production continuously once the economy carries them.
+        --
+        -- The old expression was a stock target tied to the concurrency slots,
+        -- and it could only ever be 1 -- the second slot needed army weight
+        -- below 70, which never happened in twenty recorded matches. Replacing
+        -- it with a bigger stock target was worse, not better: it started three
+        -- projects at once while the count was low, and Aeon lost all three of
+        -- its measured comparisons.
+        --
+        -- So the concurrency budget is the only brake, and the owned count is
+        -- added into the target rather than capping it -- owning four is not a
+        -- reason to stop building.
+        demand.DesiredExperimentals = 0
+        if weights.Experimental >= Constants.Policy.StrategicFocusMinimumScore then
+            local concurrent = 1
+            if (state.MassIncome or 0) >= Constants.Policy.ExperimentalSecondProjectMassIncome then
+                concurrent = Constants.Policy.ExperimentalConcurrentMaximum
+            end
+            demand.MajorProjectSlots = math.max(demand.MajorProjectSlots, concurrent)
+            demand.DesiredExperimentals = (forces.Experimentals or 0) + concurrent
+        end
         demand.DesiredNukes = weights.Nuke >= Constants.Policy.StrategicFocusMinimumScore
-            and (weights.Nuke >= 75 and demand.MajorProjectSlots or 1)
+            and (weights.Nuke >= 75 and nukeProjectSlots or 1)
             or 0
 
         local defenseAlert = self.DefenseAlert or { Active = false }
@@ -811,27 +1344,50 @@ StrategyDirector = ClassSimple {
                 demand.DesiredNukes = 0
                 demand.FocusReason = "commander-emergency"
             else
-                local retention = math.max(
+                local severityRetention = math.max(
                     Constants.Policy.DefenseAlertMinimumEndgameRetention,
                     1 - (math.max(1, defenseAlert.Severity or 1) - 1)
                         * Constants.Policy.DefenseAlertEndgameTaxPerSeverity
                 )
+                -- Wealth lifts the tax. An army whose income is far above the
+                -- endgame gate can fund a project and its defence at the same
+                -- time, so severity alone must not price it out of the game it
+                -- is trying to win. Crossfire Canal held weight 20 against a
+                -- threshold of 35 while sitting on 66 mass income, and spent
+                -- that economy on 101 engineers instead.
+                --
+                -- Keyed on economy and never on elapsed time, so relief has to
+                -- be earned rather than waited for.
+                local wealth = self:GetEconomicWealth()
+                local retention = severityRetention
+                    + (1 - severityRetention) * wealth
                 weights.Experimental = Score(weights.Experimental * retention)
                 weights.Nuke = Score(weights.Nuke * retention)
+                -- A poor army under attack still runs one project at a time; a
+                -- rich one keeps its normal concurrency, because holding it to
+                -- one is what made a developed economy unable to close a game.
+                local pressuredSlots = 1 + math.floor(
+                    wealth * (Constants.Policy.ExperimentalConcurrentMaximum - 1)
+                )
                 demand.MajorProjectSlots = math.min(
                     demand.MajorProjectSlots,
                     math.max(weights.Experimental, weights.Nuke)
-                        >= Constants.Policy.StrategicFocusMinimumScore and 1 or 0
+                        >= Constants.Policy.StrategicFocusMinimumScore
+                        and pressuredSlots
+                        or 0
                 )
                 demand.DesiredExperimentals = weights.Experimental
                     >= Constants.Policy.StrategicFocusMinimumScore
-                    and math.min(demand.DesiredExperimentals, 1)
+                    and math.min(demand.DesiredExperimentals,
+                        (forces.Experimentals or 0) + pressuredSlots)
                     or 0
                 demand.DesiredNukes = weights.Nuke
                     >= Constants.Policy.StrategicFocusMinimumScore
-                    and math.min(demand.DesiredNukes, 1)
+                    and math.min(demand.DesiredNukes, pressuredSlots)
                     or 0
-                demand.FocusReason = "defense-pressure"
+                demand.WealthRetention = retention
+                demand.FocusReason = wealth >= 1 and "defense-pressure-funded"
+                    or "defense-pressure"
             end
         elseif baseDanger then
             demand.FocusReason = "base-danger"
@@ -878,7 +1434,38 @@ StrategyDirector = ClassSimple {
         local threat = self.Intel.Threat
         local demand = self.ProductionDemand
         local previousDoctrine = demand.Doctrine
-        demand.Scouts = table.getsize(self.Intel.Observations) == 0 and 0.15 or 0.07
+        -- Scout production follows how much of what matters is unseen, not
+        -- whether any observation exists at all.
+        --
+        -- The old rule asked for 15% while the army had seen nothing and 7%
+        -- forever after, so a single sighting anywhere on the map counted as
+        -- being informed. Coverage is what the commitment gate actually depends
+        -- on: a wave judged against an unobserved destination is judged against
+        -- a threat of zero. So the fraction scales with the share of positions
+        -- the army cares about and cannot see, and falls away on its own once
+        -- it can see them.
+        local blindShare = 0
+        if self.Modules and self.Modules.Combat then
+            local summary = self.Modules.Combat.ScoutSummary
+            if summary and (summary.Targets or 0) > 0 then
+                blindShare = (summary.Blind or 0) / summary.Targets
+            end
+        end
+        local scouting = self.Brain.RedQueenScouting
+        if scouting and not scouting.AdaptiveProduction then
+            -- The dispatch-only arm restores the exact pre-scouting rule.
+            demand.Scouts = table.getsize(self.Intel.Observations) == 0 and 0.15 or 0.07
+        else
+            demand.Scouts = Clamp(
+                Constants.Policy.ScoutFractionMinimum
+                    + blindShare
+                        * (Constants.Policy.ScoutFractionMaximum
+                            - Constants.Policy.ScoutFractionMinimum),
+                Constants.Policy.ScoutFractionMinimum,
+                Constants.Policy.ScoutFractionMaximum
+            )
+        end
+        demand.ScoutBlindShare = blindShare
         demand.Artillery = objective.Type == "Assault" and 0.18 or 0.10
         demand.Gunships = 0.18
         demand.Doctrine = "Balanced"
@@ -905,6 +1492,8 @@ StrategyDirector = ClassSimple {
         -- Prunes the reported air-loss window; the gunship decision below uses
         -- its own baseline so that losses predating the doctrine never count.
         self:UpdateAirLossPressure()
+        self:UpdateGarrisonLossPressure()
+        self:UpdateEngineerDemand()
         local lossesDemandCounter = loss.Count >= Constants.Policy.LandLossCountThreshold
             or loss.Mass >= Constants.Policy.LandLossMassThreshold
         local airDefenseIsExposed = airThreat <= math.max(
@@ -1113,6 +1702,10 @@ StrategyDirector = ClassSimple {
                     Land = landPosition ~= nil,
                     Water = waterPosition ~= nil,
                     Amphibious = true,
+                    -- Hover is a distinct navigation graph from amphibious, so
+                    -- it needs its own entry or the hover task force -- on Aeon
+                    -- and Seraphim, the mainline army -- is never dispatched.
+                    Hover = true,
                     Air = true,
                 },
                 LayerPositions = {
@@ -1123,6 +1716,10 @@ StrategyDirector = ClassSimple {
                         or waterAnchor
                         or waterPosition,
                     Amphibious = defenseAlert.AnchorPosition,
+                    -- Hover reaches the water threat itself where amphibious
+                    -- would be stopped by depth; fall back to the anchor.
+                    Hover = defenseAlert.Naval > 0 and waterPosition
+                        or defenseAlert.AnchorPosition,
                     Air = defenseAlert.Air > 0
                         and defenseAlert.Position
                         or defenseAlert.AnchorPosition,
@@ -1130,6 +1727,10 @@ StrategyDirector = ClassSimple {
                 AnchorKind = defenseAlert.AnchorKind,
                 AnchorLocationType = defenseAlert.AnchorLocationType,
                 Priority = 140,
+                -- An observed cluster threatening an anchor preempts anything,
+                -- including an attack in contact. The local-threat fallback
+                -- below deliberately does not.
+                Critical = true,
                 CreatedTick = GetGameTick(),
             }
         elseif localThreat >= Constants.Policy.LocalDefenseThreat then
@@ -1179,13 +1780,71 @@ StrategyDirector = ClassSimple {
         end
 
         if not objective then
-            local preferredLayer = self.World.MapType == "Naval" and "Water" or "Land"
-            local known = self.Intel:GetBestKnownTarget(start, preferredLayer)
-            if known
-                and preferredLayer ~= "Air"
-                and not self.World:CanPath(preferredLayer, start, known.Position)
-            then
-                known = nil
+            -- Try the surface layers this map actually supports, in order, and
+            -- fall back to Air only when no surface force can reach anything.
+            --
+            -- Choosing the layer from MapType alone had two failures. On a
+            -- Naval map it asked GetClosestEnemyStart for a water route to an
+            -- enemy start -- dry land, where a commander spawns -- which can
+            -- never succeed, so every offensive became `layer=Air`; and on a
+            -- Mixed map it only ever offered Land, so the fleet was never
+            -- given an objective at all.
+            local layers = OffensiveLayers[self.World.MapType] or OffensiveLayers.Land
+            local preferredLayer, known, position = nil, nil, nil
+
+            for _, layer in ipairs(layers) do
+                local candidate = self.Intel:GetBestKnownTarget(start, layer)
+                if candidate and self.World:CanPath(layer, start, candidate.Position) then
+                    preferredLayer, known = layer, candidate
+                    break
+                end
+            end
+
+            if not known then
+                for _, layer in ipairs(layers) do
+                    local candidate
+                    if layer == "Water" then
+                        -- A fleet cannot sail to a land coordinate. Aim at the
+                        -- water beside the enemy instead; the enemy start is
+                        -- resolved on the Air layer because that is pure
+                        -- geometry rather than a route claim.
+                        local enemyStart = self.World:GetClosestEnemyStart(start, "Air")
+                        candidate = enemyStart
+                            and self.World:GetNavalApproach(start, enemyStart)
+                    else
+                        candidate = self.World:GetClosestEnemyStart(start, layer)
+                    end
+                    if candidate then
+                        preferredLayer, position = layer, candidate
+                        break
+                    end
+                end
+            end
+
+            if not known and not position then
+                preferredLayer = "Air"
+                position = self.World:GetClosestEnemyStart(start, "Air")
+            end
+
+            -- A Land or Air objective dispatches Land, Amphibious and Hover
+            -- and never the fleet, because a ship cannot sail to a land
+            -- coordinate. On a Mixed map the Land layer resolves first, so the
+            -- objective is always Land and every ship built sits in the
+            -- ArmyPool for the whole match while naval production keeps
+            -- running. Give the fleet the water beside the same target.
+            --
+            -- GetNavalApproach resolves both ends onto water and returns nil
+            -- when the only route it can find stays inside our own basin, so
+            -- this never invents a destination: with no reachable water the
+            -- field is absent and the fleet is dispatched exactly as before.
+            local function OffensiveWaterPosition(target)
+                if not target or preferredLayer == "Water" then
+                    return nil
+                end
+                if not self.World.GetNavalApproach then
+                    return nil
+                end
+                return self.World:GetNavalApproach(start, target)
             end
 
             if known then
@@ -1195,22 +1854,21 @@ StrategyDirector = ClassSimple {
                     Layer = preferredLayer,
                     Priority = 75,
                     CreatedTick = GetGameTick(),
+                    LayerPositions = {
+                        Water = OffensiveWaterPosition(known.Position),
+                    },
                 }
-            else
-                local position = self.World:GetClosestEnemyStart(start, preferredLayer)
-                if not position and preferredLayer ~= "Air" then
-                    preferredLayer = "Air"
-                    position = self.World:GetClosestEnemyStart(start, "Air")
-                end
-                if position then
-                    objective = {
-                        Type = "Pressure",
-                        Position = position,
-                        Layer = preferredLayer,
-                        Priority = 60,
-                        CreatedTick = GetGameTick(),
-                    }
-                end
+            elseif position then
+                objective = {
+                    Type = "Pressure",
+                    Position = position,
+                    Layer = preferredLayer,
+                    Priority = 60,
+                    CreatedTick = GetGameTick(),
+                    LayerPositions = {
+                        Water = OffensiveWaterPosition(position),
+                    },
+                }
             end
         end
 

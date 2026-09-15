@@ -145,6 +145,7 @@ IntelManager = ClassSimple {
     __init = function(self, brain)
         self.Brain = brain
         self.Observations = {}
+        self.TerrainObservations = {}
         self.ObserverCursor = 1
         self.Threat = { Land = 0, Air = 0, Naval = 0, Economy = 0 }
         self.HighestObservedTech = 1
@@ -179,6 +180,21 @@ IntelManager = ClassSimple {
         }
     end,
 
+    ObserveTerrain = function(self, observer, tick)
+        local position = observer:GetPosition()
+        local radius = observer.GetIntelRadius and observer:GetIntelRadius("Vision") or 0
+        if not position or radius <= 0 then return end
+        -- One recent sample per small terrain cell bounds repeated visits.
+        -- This uses our own vision radius, never the enemy query radius.
+        local key = tostring(math.floor(position[1] / 16)) .. ":"
+            .. tostring(math.floor(position[3] / 16))
+        self.TerrainObservations[key] = {
+            Position = { position[1], position[2], position[3] },
+            Radius = radius,
+            LastSeenTick = tick,
+        }
+    end,
+
     Update = function(self)
         local tick = GetGameTick()
         local armyIndex = self.Brain:GetArmyIndex()
@@ -196,6 +212,7 @@ IntelManager = ClassSimple {
                 self.ObserverCursor = self.ObserverCursor + 1
 
                 if observer and not observer.Dead then
+                    self:ObserveTerrain(observer, tick)
                     local enemies = self.Brain:GetUnitsAroundPoint(
                         categories.ALLUNITS,
                         observer:GetPosition(),
@@ -213,6 +230,11 @@ IntelManager = ClassSimple {
         end
 
         local lifetimeTicks = Constants.Policy.IntelLifetimeSeconds * 10
+        for key, observation in pairs(self.TerrainObservations) do
+            if tick - observation.LastSeenTick >= lifetimeTicks then
+                self.TerrainObservations[key] = nil
+            end
+        end
         local threat = { Land = 0, Air = 0, Naval = 0, Economy = 0 }
         local highestObservedTech = 1
         for entityId, observation in pairs(self.Observations) do
@@ -251,6 +273,88 @@ IntelManager = ClassSimple {
             end
         end
         return total
+    end,
+
+    -- Recent terrain visibility also establishes coverage of empty positions.
+    -- Enemy-contact confidence remains separate so visits cannot add threat.
+    --
+    -- Threat alone cannot answer that question. GetThreatNear returns 0 for a
+    -- place that is observed and empty, for one never observed, and for one
+    -- whose observations have expired -- three very different situations that
+    -- callers must be able to tell apart. Route safety in particular was
+    -- treating "we can see nothing there" as "nothing is there", which is at
+    -- its most wrong exactly where the army has not looked.
+    --
+    -- Confidence already decays with age, so a stale sighting contributes
+    -- partial coverage and a fresh one full coverage.
+    GetCoverageNear = function(self, position, radius)
+        local radiusSquared = radius * radius
+        local total = 0
+        for _, observation in pairs(self.Observations) do
+            if DistanceSquared(position, observation.Position) <= radiusSquared then
+                total = total + (observation.Confidence or 0)
+            end
+        end
+        local tick = GetGameTick()
+        local lifetimeTicks = Constants.Policy.IntelLifetimeSeconds * 10
+        for _, observation in pairs(self.TerrainObservations) do
+            local reach = math.min(radius, observation.Radius)
+            if DistanceSquared(position, observation.Position) <= reach * reach then
+                total = math.max(total, 1 - (tick - observation.LastSeenTick) / lifetimeTicks)
+            end
+        end
+        return total
+    end,
+
+    -- What the army most needs to look at, least-known first.
+    --
+    -- Red Queen's intel comes entirely from sampling its own mobile units
+    -- (`Update` walks `ObserversPerUpdate` of them and records enemies within
+    -- `ObservationRadius`), so coverage exists only where its units already
+    -- are. Nothing ever goes to look. That is why the commitment gate reads a
+    -- threat of 0 at exactly the positions a wave is about to attack: the
+    -- destination has never been seen, and `GetThreatNear` cannot tell that
+    -- apart from "seen and empty".
+    --
+    -- Candidates are supplied by the caller with a `Weight` for how much the
+    -- answer matters; ordering is by how little is known first, then weight,
+    -- then name, so it is deterministic and adapts as coverage changes rather
+    -- than following a fixed patrol.
+    GetScoutTargets = function(self, candidates)
+        -- Defaults rather than arithmetic on nil: coverage normalisation has an
+        -- obvious identity, and a scouting pass must never be the thing that
+        -- raises an error inside the combat cycle.
+        local full = Constants.Policy.RouteCoverageConfidenceForFull or 1
+        local radius = Constants.Policy.CommitmentThreatRadius or 60
+        local targets = {}
+        for _, candidate in pairs(candidates or {}) do
+            if candidate.Position then
+                -- An intel source that cannot report coverage must not be
+                -- treated as blind, or the army would scout its own base
+                -- forever. Mirrors the same guard in route safety.
+                local known = self.GetCoverageNear
+                    and self:GetCoverageNear(candidate.Position, radius)
+                    or nil
+                local coverage = known == nil and 1
+                    or math.min(1, known / math.max(0.01, full))
+                table.insert(targets, {
+                    Name = candidate.Name,
+                    Position = candidate.Position,
+                    Weight = candidate.Weight or 1,
+                    Coverage = coverage,
+                })
+            end
+        end
+        table.sort(targets, function(a, b)
+            if a.Coverage ~= b.Coverage then
+                return a.Coverage < b.Coverage
+            end
+            if a.Weight ~= b.Weight then
+                return a.Weight > b.Weight
+            end
+            return tostring(a.Name) < tostring(b.Name)
+        end)
+        return targets
     end,
 
     GetThreatBreakdownNear = function(self, position, radius)

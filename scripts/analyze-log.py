@@ -34,6 +34,8 @@ LUA_FAILURE = re.compile(r"(?i)warning:\s+Error running lua script")
 SCHEDULER_FAILURE = re.compile(r"\[RedQueen\]\[ERROR\].*scheduler task '([a-z]+)' failed")
 RED_QUEEN_ERROR = re.compile(r"\[RedQueen\]\[ERROR\]")
 INVALID_LOCATION = re.compile(r"(?i)\*AI WARNING:\s*(\w+)\s*-\s*Invalid location\s*-\s*(.+)$")
+# The only location names this mod registers; see ProductionManager `RQFB_%d_%d`.
+RED_QUEEN_OWNED_LOCATION = re.compile(r"(?i)\bRQFB_\d+_\d+\b")
 DESYNC = re.compile(r"(?i)desync")
 # A Red Queen frame in an engine traceback names the failing module function,
 # which is what turns "a task failed" into "StartForwardBase failed". The engine
@@ -50,7 +52,7 @@ DEFEAT_MARKER = re.compile(
     r"(?i)(GameResult\s+\d+\s+defeat"
     r"|GpgNetSend.*\bdefeat\b"
     r"|\bis\s+defeated\b"
-    r"|OnDefeat\b)"
+    r"|OnDefeat\b|lifecycle game-result result=defeat)"
 )
 
 
@@ -134,13 +136,36 @@ for index, line in enumerate(lines):
 
 # Invalid manager locations are a Red Queen contract concern: builders it
 # registered must be retired when their location's managers go away.
+#
+# But the warning is raised by FAF's own build conditions for *any* army, and
+# every army's managers are torn down when it is defeated -- so in a team match
+# a defeated opponent's teardown lands in our log looking identical. Measured
+# across a 21-cell matrix, all 11 of these warnings named a native location
+# (`MAIN`, `Large Expansion Area 6`), arrived after the first defeat, and were
+# followed by a traceback wholly inside `adaptive-ai.lua`. Gating on those is a
+# false positive, so attribution follows the same evidence rule as a Lua
+# failure: a location Red Queen itself registered, or a Red Queen traceback
+# frame. `RQFB_<army>_<n>` is the only location name this mod creates
+# (ProductionManager.lua, `RQFB_%d_%d`), which is why the name alone is
+# sufficient evidence -- a leaked builder for one of our retired sites still
+# fails the gate, defeat or no defeat.
 invalid_locations: Counter[str] = Counter()
+advisory_invalid_locations: Counter[str] = Counter()
 invalid_location_after_defeat = 0
 for index, line in enumerate(lines):
     match = INVALID_LOCATION.search(line)
     if not match:
         continue
-    invalid_locations[match.group(2).strip()] += 1
+    location = match.group(2).strip()
+    attributed = bool(RED_QUEEN_OWNED_LOCATION.search(location))
+    if not attributed:
+        for frame in lines[index + 1 : index + 12]:
+            if INVALID_LOCATION.search(frame) or LUA_FAILURE.search(frame):
+                break
+            if "[RedQueen]" not in frame and RED_QUEEN_PATH.search(frame):
+                attributed = True
+                break
+    (invalid_locations if attributed else advisory_invalid_locations)[location] += 1
     if first_defeat_index is not None and index >= first_defeat_index:
         invalid_location_after_defeat += 1
 
@@ -219,7 +244,8 @@ else:
         f" attributed, {sum(post_defeat_foreign.values())} in FAF code (advisory)"
     )
 print(
-    f"Invalid manager locations: {sum(invalid_locations.values())}"
+    f"Invalid manager locations: {sum(invalid_locations.values())} attributed,"
+    f" {sum(advisory_invalid_locations.values())} in FAF code (advisory)"
     f" ({invalid_location_after_defeat} after first defeat)"
 )
 
@@ -272,9 +298,11 @@ print(f"\nFailures: {len(failures)} distinct, {sum(failures.values())} occurrenc
 for message, count in failures.most_common(20):
     print(f"  {count:5d}x  {message[:200]}")
 
-if foreign_lua_failures:
+if foreign_lua_failures or advisory_invalid_locations:
     print("\nUnattributed engine failures (advisory, not gated):")
     for message, count in foreign_lua_failures.most_common(10):
         print(f"  {count:5d}x  {message.strip()[:200]}")
+    for location, count in advisory_invalid_locations.most_common(10):
+        print(f"  {count:5d}x  invalid manager location - {location}")
 
 raise SystemExit(1 if failures else 0)

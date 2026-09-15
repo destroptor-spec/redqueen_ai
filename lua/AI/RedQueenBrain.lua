@@ -1,3 +1,4 @@
+local Lifecycle = import("/mods/TheRedQueen/lua/AI/RedQueen/BaseLifecycle.lua")
 local AdaptiveBrain = import("/lua/aibrains/adaptive-ai.lua").AIBrain
 
 local CombatManager = import("/mods/TheRedQueen/lua/AI/RedQueen/CombatManager.lua")
@@ -10,7 +11,10 @@ local Logger = import("/mods/TheRedQueen/lua/AI/RedQueen/Logger.lua")
 local MatchContext = import("/mods/TheRedQueen/lua/AI/RedQueen/MatchContext.lua")
 local PingManager = import("/mods/TheRedQueen/lua/AI/RedQueen/PingManager.lua")
 local ProductionManager = import("/mods/TheRedQueen/lua/AI/RedQueen/ProductionManager.lua")
+local Profile = import("/mods/TheRedQueen/lua/AI/RedQueen/Profile.lua")
+local ProductionTrace = import("/mods/TheRedQueen/lua/AI/RedQueen/ProductionTrace.lua")
 local Scheduler = import("/mods/TheRedQueen/lua/AI/RedQueen/Scheduler.lua")
+local ScoutingConfig = import("/mods/TheRedQueen/lua/AI/RedQueen/ScoutingConfig.lua")
 local StrategyDirector = import("/mods/TheRedQueen/lua/AI/RedQueen/StrategyDirector.lua")
 local TeamCoordinator = import("/mods/TheRedQueen/lua/AI/RedQueen/TeamCoordinator.lua")
 local WorldModel = import("/mods/TheRedQueen/lua/AI/RedQueen/WorldModel.lua")
@@ -31,6 +35,19 @@ AIBrain = Class(AdaptiveBrain) {
         self.RedQueenDebug = false
     end,
 
+    AddBuilderManagers = function(self, position, radius, location, useCenter)
+        local old = self.BuilderManagers and self.BuilderManagers[location]
+        if old then Lifecycle.Retire(self, location, old) end
+        AdaptiveBrain.AddBuilderManagers(self, position, radius, location, useCenter)
+        Lifecycle.Register(self, location, self.BuilderManagers[location])
+    end,
+
+    OnUnitStartBuild = function(self, builder, built)
+        AdaptiveBrain.OnUnitStartBuild(self, builder, built)
+        local trace = self.RedQueenModules and self.RedQueenModules.ProductionTrace
+        if trace then trace:Safe(trace.UnitStarted, builder, built) end
+    end,
+
     OnBeginSession = function(self)
         AdaptiveBrain.OnBeginSession(self)
         self:ForkThread(self.RedQueenStartThread)
@@ -48,9 +65,37 @@ AIBrain = Class(AdaptiveBrain) {
         self.RedQueenContext = context
         IncomeBonus.ApplyToArmy(self, context)
         IncomeBonus.LogAppliedBonus(self, context)
+        for _, army in ipairs(context.AlliedArmies) do
+            local other = ArmyBrains[army]
+            local x, z = other:GetArmyStartPos()
+            local income = other.RedQueenContext and string.format(" income=%.2f",
+                other.RedQueenContext.IncomeMultiplier) or ""
+            Logger.Info(self, string.format("match-contract army=%d name=%s faction=%d side=ally start=%.1f,%.1f%s",
+                army, other.Name, other:GetFactionIndex(), x, z, income))
+        end
+        for _, army in ipairs(context.EnemyArmies) do
+            local other = ArmyBrains[army]
+            local x, z = other:GetArmyStartPos()
+            Logger.Info(self, string.format("match-contract army=%d name=%s faction=%d side=enemy start=%.1f,%.1f",
+                army, other.Name, other:GetFactionIndex(), x, z))
+        end
+
+        local scouting = ScoutingConfig.Create(ScenarioInfo.Options)
+        self.RedQueenScouting = scouting
+        Logger.Info(self, string.format(
+            "scouting mode=%s production=%s dispatch=%s",
+            scouting.Mode,
+            scouting.AdaptiveProduction and "adaptive" or "binary",
+            scouting.DirectedDispatch and "on" or "off"
+        ))
 
         local modules = {}
         modules.World = WorldModel.Create(self, context)
+        -- Chosen once, from a finished world model, before any director reads a
+        -- behaviour flag. Exposed on the brain as well as the module table so
+        -- builder conditions, which only receive aiBrain, can reach it.
+        modules.Profile = Profile.Create(self, context, modules.World)
+        self.RedQueenProfile = modules.Profile
         modules.Intel = IntelManager.Create(self)
         modules.Economy = EconomyManager.Create(self, context)
         modules.Team = TeamCoordinator.Create(self, context)
@@ -75,6 +120,30 @@ AIBrain = Class(AdaptiveBrain) {
         modules.Combat = CombatManager.Create(self, modules.World, modules.Economy, modules.Strategy)
         modules.Diagnostics = Diagnostics.Create(self, modules)
         self.RedQueenModules = modules
+        -- The director reads sibling modules -- built factory counts for the
+        -- engineer target, the scouting summary for scout production -- through
+        -- `self.Modules`, and nothing ever gave it the table. Both readers
+        -- silently took their absent-module fallback: the engineer target saw
+        -- zero built factories for the whole match, and scout production sat at
+        -- its floor while the army could see nothing.
+        --
+        -- Assigned by reference after construction, so modules created below
+        -- this line are visible too. Per-brain, so no army shares another's.
+        --
+        -- Specs did not catch it because they inject `director.Modules`
+        -- directly; the structural guard in validate_mod.py checks this wiring.
+        modules.Strategy.Modules = modules
+        modules.ProductionTrace = ProductionTrace.Create(self, modules)
+        modules.Production.Trace = modules.ProductionTrace
+        modules.Combat.Trace = modules.ProductionTrace
+        modules.Strategy.Trace = modules.ProductionTrace
+        modules.Intel.Trace = modules.ProductionTrace
+        if ScenarioInfo.Options.RedQueenDefenseFixture and self:GetArmyIndex() == 2 then
+            ForkThread(import("/mods/TheRedQueen/lua/AI/RedQueen/DefenseFixture.lua").Run, self)
+        end
+        if ScenarioInfo.Options.RedQueenLifecycleFixture and self:GetArmyIndex() == 2 then
+            ForkThread(import("/mods/TheRedQueen/lua/AI/RedQueen/LifecycleFixture.lua").Run, self)
+        end
 
         for _, ping in pairs(self.RedQueenPendingPings) do
             modules.Pings:Handle(ping)
@@ -99,6 +168,7 @@ AIBrain = Class(AdaptiveBrain) {
         end)
         scheduler:Add("production", Constants.Ticks.Production, 20, function()
             modules.Production:Update()
+            if modules.ProductionTrace then modules.ProductionTrace:Update() end
         end)
         scheduler:Add("combat", Constants.Ticks.Combat, 26, function()
             modules.Combat:Update()
@@ -127,9 +197,13 @@ AIBrain = Class(AdaptiveBrain) {
     OnUnitStopBeingBuilt = function(self, unit, builder, layer)
         AdaptiveBrain.OnUnitStopBeingBuilt(self, unit, builder, layer)
         IncomeBonus.OnUnitCreated(self, unit)
+        local trace = self.RedQueenModules and self.RedQueenModules.ProductionTrace
+        if trace then trace:Safe(trace.UnitCompleted, unit, builder) end
     end,
 
     OnUnitKilled = function(self, unit, instigator, damageType, overkillRatio)
+        local trace = self.RedQueenModules and self.RedQueenModules.ProductionTrace
+        if trace then trace:Safe(trace.UnitLost, unit) end
         AdaptiveBrain.OnUnitKilled(self, unit, instigator, damageType, overkillRatio)
         if self.RedQueenModules and self.RedQueenModules.Strategy then
             self.RedQueenModules.Strategy:RecordUnitLoss(unit)
@@ -149,6 +223,16 @@ AIBrain = Class(AdaptiveBrain) {
             return
         end
         self.RedQueenCleaned = true
+        if self.RedQueenDistressThread then
+            KillThread(self.RedQueenDistressThread)
+            self.RedQueenDistressThread = nil
+        end
+        self:RedQueenRetireBuilders()
+        local trace = self.RedQueenModules and self.RedQueenModules.ProductionTrace
+        if trace then trace:Safe(trace.Observe, "lifecycle", "brain", "brain-cleanup", "") end
+        if self.RedQueenModules and self.RedQueenModules.ProductionTrace then
+            self.RedQueenModules.ProductionTrace:Destroy()
+        end
 
         if self.RedQueenScheduler then
             self.RedQueenScheduler:Stop()
@@ -159,56 +243,24 @@ AIBrain = Class(AdaptiveBrain) {
         self:RedQueenRetireBuilders()
     end,
 
-    -- Retire every builder group Red Queen registered with FAF's managers.
-    --
-    -- Stopping the scheduler leaves those builders in place, and FAF keeps
-    -- evaluating their conditions against a location whose managers the defeat
-    -- has already torn down. That is where match 27741743's 76 "Invalid
-    -- location" warnings came from: they all name Large Expansion Area 1 and 2,
-    -- the two locations army 4 registered, and they all appear after its
-    -- defeat. FAF's GetHighestBuilder skips any builder below priority 1 before
-    -- it evaluates conditions, so retiring them at zero is enough.
     RedQueenRetireBuilders = function(self)
-        local managers = self.BuilderManagers
-        if not managers then
-            return
-        end
-        for _, manager in pairs(managers) do
-            for _, subManager in pairs({
-                manager and manager.EngineerManager,
-                manager and manager.FactoryManager,
-                manager and manager.PlatoonFormManager,
-            }) do
-                for _, data in pairs(subManager.BuilderData or {}) do
-                    for _, builder in pairs(data.Builders or {}) do
-                        local name = builder.BuilderName
-                        if type(name) == "string"
-                            and string.sub(name, 1, 10) == "Red Queen "
-                        then
-                            builder.RedQueenRetired = true
-                            if builder.SetPriority then
-                                builder:SetPriority(0)
-                            else
-                                builder.Priority = 0
-                            end
-                        end
-                    end
-                end
-            end
-        end
+        Lifecycle.Cleanup(self)
     end,
 
     OnVictory = function(self)
+        Logger.Info(self, "lifecycle game-result result=victory tick=" .. tostring(GetGameTick()))
         self:RedQueenCleanup()
         AdaptiveBrain.OnVictory(self)
     end,
 
     OnDraw = function(self)
+        Logger.Info(self, "lifecycle game-result result=draw tick=" .. tostring(GetGameTick()))
         self:RedQueenCleanup()
         AdaptiveBrain.OnDraw(self)
     end,
 
     OnDefeat = function(self)
+        Logger.Info(self, "lifecycle game-result result=defeat tick=" .. tostring(GetGameTick()))
         self:RedQueenCleanup()
         AdaptiveBrain.OnDefeat(self)
     end,

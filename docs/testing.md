@@ -39,7 +39,7 @@ For an isolated command-line check, make a copy of `Game.prefs` in FAF's prefere
 
 ```lua
 active_mods = {
-    ['7f4a8d2e-2d63-4e71-9c51-5ed0ee000008'] = true
+    ['7f4a8d2e-2d63-4e71-9c51-5ed0ee000009'] = true
 }
 ```
 
@@ -62,6 +62,93 @@ featured mod deliberately. Confirm the log contains
 any result.
 
 The runner uses out-of-range difficulty `42` as an internal smoke-test marker, which redirects command-line Rush opponents to The Red Queen inside the simulation. Normal lobby sessions and stock Rush AIs are unchanged.
+
+### Passive production investigation
+
+The current launcher uses strict equal-income mixed matches: `FAF_MIXED=1`
+for 1v1 or `FAF_MIXED=2` for 2v2. Add `FAF_PRODUCTION_TRACE=1` for bounded
+tracing in either configuration (sentinels 43/46). Surplus and human starts are
+civilian; Red Queen uses Aeon and stock Adaptive uses Cybran. Contestants occupy
+sorted AI starts, Red Queen first, with teams 2 and 3. Verify the actual
+`income contract ... income=1.00` in each log. The earlier 1.20 Sweepwing trace
+is historical defect evidence and is not an equal-income baseline.
+
+Before every launch the script verifies the active mod symlink and writes a
+`.manifest.json` beside the log, containing revision, working status, map and
+per-file/runtime payload hashes. A `.patch` records tracked working changes.
+The manifest hashes include untracked Lua sources. Preserve the tested source
+files as well as the manifest when archiving a run.
+
+Tracing is off in ordinary matches. `RedQueenProductionTrace=true` enables it
+through synchronized scenario options. `RedQueenTraceArmy` selects exactly one
+army (default 2); `RedQueenTraceSubsystems` optionally selects a table of
+`lifecycle`, `placement`, `defense`, `commitment`, and `projects` booleans.
+Selection and assignment functions are no longer wrapped. Decision counters
+aggregate every 30 simulation seconds, with individual state transitions.
+Each subsystem retains at most 64 decision identities per interval; placement
+and project construction each retain at most 64 live entities. Engineer
+snapshots and pending requests are also capped at 64. Overflow is explicit and
+invalidates claims of complete coverage. Inactive entities are released and
+construction lifetimes use monotonic identities, independent of reused engine
+IDs. Cleanup reports unfinished tracked entities as unknown.
+
+Queue positions use native `x,z,orientation` coordinates. Attempts, accepted
+requests, construction starts, progress, completions, destruction, and unknown
+outcomes are separate records. An absent queue entry never proves completion.
+Factory counts include unfinished structures and upgrade callbacks do not
+prove additional production sites. Project samples record progress delta,
+initiating engineer, original manager, current construction target, guards,
+income, health, and nearby observed ground threat; these observations alone do
+not establish a cause of abandonment.
+
+Analyze a fresh diagnostic log with both tools:
+
+```bash
+./scripts/analyze-log.py /tmp/rq-production-trace.log
+python3 scripts/analyze-production-trace.py /tmp/rq-production-trace.log
+```
+
+Reject runs with `production trace unavailable` or Lua startup failures as
+diagnostic evidence. Preserve the tested revision, working patch, runtime
+payload hash, map, factions and income contract alongside the log. Run until
+the capacity deficit persists through several requests, defeat, or 30
+simulation minutes. Report the task/queue timeline before selecting any
+production-policy change.
+
+See [the September 6 investigation](production-capacity-investigation.md) for
+the measured ownership/placement timeline, run provenance and remaining limits.
+
+### Large-map expansion and terrain profiles
+
+Size is evaluated independently of terrain at the 10 km threshold:
+
+| Terrain | Below 10 km | 10 km and larger |
+| --- | --- | --- |
+| Land | LandSmall | LandLarge |
+| Naval | Naval | NavalLarge |
+| Mixed | Mixed | MixedLarge |
+
+Large profiles enable completed-tier readiness; naval and mixed profiles keep
+naval production and shore torpedoes at both sizes. Sludge remains `Naval`;
+Seton's Clutch selects `NavalLarge`. Extending readiness to large water maps
+requires balance measurement; profile selection alone does not establish a win-rate gain.
+
+For expansion verification, use Seton's for two teams and Saltrock for three:
+
+```bash
+./scripts/run-matrix.sh 1 SCMP_009 8675309 2 3 expansion-large-3v3 3v3
+./scripts/run-matrix.sh 2 SCMP_025 31337 3 2 expansion-large-2v2v2 2v2v2
+```
+
+Check each manifest, `profile selected=NavalLarge`, and the expected income
+contract before interpreting the run. Count forward-base starts and completions,
+peak sampled mass income, and blockers while `objective=Defend`. The objective
+itself must no longer block expansion: observed threat at the engineer's origin,
+along the path, and at the candidate site still limits eligibility. Opening and
+recovery objectives, an active emergency defense alert, affordability, cooldown
+and the existing map cap remain separate reservations. A later blocker becoming
+visible is not proof that a forward base completed. These two cells check runtime
+behaviour across layouts; use matched seeds and factions for balance comparisons.
 
 ### What a short run cannot reach
 
@@ -96,6 +183,10 @@ state objective=<type> eco=<mode> mass=<perTick> energy=<perTick>
 `factories=` compares live factories against the capacity policy's sustainable
 target, not against `DesiredFactories`; `production expansion` logs the same
 number. `mass=` and `energy=` are per tick, as below.
+
+For the scouting production/dispatch experiment, use the modes and fixed case
+list in [scouting isolation](scouting-isolation.md). Those matrices require the
+user's go-ahead before launch.
 
 ## Required match matrix
 

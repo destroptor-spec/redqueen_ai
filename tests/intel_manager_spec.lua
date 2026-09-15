@@ -35,6 +35,8 @@ local constants = {
         AnchorProximityTolerance = 16,
         ArmyClosingThreatFraction = 0.25,
         ObserversPerUpdate = 2,
+        RouteCoverageConfidenceForFull = 1.0,
+        CommitmentThreatRadius = 60,
         ObservationRadius = 70,
         IntelLifetimeSeconds = 120,
     },
@@ -47,7 +49,9 @@ function import(path)
     error("unexpected import: " .. tostring(path))
 end
 
-dofile("lua/AI/RedQueen/IntelManager.lua")
+local intelEnvironment = setmetatable({}, { __index = _G })
+setfenv(assert(loadfile("lua/AI/RedQueen/IntelManager.lua")), intelEnvironment)()
+local Create = intelEnvironment.Create
 
 local function IntelBlip(entityId, position, intel)
     return {
@@ -303,3 +307,85 @@ assert(not expiryManager.Observations[202], "the final lower-tech observation mu
 assert(expiryManager.HighestObservedTech == 1, "enemy tech must return to tier one when no observations survive")
 
 print("Red Queen intel manager contracts passed")
+
+-- Scout targeting: least-known first, because Red Queen's intel comes only from
+-- sampling its own units and so knows nothing about places it has never been.
+local scoutIntel = Create({ GetArmyIndex = function() return 1 end }, {})
+scoutIntel.Observations = {
+    [1] = { Position = { 100, 0, 100 }, Confidence = 1.0,
+            Threat = { Land = 10, Air = 0, Naval = 0, Economy = 0 } },
+}
+local scoutTargets = scoutIntel:GetScoutTargets({
+    { Name = "seen", Position = { 100, 0, 100 }, Weight = 1 },
+    { Name = "blind-far", Position = { 900, 0, 900 }, Weight = 1 },
+    { Name = "blind-objective", Position = { 800, 0, 800 }, Weight = 3 },
+})
+assert(table.getn(scoutTargets) == 3, "every candidate with a position must be ranked")
+assert(scoutTargets[1].Name == "blind-objective",
+    "the least-known, most-wanted position must come first, got " .. tostring(scoutTargets[1].Name))
+assert(scoutTargets[3].Name == "seen",
+    "an observed position must rank last, got " .. tostring(scoutTargets[3].Name))
+assert(scoutTargets[3].Coverage > scoutTargets[1].Coverage,
+    "coverage must be reported and must separate seen from unseen")
+
+-- Weight only breaks ties between equally unknown places, so a valuable target
+-- that is already watched does not outrank a blind one.
+local weighted = scoutIntel:GetScoutTargets({
+    { Name = "watched-valuable", Position = { 100, 0, 100 }, Weight = 9 },
+    { Name = "blind-cheap", Position = { 900, 0, 900 }, Weight = 1 },
+})
+assert(weighted[1].Name == "blind-cheap",
+    "ignorance must outrank importance, got " .. tostring(weighted[1].Name))
+
+-- An intel source that cannot report coverage must not read as blind, or the
+-- army would scout its own base forever. Same guard as route safety.
+-- Borrowed onto a bare table, because setting the field to nil on an instance
+-- does not shadow the class method -- the metatable still finds it.
+local blindIntel = { GetScoutTargets = scoutIntel.GetScoutTargets }
+local blindTargets = blindIntel:GetScoutTargets({
+    { Name = "anywhere", Position = { 500, 0, 500 } },
+})
+assert(blindTargets[1].Coverage == 1,
+    "an absent coverage source must count as known, not unknown")
+
+print("Red Queen scout targeting contracts passed")
+
+-- Empty terrain must be known after a visit, without inventing enemy contact.
+local terrainPosition = { 800, 0, 800 }
+local terrainObserver = {
+    GetPosition = function() return terrainPosition end,
+    GetIntelRadius = function(_, kind)
+        assert(kind == "Vision", "terrain observations must use vision, not radar range")
+        return 25
+    end,
+}
+local observers = { terrainObserver }
+local terrainIntel = Create({
+    GetArmyIndex = function() return 1 end,
+    GetListOfUnits = function() return observers end,
+    GetUnitsAroundPoint = function() return {} end,
+})
+local visitTick = currentTick
+assert(terrainIntel:GetCoverageNear(terrainPosition, 60) == 0, "unvisited terrain is blind")
+terrainIntel:Update()
+assert(terrainIntel:GetCoverageNear(terrainPosition, 60) == 1, "a visit satisfies an empty target")
+assert(terrainIntel:GetCoverageNear({ 830, 0, 800 }, 60) == 0,
+    "the sampling radius must not grant visibility beyond the observer's vision")
+assert(next(terrainIntel.Observations) == nil and terrainIntel:GetThreatNear(terrainPosition, 60) == 0,
+    "terrain observations must not fabricate enemy contacts or threat")
+observers = {}
+currentTick = visitTick + constants.Policy.IntelLifetimeSeconds * 5
+terrainIntel:Update()
+assert(terrainIntel:GetCoverageNear(terrainPosition, 60) == 0.5, "empty observations decay after departure")
+currentTick = visitTick + constants.Policy.IntelLifetimeSeconds * 10
+terrainIntel:Update()
+assert(terrainIntel:GetCoverageNear(terrainPosition, 60) == 0 and next(terrainIntel.TerrainObservations) == nil,
+    "old empty observations expire and release their storage")
+terrainObserver.Dead = true
+observers = { terrainObserver }
+terrainIntel:Update()
+assert(terrainIntel:GetCoverageNear(terrainPosition, 60) == 0, "dead observers cannot refresh coverage")
+terrainObserver.Dead = false
+terrainIntel:Update()
+assert(terrainIntel:GetCoverageNear(terrainPosition, 60) == 1, "another visit restores coverage")
+currentTick = visitTick

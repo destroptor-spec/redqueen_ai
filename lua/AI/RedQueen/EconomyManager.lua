@@ -76,7 +76,18 @@ EconomyManager = ClassSimple {
         -- as an income handicap in IncomeBonus, so counting it again here
         -- inflated the target twice for an outnumbered brain and, because the
         -- same number is the production cap, made the cap unpredictable.
-        local incomeFactories = math.floor(state.MassIncome / 8)
+        --
+        -- The divisor is per tick, like every income figure the directors read.
+        -- Written as a bare 8 it read as a per-second figure and was therefore
+        -- ten times too strict: a third factory needed 160 mass per second,
+        -- while a real economy runs four or more at twenty or thirty. In the
+        -- Red Queen versus stock Adaptive 1v1 this held the land target at a
+        -- single factory for the whole match -- "factory cap L1/1" from the
+        -- first minute to the defeat at 18:46 -- because income can never grow
+        -- past the gate without the production the gate is withholding.
+        local incomeFactories = math.floor(
+            state.MassIncome / Constants.Policy.MassIncomePerFactory
+        )
         state.DesiredFactories = math.max(1, math.min(24, 1 + incomeFactories))
     end,
 
