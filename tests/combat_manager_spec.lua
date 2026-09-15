@@ -1261,6 +1261,29 @@ assert(fallbackTanks[1].RedQueenScoutTarget == "objective",
 assert(fallbackSummary.FallbackOrders == 1 and fallbackSummary.ScoutOrders == 0,
     "combat fallback orders must not be recorded as dedicated scout orders")
 
+-- The objective is rarely the least-covered target, which is what the fallback
+-- used to require. Targets sort by coverage ascending with weight only as a
+-- tiebreak, so a never-observed enemy start (weight 2) heads the list while the
+-- objective (weight 3, the only candidate that meets the bar) sits behind its
+-- own partial coverage. Reading the head alone failed the weight test and sent
+-- nobody, leaving the commitment gate judging waves against a threat of zero.
+-- The case above passes all-zero coverage, so the objective tiebreaks to the
+-- head and cannot show this.
+local partial, partialSummary, partialTanks = fallbackRun({ [800] = 0.30 }, { 800, 0, 800 }, 6)
+assert(partial == 1,
+    "a partly observed objective must still get the fallback, got " .. partial)
+assert(partialTanks[1].RedQueenScoutTarget == "objective",
+    "and the unit must go to the objective, not to whatever is least covered, got "
+        .. tostring(partialTanks[1].RedQueenScoutTarget))
+assert(partialSummary.FallbackOrders == 1, "and it must be recorded as a fallback order")
+
+-- The weight bar still gates. With the objective already well observed it drops
+-- out of the wanted list entirely, and nothing left is worth diverting a gun
+-- for: an enemy start and a mass cluster are scouting work, not commitment work.
+local unworthy = fallbackRun({ [800] = 0.90 }, { 800, 0, 800 }, 6)
+assert(unworthy == 0,
+    "no ordinary unit may be diverted when nothing meets the weight bar, got " .. unworthy)
+
 local savedScoutTick = currentTick
 for pass = 1, 6 do
     currentTick = savedScoutTick + pass * 30

@@ -31,7 +31,7 @@ than after.
 | 8 | medium | `StrategyDirector.lua:171` | Air units credited only `SubThreatLevel` | verified | [x] step 1 of `threat-accounting-plan.md` |
 | 9 | medium | `StrategyDirector.lua:635,696` | `Targets.Ground` rekeyed to `land + naval` | **not a defect** | [x] closed, see below |
 | 10 | medium | `ProductionManager.lua:2241` | `UpdateEngineerRetreat` ignores the engineer holds | verified | [x] |
-| 11 | medium | `CombatManager.lua:696` | Scout fallback only inspects `wanted[1]` | verified | [ ] |
+| 11 | medium | `CombatManager.lua:696` | Scout fallback only inspects `wanted[1]` | verified | [x] |
 | 12 | medium | `scripts/analyze-log.py:38` | Fixture base location invisible to the log attributor | verified | [ ] |
 | 13 | medium | `ProductionManager.lua:2206` | Commander assist undone 5 s later | relayed | [ ] |
 | 14 | low | `CombatManager.lua:575` | `ScoutSummary` stale on early return | verified | [ ] |
@@ -593,6 +593,19 @@ The defence is never built, `LastEmergencyDefenseTick` holds the cooldown, and
 the cycle repeats for every alert outside `EngineerSurvivalHomeRadius`.
 
 ### 11. Scout fallback only inspects `wanted[1]`
+
+**Fixed 2026-09-15.** The fallback now takes the first unassigned candidate that
+meets `ScoutFallbackMinimumWeight`, rather than testing only the head of the
+list and giving up. The weight bar itself is unchanged, so an enemy start or a
+mass cluster still cannot divert a gun.
+
+The existing contract could not have caught this: it passes all-zero coverage,
+so the objective tiebreaks to the head of the list and the old code worked by
+accident. The new case gives the objective partial coverage (0.30, still under
+`ScoutCoverageSatisfied`), which is the ordinary situation — a never-observed
+enemy start then sorts ahead of it and the old code sent nobody. A second case
+keeps the bar honest: with the objective well observed it drops out of the
+wanted list and nothing is diverted at all.
 
 `CombatManager.lua:696`.
 

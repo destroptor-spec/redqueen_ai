@@ -706,18 +706,39 @@ CombatManager = ClassSimple {
         -- important blind target and nothing else -- bounded at a single unit,
         -- because diverting a portion of the force is what cover already
         -- learned to cap.
-        if sent == 0 and not fallbackActive and wanted[1] and not assigned[wanted[1]] then
-            local eyes = nil
-            for _, unit in pairs(units) do
-                if AvailableForOrder(unit, tick)
-                    and EntityCategoryContains(GarrisonEligible, unit)
-                    and (not eyes or (unit.EntityId or 0) < (eyes.EntityId or 0))
+        if sent == 0 and not fallbackActive then
+            -- The first blind target actually worth diverting a gun for, not
+            -- merely the least covered one. GetScoutTargets sorts by coverage
+            -- ascending and uses weight only as a tiebreak, so the head of the
+            -- list is normally a never-observed enemy start at weight 2 while
+            -- the objective's own destination -- the only candidate that meets
+            -- ScoutFallbackMinimumWeight -- sits further down behind whatever
+            -- partial coverage it has. Reading the head alone therefore failed
+            -- the weight test and issued nothing at all, which left the
+            -- commitment gate judging every wave against a threat of zero: the
+            -- exact failure this fallback exists to prevent.
+            local target = nil
+            for _, candidate in ipairs(wanted) do
+                if not assigned[candidate]
+                    and (candidate.Weight or 0)
+                        >= Constants.Policy.ScoutFallbackMinimumWeight
                 then
-                    eyes = unit
+                    target = candidate
+                    break
                 end
             end
-            local target = wanted[1]
-            if eyes and (target.Weight or 0) >= Constants.Policy.ScoutFallbackMinimumWeight then
+            local eyes = nil
+            if target then
+                for _, unit in pairs(units) do
+                    if AvailableForOrder(unit, tick)
+                        and EntityCategoryContains(GarrisonEligible, unit)
+                        and (not eyes or (unit.EntityId or 0) < (eyes.EntityId or 0))
+                    then
+                        eyes = unit
+                    end
+                end
+            end
+            if eyes then
                 local layer = UnitLayer(eyes)
                 if layer == "Air"
                     or not self.World.CanPath
