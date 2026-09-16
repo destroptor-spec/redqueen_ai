@@ -203,3 +203,86 @@ that failure came from gating capability, which no longer happens.
   the launched value along with both faction settings. Seeds for the runs above
   were verified at launch from `/proc/<pid>/cmdline`, not read from those
   manifests.
+
+# Re-run after the V9 review fixes — 2026-09-16
+
+Same twelve cells, payload `c6c64e797a84`, against the series above
+(`0cbb34c70ae5`). Strict 1v1 versus stock `adaptive-ai`, `victory=Assassination`,
+`FAF_FIXED_RUNTIME=1`. Zero Red Queen Lua failures and zero scheduler failures
+in all twelve.
+
+| Map | Profile | Seed | Red Queen | Was | Now | K/L was | K/L now | Opp K/L |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Sludge `SCMP_037` | Naval | 2071971 | Aeon | victory | victory | 1.85 | **6.01** | 0.14 |
+| Sludge `SCMP_037` | Naval | 2071971 | Cybran | victory | **defeat** | 3.36 | 0.32 | 2.05 |
+| Sludge `SCMP_037` | Naval | 2071971 | Seraphim | defeat | **victory** | 0.64 | 3.41 | 0.24 |
+| Sludge `SCMP_037` | Naval | 8675309 | Seraphim | defeat | **victory** | 1.47 | 3.65 | 0.25 |
+| Sludge `SCMP_037` | Naval | 31337 | Seraphim | victory | victory | 0.72 | **6.39** | 0.14 |
+| Sentry Point `SCMP_018` | LandSmall | 2071971 | Aeon | defeat | **victory** | 0.63 | 2.10 | 0.41 |
+| Sentry Point `SCMP_018` | LandSmall | 31337 | Aeon | victory | victory | 1.08 | 1.83 | 0.53 |
+| Sentry Point `SCMP_018` | LandSmall | 2071971 | UEF | victory | **defeat** | 0.79 | 1.21 | 0.77 |
+| Fields of Isis `SCMP_015` | LandLarge | 8675309 | Aeon | victory | **defeat** | 1.03 | 1.18 | 0.77 |
+| Fields of Isis `SCMP_015` | LandLarge | 31337 | Aeon | defeat | defeat | 0.60 | 1.03 | 0.92 |
+| Syrtis Major `SCMP_017` | LandLarge | 8675309 | Aeon | victory | **defeat** | 1.12 | 0.86 | 1.13 |
+| Syrtis Major `SCMP_017` | LandLarge | 31337 | Aeon | defeat | defeat | 0.40 | 0.73 | 1.27 |
+
+Overall 7W/5L becomes 6W/6L. By profile:
+
+| Profile | Was | Now |
+| --- | --- | --- |
+| Naval | 3W/2L | **4W/1L** |
+| LandSmall | 2W/1L | 2W/1L |
+| LandLarge | 2W/2L | **0W/4L** |
+
+## The gate is not satisfied
+
+LandLarge lost every cell. That is the regression, and it is not visible in the
+trading figures: K/L *rose* in three of those four cells while all four became
+defeats. This is the failure mode `docs/large-map-expansion-investigation.md`
+already names — what is left of an army after a starved economy trades
+reasonably per unit, there is simply far less of it — so the outcome column is
+the one that moved, not the ratio.
+
+What separates the LandLarge cells from the rest in this series:
+
+| | Naval + LandSmall | LandLarge |
+| --- | --- | --- |
+| mean blind | 15-31% | 55-66% |
+| extractors held, peak | 33-72% of map | 34-48% of map |
+| engineers at or below target | 9-31% of samples | 4-5% of samples |
+| builders suppressed | none reported | 126-168 |
+
+Across the whole series, forward bases established 2 of 17 attempts (12%), lost
+to `engineer-lost=5, manager-lost=3, route-unsafe=2, destroyed=1, no-factory=1`.
+
+K/L improved in ten of twelve cells. The two that fell are Sludge Cybran
+(3.36 to 0.32, the only outcome flip on a naval map) and Syrtis 8675309.
+
+## What this series cannot settle
+
+Each cell is one sample, which is the whole thesis of the series above: seed
+alone has flipped an outcome on the same map, faction and profile. Six of these
+twelve outcomes differ from the baseline, and that is a larger flip rate than a
+single-sample comparison can attribute to the code.
+
+The baseline table never recorded **opponent faction**. This re-run used Cybran,
+or Aeon where Red Queen was Cybran, following the examples in
+`docs/scouting-isolation.md` and `docs/testing.md`. The Sludge Cybran row is the
+one most exposed to that: it is the only naval outcome flip, and it is exactly
+the row whose opponent cannot be confirmed to match.
+
+Before reading the LandLarge result as a property of the code, re-run those four
+cells at a second seed each. If they hold, the economy figures above are where
+to look, not the combat ones.
+
+## Runner note
+
+`run-matrix.sh` does not terminate. The match reaches `GameEnded` and the client
+sits on the score screen indefinitely, so the wrapper waits forever on a process
+that has already produced its result. The first pair of this re-run consumed
+6h53m of wall time for two matches that had finished in 11 and 16 minutes of
+game time. With a watcher that stops on `lifecycle game-result`, a cell costs 80
+to 300 seconds, and the whole twelve is well under an hour.
+
+Run cells **one at a time**. Two concurrent instances spike memory hard enough
+during Wine startup to be killed, even with 22 GiB available.
