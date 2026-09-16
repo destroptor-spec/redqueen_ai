@@ -504,3 +504,33 @@ position is not answerable from one match.
 Two things in flight and unmeasured: the engineer tier ladder, where a cap
 filled with Tech 1 engineers meant no Tech 2 engineer was ever built, and the
 consolidation capabilities, which still do not exist.
+
+
+## Re-measured on a clean loop
+
+The opening-floor result was taken in a run with 177 failed production passes
+(`ipairs` over a multi-return call). Re-run with that fixed and the engineer
+tier ladder added, on the same cell:
+
+| measure | pre-floor builds | opening floor (broken loop) | clean loop + tier ladder |
+| --- | --- | --- | --- |
+| scheduler failures | 0 | **177** | **0** |
+| opening curve to sample 8 | 3 5 10 11 11 14 17 18 | 3 5 9 12 18 20 22 | 3 5 9 12 18 20 **22** |
+| peak extractors | 18 | 22 | **22** |
+| final extractors | 6 | 13 | 12 |
+
+**The gain holds.** The opening curve is reproduced exactly on a clean loop, so
+the engineer floor really does take peak extractors from 18 to 22 and the
+earlier figure was not an artifact of the broken passes.
+
+**The tier ladder fires, weakly.** Tech 2 engineers peak at 3 and appear in 13
+of 36 samples, against a structural zero before — the builder could never fire
+while Tech 1 engineers filled the cap. But Tech 1 peaks at 28, far above the
+target of 12 to 18, so most build power is still the cheap tier and the
+transition happens late.
+
+**The problem has moved.** Red Queen built 184k and lost 145k to kill 46k: a
+K/L of 0.31 against the opponent's 3.06. Two consecutive builds now show the
+same shape — more economy, spent worse. The economy work is succeeding at
+economy and failing at winning, and the next question is not how to earn more
+mass but why the army that mass buys dies three to one.
