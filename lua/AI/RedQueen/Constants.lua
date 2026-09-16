@@ -20,6 +20,19 @@ Ticks = {
 Policy = {
     ObservationRadius = 48,
     ObserversPerUpdate = 16,
+    -- The observer budget above was fixed while the map is not. Coverage is
+    -- recorded from where our own units already are, so how fast the picture
+    -- refreshes is how fast we sample them -- and a 10 km map is four times the
+    -- area of a 5 km one. Across thirty-two LandLarge runs blind never fell
+    -- below 50%, against 15-31% on the 5 km maps, with no overlap between the
+    -- bands: the budget simply does not reach.
+    --
+    -- Terrain sampling scales with area because it is cheap, a position and a
+    -- radius. The enemy proximity query does not scale, because it is the
+    -- expensive half; it keeps the fixed budget and rotates behind the same
+    -- cursor, so every unit still takes its turn at both.
+    ObserverBaselineKilometers = 5,
+    ObserversPerUpdateMaximum = 96,
     IntelLifetimeSeconds = 180,
     FreshCombatIntelSeconds = 30,
     ArmyClusterMinimumRadius = 45,

@@ -147,6 +147,15 @@ IntelManager = ClassSimple {
         self.Observations = {}
         self.TerrainObservations = {}
         self.ObserverCursor = 1
+        -- Read once: the map does not change size, and the sampling budget
+        -- below is scaled against it every pass.
+        self.MapKilometers = Constants.Policy.ObserverBaselineKilometers
+        if MapSize then
+            local width = MapSize()
+            if width and width > 0 then
+                self.MapKilometers = math.max(1, math.floor((width / 51.2) + 0.5))
+            end
+        end
         self.Threat = { Land = 0, Air = 0, Naval = 0, Economy = 0 }
         self.HighestObservedTech = 1
     end,
@@ -180,6 +189,25 @@ IntelManager = ClassSimple {
         }
     end,
 
+    -- How many of our own units to read this pass, and how many of those to
+    -- run the enemy proximity query for.
+    --
+    -- Coverage exists only where our units have been, so the refresh rate is
+    -- the sampling rate, and the map's area is what that rate has to cover.
+    -- Terrain sampling scales with area: it is a position and a radius. The
+    -- enemy query keeps the fixed budget because it is the expensive half, and
+    -- it rides the same rotating cursor, so no unit is permanently excluded
+    -- from either.
+    ObserverSamples = function(self, observerCount)
+        local base = Constants.Policy.ObserversPerUpdate
+        local baseline = Constants.Policy.ObserverBaselineKilometers
+        local scale = (self.MapKilometers or baseline) / baseline
+        local scaled = math.floor(base * scale * scale + 0.5)
+        local terrain = math.max(base, math.min(Constants.Policy.ObserversPerUpdateMaximum, scaled))
+        terrain = math.min(terrain, observerCount)
+        return terrain, math.min(terrain, base)
+    end,
+
     ObserveTerrain = function(self, observer, tick)
         local position = observer:GetPosition()
         local radius = observer.GetIntelRadius and observer:GetIntelRadius("Vision") or 0
@@ -203,8 +231,8 @@ IntelManager = ClassSimple {
         local observerCount = table.getn(observers)
 
         if observerCount > 0 then
-            local sampleCount = math.min(Constants.Policy.ObserversPerUpdate, observerCount)
-            for sample = 1, sampleCount do
+            local terrainSamples, enemySamples = self:ObserverSamples(observerCount)
+            for sample = 1, terrainSamples do
                 if self.ObserverCursor > observerCount then
                     self.ObserverCursor = 1
                 end
@@ -213,6 +241,7 @@ IntelManager = ClassSimple {
 
                 if observer and not observer.Dead then
                     self:ObserveTerrain(observer, tick)
+                    if sample <= enemySamples then
                     local enemies = self.Brain:GetUnitsAroundPoint(
                         categories.ALLUNITS,
                         observer:GetPosition(),
@@ -224,6 +253,7 @@ IntelManager = ClassSimple {
                         if blip then
                             self:ObserveUnit(blip, tick)
                         end
+                    end
                     end
                 end
             end
