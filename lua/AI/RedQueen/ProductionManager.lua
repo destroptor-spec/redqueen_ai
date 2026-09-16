@@ -2300,6 +2300,31 @@ ProductionManager = ClassSimple {
             return "stall-risk"
         end
 
+        -- Breadth before depth, until breadth stops being on offer.
+        --
+        -- Claiming an unclaimed point pays back in eighteen seconds; upgrading
+        -- one costs twenty-five times as much for twice the yield. While the
+        -- map still has points to take, the engineers belong on them, and an
+        -- upgrade started early simply takes those engineers -- the opening
+        -- reached 15 extractors by the eighth sample instead of 18.
+        --
+        -- Two things make the upgrade affordable rather than a trade: an income
+        -- that can fund it outright, or a map that is being lost, where there
+        -- is no breadth left to buy and what we still hold is all there is.
+        local held = table.getn(self:CoreExtractors())
+        local total = self.Brain.GetCurrentUnits and categories
+            and self.Brain:GetCurrentUnits(
+                categories.STRUCTURE * categories.MASSEXTRACTION) or held
+        self.PeakExtractors = math.max(self.PeakExtractors or 0, total)
+        local losingGround = self.PeakExtractors > 0
+            and total < self.PeakExtractors * Constants.Policy.CoreExtractorDeclineFraction
+        local funded = (state.MassIncome or 0)
+            >= Constants.Policy.CoreExtractorUpgradeMinimumMassIncome
+        if not funded and not losingGround then
+            self.CoreUpgrade = { State = "expanding" }
+            return "expanding"
+        end
+
         local upgrading, candidate = nil, nil
         for _, extractor in ipairs(self:CoreExtractors()) do
             if extractor.IsUnitState and extractor:IsUnitState("Upgrading") then

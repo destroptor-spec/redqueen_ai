@@ -71,6 +71,18 @@ Policy = {
     -- an army that cannot take more ground: no new territory to hold, no
     -- escort, no route. One at a time, because upgrading several takes them all
     -- offline at once and stalls the mass that pays for the next.
+    -- When upgrading is affordable rather than a trade.
+    --
+    -- A new Tech 1 extractor is 36 mass for +2/s, an eighteen-second payback;
+    -- a Tech 2 upgrade is roughly 900 for +4/s. While there are points left to
+    -- claim, breadth is strictly the better buy, and an upgrade started early
+    -- takes the engineers that would have claimed them -- measured: the opening
+    -- reached 15 extractors by the eighth sample instead of 18, and 5 by the
+    -- third instead of 10. So upgrade only when the economy can fund it without
+    -- compromise, or when the map is being lost and breadth is no longer on
+    -- offer.
+    CoreExtractorUpgradeMinimumMassIncome = 10,
+    CoreExtractorDeclineFraction = 0.75,
     CoreExtractorRadius = 45,
     CoreExtractorUpgradeEngineers = 4,
     CoreExtractorAssistSeconds = 30,

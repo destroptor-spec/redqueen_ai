@@ -133,6 +133,8 @@ local constants = {
         EngineerSurvivalThreatFloor = 8,
         CommanderLeashRadius = 120,
         CommanderAssistSeconds = 45,
+        CoreExtractorUpgradeMinimumMassIncome = 10,
+        CoreExtractorDeclineFraction = 0.75,
         CoreExtractorRadius = 45,
         CoreExtractorUpgradeEngineers = 4,
         CoreExtractorAssistSeconds = 30,
@@ -2409,7 +2411,9 @@ local coreManager = Create(
     },
     { FactionIndex = 1 },
     { StartPosition = coreHome },
-    { State = {} },
+    -- Funded outright, so these contracts exercise the upgrade itself. The
+    -- affordability gate has its own below.
+    { State = { MassIncome = 30 } },
     {},
     { ProductionDemand = {} }
 )
@@ -2471,6 +2475,71 @@ assert(coreManager:MaintainCoreExtractorUpgrades() == "none",
     "a fully upgraded core must simply report nothing to do")
 assert(table.getn(upgrades) == 0, "and must not issue an upgrade order")
 
+
+-- Breadth before depth, until breadth stops being on offer.
+--
+-- Claiming an unclaimed point pays back in eighteen seconds; upgrading one
+-- costs twenty-five times as much for twice the yield. Starting upgrades in a
+-- poor opening takes the engineers that would have claimed points: measured,
+-- the opening reached 15 extractors by the eighth sample instead of 18, and 5
+-- by the third instead of 10.
+local gateExtractors = {
+    CoreExtractor(60, 10, false, "ueb1202"),
+    CoreExtractor(61, 20, false, "ueb1202"),
+}
+local gateHeld = 8
+local gateManager = Create(
+    {
+        GetListOfUnits = function() return gateExtractors end,
+        GetCurrentUnits = function() return gateHeld end,
+        GetPlatoonUniquelyNamed = function()
+            return { GetPlatoonUnits = function() return { CoreEngineer(70), CoreEngineer(71) } end }
+        end,
+    },
+    { FactionIndex = 1 },
+    { StartPosition = coreHome },
+    { State = { MassIncome = 4 } },
+    {},
+    { ProductionDemand = {} }
+)
+
+-- A poor opening that is still expanding upgrades nothing.
+upgrades = {}
+assert(gateManager:MaintainCoreExtractorUpgrades() == "expanding",
+    "a poor opening must claim points rather than upgrade them")
+assert(table.getn(upgrades) == 0, "and must issue no upgrade")
+
+-- An income that can fund it outright does not have to wait.
+gateManager.Economy.State.MassIncome = 30
+upgrades = {}
+assert(gateManager:MaintainCoreExtractorUpgrades() == "started",
+    "an economy that can fund the upgrade need not defer it")
+assert(table.getn(upgrades) == 1, "and issues exactly one")
+
+-- And a map being lost upgrades what is left, however poor. Eight extractors
+-- fell to five: there is no breadth left to buy.
+gateManager.Economy.State.MassIncome = 4
+gateExtractors = {
+    CoreExtractor(62, 10, false, "ueb1202"),
+    CoreExtractor(63, 20, false, "ueb1202"),
+}
+gateHeld = 5
+upgrades = {}
+assert(gateManager:MaintainCoreExtractorUpgrades() == "started",
+    "a map being lost must upgrade what it still holds, got "
+        .. tostring(gateManager.CoreUpgrade and gateManager.CoreUpgrade.State))
+assert(table.getn(upgrades) == 1, "and issues exactly one")
+
+-- Holding steady at the peak is not losing ground, so a poor army keeps
+-- expanding instead.
+gateHeld = 8
+gateExtractors = {
+    CoreExtractor(64, 10, false, "ueb1202"),
+}
+upgrades = {}
+assert(gateManager:MaintainCoreExtractorUpgrades() == "expanding",
+    "holding the peak is not losing ground")
+assert(table.getn(upgrades) == 0, "so nothing is upgraded")
 
 -- The commander is the largest build power on the field, so a core extractor
 -- part-way through an upgrade outranks a factory for its attention. It is the
