@@ -3,6 +3,26 @@ local Logger = import("/mods/TheRedQueen/lua/AI/RedQueen/Logger.lua")
 local Experimentals = import("/mods/TheRedQueen/lua/AI/RedQueen/Experimentals.lua")
 
 ---@class RedQueenDiagnostics
+-- Whether the attack actually received force.
+--
+-- `Strategy.PressureHeld` says only that the primary slot holds an offensive
+-- objective, which since the slots landed is nearly always true and so measures
+-- nothing on its own. An attack sent no units while the defence was sent some
+-- has yielded the pressure whatever the slot is labelled, and an army with
+-- nothing to send is neither holding nor yielding.
+local function PressureState(strategy, slotDispatch)
+    if not strategy.PressureHeld then
+        return (slotDispatch.Secondary or 0) > 0 and "yielded" or "idle"
+    end
+    if (slotDispatch.Primary or 0) > 0 then
+        return "held"
+    end
+    if (slotDispatch.Secondary or 0) > 0 then
+        return "yielded"
+    end
+    return "idle"
+end
+
 Diagnostics = ClassSimple {
     __init = function(self, brain, modules)
         self.Brain = brain

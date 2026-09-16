@@ -184,7 +184,28 @@ states = [line for line in red_queen if "state objective=" in line]
 # objective held the whole army, which is the failure the two-slot design
 # exists to remove; `objective-held` counts the times a change was refused,
 # which is the walk-back-and-forth this AI used to do and must not resume.
-PRESSURE = re.compile(r"primary=(\S+?)/([0-9.]+) secondary=(\S+?)/([0-9.]+) pressure=(\w+)")
+PRESSURE = re.compile(
+    r"primary=(\S+?)/([0-9.]+) secondary=(\S+?)/([0-9.]+) pressure=(\w+)"
+)
+
+
+def pressure_state(primary_type, primary_units, secondary_units, reported):
+    """Whether the attack actually received force.
+
+    The flag the brain writes says only that the primary slot holds an
+    offensive objective, which after the slots landed is nearly always true and
+    so measures nothing. What matters is whether anything was sent: an attack
+    dispatched no units while the defence was dispatched some has yielded the
+    pressure however the slot is labelled, and an army with nothing to send at
+    all is neither holding nor yielding.
+    """
+    if primary_type in ("none", "Stage") or reported == "yielded":
+        return "yielded" if secondary_units > 0 else "idle"
+    if primary_units > 0:
+        return "held"
+    if secondary_units > 0:
+        return "yielded"
+    return "idle"
 OBJECTIVE_CHANGE = re.compile(
     r"strategy objective=(\w+) kind=(\w+) slot=(\w+) priority=(-?\d+) layer=(\w+) from=(\S+)"
 )
@@ -193,7 +214,12 @@ OBJECTIVE_HELD = re.compile(
 )
 pressure_samples = [PRESSURE.search(line) for line in states]
 pressure_samples = [m for m in pressure_samples if m]
-pressure_yielded = [m for m in pressure_samples if m.group(5) == "yielded"]
+pressure_states = [
+    pressure_state(m.group(1), float(m.group(2)), float(m.group(4)), m.group(5))
+    for m in pressure_samples
+]
+pressure_yielded = [state for state in pressure_states if state == "yielded"]
+pressure_idle = [state for state in pressure_states if state == "idle"]
 primary_kinds = Counter(m.group(1) for m in pressure_samples)
 secondary_kinds = Counter(m.group(3) for m in pressure_samples if m.group(3) != "none")
 objective_changes = [m for m in (OBJECTIVE_CHANGE.search(l) for l in red_queen) if m]
@@ -274,11 +300,13 @@ print(f"Income contracts: {len(contracts)}")
 print(f"State samples: {len(states)}")
 print(f"Defense alerts raised: {len(defense_started)}")
 if pressure_samples:
-    held = len(pressure_samples) - len(pressure_yielded)
+    held = len(pressure_samples) - len(pressure_yielded) - len(pressure_idle)
+    contested = len(pressure_samples) - len(pressure_idle)
+    share = (100.0 * len(pressure_yielded) / contested) if contested else 0.0
     print(
-        f"Pressure: {held}/{len(pressure_samples)} samples held, "
-        f"{len(pressure_yielded)} yielded "
-        f"({100.0 * len(pressure_yielded) / len(pressure_samples):.1f}% of samples)"
+        f"Pressure: {held} held, {len(pressure_yielded)} yielded, "
+        f"{len(pressure_idle)} idle of {len(pressure_samples)} samples "
+        f"({share:.1f}% yielded where anything was sent)"
     )
     print(f"  primary slot:   {dict(primary_kinds)}")
     print(f"  secondary slot: {dict(secondary_kinds) or 'never filled'}")
