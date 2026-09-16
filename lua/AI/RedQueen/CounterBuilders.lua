@@ -534,6 +534,25 @@ end
 -- The tier argument keeps the ladder honest: a Tech 3 engineer is worth
 -- building only once Tech 3 exists, and the cheapest tier that can still be
 -- produced should carry the replacements.
+-- What counts toward the target at each tier.
+--
+-- A cap filled with Tech 1 engineers is a cap that never improves. Twelve of
+-- them satisfy a target of twelve forever, so no Tech 2 engineer is ever built
+-- however good the economy gets -- and a Tech 2 engineer carries several times
+-- the build power, which is the whole reason to reach the tier. Each tier
+-- therefore counts only engineers at that tier or above.
+local function EngineersAtTier(aiBrain, tier)
+    local category = categories.ENGINEER * categories.MOBILE
+    if tier >= 3 then
+        return aiBrain:GetCurrentUnits(category * categories.TECH3)
+    end
+    if tier >= 2 then
+        return aiBrain:GetCurrentUnits(
+            category * (categories.TECH2 + categories.TECH3))
+    end
+    return aiBrain:GetCurrentUnits(category)
+end
+
 local function ShouldBuildEngineer(aiBrain, tier)
     local demand, economy = GetDemand(aiBrain)
     if not demand or not economy then
@@ -543,7 +562,18 @@ local function ShouldBuildEngineer(aiBrain, tier)
     if target < 1 then
         return false
     end
-    if aiBrain:GetCurrentUnits(categories.ENGINEER * categories.MOBILE) >= target then
+    if EngineersAtTier(aiBrain, tier) >= target then
+        return false
+    end
+    -- And the ladder replaces rather than accumulates: once a Tech 2 engineer
+    -- exists and the economy can pay for another, Tech 1 stops. Without this
+    -- the two tiers each fill the target and the army ends up with twice the
+    -- engineers it asked for. Keyed on one already existing, so there is never
+    -- a gap where the tier is unaffordable and neither ladder builds.
+    if tier == 1
+        and economy.MassIncome >= Constants.Policy.Tech2MinimumMassIncome
+        and EngineersAtTier(aiBrain, 2) > 0
+    then
         return false
     end
     -- Replacing engineers is pointless if the economy cannot pay for them, but

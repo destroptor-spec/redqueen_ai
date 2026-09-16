@@ -645,3 +645,68 @@ assert(engineerT3:PriorityFunction(engineerBrain)
 demand.DesiredEngineers = nil
 
 print("Red Queen support commander contracts passed")
+
+-- A cap filled with Tech 1 engineers is a cap that never improves.
+--
+-- The target counted every mobile engineer regardless of tier, so twelve Tech 1
+-- engineers satisfied a target of twelve forever and no Tech 2 engineer was
+-- ever built -- however good the economy got, and however much more build power
+-- the tier carries.
+local engineerT2 = builders["Red Queen Engineer T2"]
+assert(engineerT2, "the Tech 2 engineer builder must be registered")
+
+local tierCounts = { any = 0, t2 = 0, t3 = 0 }
+local tierBrain = {
+    RedQueenContext = { FactionIndex = 2 },
+    RedQueenModules = {
+        Economy = { State = economy },
+        Strategy = { ProductionDemand = demand },
+        World = world,
+    },
+    GetCurrentUnits = function(_, category)
+        local name = category and category.Name or ""
+        -- Tech 2 asks for TECH2+TECH3 together, so test for TECH2 first or the
+        -- combined category is mistaken for the Tech 3 one.
+        if string.find(name, "TECH2", 1, true) then return tierCounts.t2 end
+        if string.find(name, "TECH3", 1, true) then return tierCounts.t3 end
+        return tierCounts.any
+    end,
+    GetListOfUnits = function() return {} end,
+}
+
+demand.DesiredEngineers = 12
+economy.MassIncome = 30
+
+-- Twelve Tech 1 engineers and none above: the Tech 2 builder must still fire.
+tierCounts = { any = 12, t2 = 0, t3 = 0 }
+assert(engineerT2.BuilderConditions[1][1](tierBrain),
+    "a full complement of Tech 1 engineers must not satisfy Tech 2 demand")
+
+-- And once the Tech 2 complement is there, it stops.
+tierCounts = { any = 24, t2 = 12, t3 = 0 }
+assert(not engineerT2.BuilderConditions[1][1](tierBrain),
+    "a full Tech 2 complement must stop Tech 2 production")
+
+-- Tech 1 stops once a Tech 2 engineer exists and another is affordable, so the
+-- ladder replaces rather than accumulating two full complements.
+tierCounts = { any = 5, t2 = 1, t3 = 0 }
+assert(not engineerT1.BuilderConditions[1][1](tierBrain),
+    "Tech 1 must stop once the tier above it is running")
+
+-- But never before the tier above can actually be produced, or neither ladder
+-- builds and the army has no engineers at all.
+tierCounts = { any = 5, t2 = 0, t3 = 0 }
+assert(engineerT1.BuilderConditions[1][1](tierBrain),
+    "Tech 1 must keep building while no Tech 2 engineer exists yet")
+
+-- A poor economy keeps Tech 1 running even beside a Tech 2 engineer: stopping
+-- it there would leave nothing affordable to build.
+economy.MassIncome = 1
+tierCounts = { any = 5, t2 = 1, t3 = 0 }
+assert(engineerT1.BuilderConditions[1][1](tierBrain),
+    "Tech 1 must keep building when Tech 2 is unaffordable")
+
+economy.MassIncome = 30
+demand.DesiredEngineers = nil
+
+print("Red Queen engineer tier ladder contracts passed")
