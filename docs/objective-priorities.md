@@ -574,3 +574,34 @@ would park most of them. Whatever fixes ownership has to be measured against
 This also explains the dispatch record without any further theory. `33 of 36
 samples dispatched nothing` and `commitment held ... units=3` are what a pool of
 five available units looks like against a commitment gate that asks for a wave.
+
+
+## Step A: taking ownership of production
+
+Fields of Isis, seed 31337, against the census run as baseline.
+
+| measure | before A | after A |
+| --- | --- | --- |
+| units Red Queen cannot command (owned−pooled) | mean **20.2**, peak 45 | mean **−1.6**, peak 0 |
+| peak available to order | 7 | **12** |
+| samples that dispatched anything | 3 of 36 | **18 of 33** |
+| Red Queen K/L | **0.31** | **1.43** |
+| opponent K/L | 3.06 | **0.66** |
+| mass built, RQ vs opponent | 184k vs 302k | 203k vs 293k |
+| result | defeat, 35 min | defeat, 33 min |
+
+The gap is gone: native platoon formation no longer holds any of the army.
+Dispatch went from three samples to eighteen, and the exchange rate inverted —
+Red Queen now trades better than the opponent it is losing to, having traded at
+a tenth of its rate two runs ago.
+
+**The parking worry was unfounded, and the audit is what shows it.** Order holds
+rose to a mean of 20.6 and a peak of 40, which looks alarming until it is read
+against dispatch: an order hold means a unit is *executing an order*, and
+dispatch rose by the same factor. Garrison holds — the genuinely parked state —
+average 0.6. Red Queen is commanding its army, not sitting on it. Splitting the
+two holds is the only reason that is answerable.
+
+**Still lost.** The opponent out-built 293k to 203k and won on economy while
+losing the exchange. Winning the fight and losing the match is a different
+problem from the one this step fixed, and it is the one C and D exist for.
