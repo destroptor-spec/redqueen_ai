@@ -15,9 +15,12 @@ function GetGameTick() return 100 end
 ScenarioInfo = { size = { 1024, 1024 } }
 ArmyBrains = {}
 
+local spawnMarkers = {}
 local markerUtilities = {
     GetMarkersByType = function(markerType)
-        if markerType == "Mass" then
+        if markerType == "Spawn" then
+            return spawnMarkers, table.getn(spawnMarkers)
+        elseif markerType == "Mass" then
             return {
                 { Name = "Mass1", Position = { 100, 0, 0 } },
                 { Name = "Mass2", Position = { 110, 0, 0 } },
@@ -52,6 +55,7 @@ local constants = {
         UnknownRoutePresumedThreat = 30,  -- spec keeps the shipping value
         RouteCoverageConfidenceForFull = 1.0,
         EnemyBaseDiscoveryRadius = 60,
+        FriendlySpawnMatchRadius = 12,
     },
 }
 local logger = { Info = function() end }
@@ -298,15 +302,27 @@ navUtils.CanPathTo = function() return true end
 
 -- Where the enemy lives, in two tiers.
 --
--- A player in the lobby sees every start position unless the host hid them,
--- and once a scout has found a base that player does not forget it when the
--- scout dies. Both halves are contracts: what may be read for free, and what
--- must survive the intel that produced it.
+-- A player in the lobby sees every start position unless the host randomised
+-- them, and even then a full map gives it away: if every slot has someone on
+-- it, every slot that is not yours or an ally's holds an enemy. Once a scout
+-- has found a base that player does not forget it when the scout dies. All
+-- three are contracts: what may be read for free, what may be deduced, and
+-- what must survive the intel that produced it.
 ArmyBrains[7] = { GetArmyStartPos = function() return 800, 800 end }
 ArmyBrains[8] = { GetArmyStartPos = function() return 200, 100 end }
 local function EnemyWorld()
-    return Create(brain, { EnemyArmies = { 7, 8 } })
+    return Create(brain, { EnemyArmies = { 7, 8 }, AlliedArmies = { 1 } })
 end
+-- Four slots: ours at the origin and three others.
+local function Slots(occupied)
+    spawnMarkers = {
+        { Name = "ARMY_1", Position = { 0, 0, 0 }, IsOccupied = true },
+        { Name = "ARMY_2", Position = { 200, 0, 100 }, IsOccupied = occupied },
+        { Name = "ARMY_3", Position = { 800, 0, 800 }, IsOccupied = occupied },
+        { Name = "ARMY_4", Position = { 900, 0, 100 }, IsOccupied = occupied },
+    }
+end
+Slots(true)
 
 ScenarioInfo.Options = nil
 local revealed = EnemyWorld()
@@ -330,59 +346,86 @@ for _, option in ipairs({ "random", "balanced", "balanced_flex" }) do
     assert(not EnemyWorld().SpawnsRevealed, option .. " hides who spawned where")
 end
 
+-- Randomised spawns on a full map hide nothing: three slots, ours excluded,
+-- two enemies -- so both remaining slots hold one, without scouting for it.
 ScenarioInfo.Options = { TeamSpawn = "random" }
-local hidden = EnemyWorld()
--- The positions are public map data -- an army can spawn there. Keeping them
--- is what gives scouting somewhere to go; CombatManager builds its scout
--- candidates straight off this list, so emptying it would blind the AI exactly
--- when it has the most to find out.
-assert(table.getn(hidden.EnemyStarts) == 2,
-    "hidden spawns must still offer every start as a place to look")
-for _, enemy in ipairs(hidden.EnemyStarts) do
-    assert(not enemy.Known, "nothing is known before anything has been seen")
-    assert(not enemy.Army, "which enemy holds which start is not ours to read")
+Slots(true)
+local full = EnemyWorld()
+assert(full.AllSpawnsOccupied, "every slot taken is a full map")
+assert(table.getn(full.EnemyStarts) == 3, "our own slot is excluded, the rest are candidates")
+for _, enemy in ipairs(full.EnemyStarts) do
+    assert(enemy.Known, "on a full map every slot that is not ours holds an enemy")
+    assert(not enemy.Army, "which enemy holds which slot is still not ours to read")
 end
-assert(hidden.EnemyStarts[1].Position[1] == 200,
-    "candidates are ordered by distance from home, not by army index")
-assert(not hidden:GetClosestEnemyStart(hidden.StartPosition),
+
+-- Empty slots restore the hiding places, and a closed slot is indistinguishable
+-- from an empty one: the sim is told about neither, so both read as unoccupied
+-- and Red Queen stays conservative rather than claiming a deduction it cannot
+-- make. This is the safe direction -- it scouts a slot nobody could be in.
+Slots(false)
+local partial = EnemyWorld()
+assert(not partial.AllSpawnsOccupied, "an unoccupied slot is a place an enemy could be")
+assert(table.getn(partial.EnemyStarts) == 3,
+    "every slot but ours stays a candidate, occupied or not")
+for _, enemy in ipairs(partial.EnemyStarts) do
+    assert(not enemy.Known, "nothing is known before anything has been seen")
+end
+assert(partial.EnemyStarts[1].Position[1] == 200,
+    "candidates are ordered by distance from home, not by slot order")
+assert(not partial:GetClosestEnemyStart(partial.StartPosition),
     "an unresolved start is a place to scout, not a place to attack")
 
 -- A mobile unit proves nothing: it travelled to where it was seen.
 local intel = { Observations = {
     mover = { Position = { 800, 0, 800 }, Role = { Structure = false } },
 } }
-assert(hidden:ResolveEnemyBases(intel) == 0, "a mobile unit must not resolve a base")
-assert(not hidden:GetClosestEnemyStart(hidden.StartPosition),
-    "seeing a tank must not hand us a base position")
+assert(partial:ResolveEnemyBases(intel) == 0, "a mobile unit must not resolve a base")
 
 -- Nor does a structure standing somewhere that is not a start.
 intel.Observations.outpost = { Position = { 500, 0, 500 }, Role = { Structure = true } }
-assert(hidden:ResolveEnemyBases(intel) == 0,
+assert(partial:ResolveEnemyBases(intel) == 0,
     "a structure away from every start resolves no start")
 
 -- A structure on a start does.
 intel.Observations.factory = { Position = { 820, 0, 790 }, Role = { Structure = true } }
-assert(hidden:ResolveEnemyBases(intel) == 1, "an observed structure resolves that start")
-assert(hidden:GetClosestEnemyStart(hidden.StartPosition)[1] == 800,
+assert(partial:ResolveEnemyBases(intel) == 1, "an observed structure resolves that start")
+assert(partial:GetClosestEnemyStart(partial.StartPosition)[1] == 800,
     "a resolved start must be offered as a destination")
-assert(hidden:ResolveEnemyBases(intel) == 0, "an already-resolved start resolves once")
-
--- The other start is still unknown, and still worth scouting.
-assert(table.getn(hidden.EnemyStarts) == 2, "resolving one start must not drop the others")
+assert(partial:ResolveEnemyBases(intel) == 0, "an already-resolved start resolves once")
+assert(table.getn(partial.EnemyStarts) == 3, "resolving one start must not drop the others")
 
 -- The observation decays at IntelLifetimeSeconds. The base does not.
 intel.Observations = {}
-hidden:ResolveEnemyBases(intel)
-local afterDecay = hidden:GetClosestEnemyStart(hidden.StartPosition)
+partial:ResolveEnemyBases(intel)
+local afterDecay = partial:GetClosestEnemyStart(partial.StartPosition)
 assert(afterDecay and afterDecay[1] == 800,
     "a resolved start must outlive the intel that produced it")
-hidden:Rebuild()
-local afterRebuild = hidden:GetClosestEnemyStart(hidden.StartPosition)
+partial:Rebuild()
+local afterRebuild = partial:GetClosestEnemyStart(partial.StartPosition)
 assert(afterRebuild and afterRebuild[1] == 800,
     "a resolved start must survive a world rebuild")
 
+-- An ally's slot is ours to see, so it is never an enemy candidate.
+ArmyBrains[9] = { GetArmyStartPos = function() return 900, 100 end }
+Slots(false)
+local allied = Create(brain, { EnemyArmies = { 7, 8 }, AlliedArmies = { 1, 9 } })
+assert(table.getn(allied.EnemyStarts) == 2, "an allied slot must not be scouted as an enemy")
+for _, enemy in ipairs(allied.EnemyStarts) do
+    assert(enemy.Position[1] ~= 900, "the ally's own start must be excluded")
+end
+ArmyBrains[9] = nil
+
+-- Without the engine's spawn cache there is nothing to enumerate, so fall back
+-- to the occupied enemy starts rather than going blind.
+spawnMarkers = {}
+local unmapped = EnemyWorld()
+assert(table.getn(unmapped.EnemyStarts) == 2,
+    "a missing spawn cache must fall back to the occupied enemy starts")
+assert(not unmapped.EnemyStarts[1].Known, "the fallback claims no knowledge it has not earned")
+
 -- With the lobby showing the spawns there is nothing to learn.
 ScenarioInfo.Options = { TeamSpawn = "fixed" }
+Slots(true)
 local open = EnemyWorld()
 assert(open:ResolveEnemyBases({ Observations = {
     x = { Position = { 800, 0, 800 }, Role = { Structure = true } },

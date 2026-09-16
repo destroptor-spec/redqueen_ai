@@ -159,22 +159,41 @@ accepts, and should be seen doing.
    start, and recorded in `WorldModel.ResolvedStarts`, which does not decay with
    the observation that produced it.
 
-   The design changed once during the build. The plan above said hidden spawns
-   should leave `GetClosestEnemyStart` empty, but `CombatManager:ScoutCandidates`
-   builds its scout destinations straight off `EnemyStarts` — so emptying that
-   list would have stopped Red Queen scouting toward enemy starts exactly when
-   she has the most to find out. The shipped version keeps **two tiers**: every
-   start stays in the list as a place to look, and `Known` decides whether it is
-   also a place to attack. Under hidden spawns the army attribution is dropped
-   and the candidates are sorted by distance from home, which is both the useful
-   scouting order and a way of not leaking the army index back out through list
-   position.
+   The design changed twice during the build.
 
-   Verified by eleven mutations against `tests/world_model_spec.lua` and
-   `tests/strategy_director_spec.lua`, all caught. A smoke run on SCMP_007
-   records `spawns=revealed starts=5` with five brains and no errors. The hidden
-   path has contract cover only: no matrix map uses hidden spawns, so it is
-   untested in a live match.
+   First, the plan above said hidden spawns should leave `GetClosestEnemyStart`
+   empty, but `CombatManager:ScoutCandidates` builds its scout destinations
+   straight off `EnemyStarts` — so emptying that list would have stopped Red
+   Queen scouting toward enemy starts exactly when she has the most to find out.
+   The shipped version keeps **two tiers**: every start stays in the list as a
+   place to look, and `Known` decides whether it is also a place to attack.
+
+   Second, randomisation alone does not hide anything. It hides something only
+   while the map has empty slots. If every start on the map has a player on it,
+   then every start that is not ours and not an ally's holds an enemy, and that
+   is a deduction any player makes without scouting. So candidates are now
+   enumerated from FAF's `"Spawn"` marker cache — every `ARMY_n` marker on the
+   map, each carrying `IsOccupied` — minus our own slot and our allies'. `Known`
+   is then `revealed or AllSpawnsOccupied or resolved`. Under hidden spawns the
+   army attribution is dropped and candidates are sorted by distance from home,
+   which is both the useful scouting order and a way of not leaking the army
+   index back out through list position.
+
+   **A closed lobby slot reads as empty.** The sim is told nothing about closed
+   slots: `ListArmies()` and `ScenarioInfo.ArmySetup` only ever contain armies
+   that exist, and no closed-slot list reaches `ScenarioInfo`. So a map whose
+   spare slots were closed at setup looks exactly like one whose spare slots
+   were merely empty, `AllSpawnsOccupied` stays false, and Red Queen scouts a
+   slot nobody could have joined. That is the conservative direction — she
+   under-claims knowledge rather than over-claiming it — but a human who sat in
+   that lobby would know better. Fixing it needs the lobby to pass the closed
+   list into the scenario options, which is not ours to change.
+
+   Verified by eighteen mutations against `tests/world_model_spec.lua` and
+   `tests/strategy_director_spec.lua`, all caught. The map log line now carries
+   `spawns=` (`revealed`, `hidden-full` or `hidden`) and `slots=occupied/total`.
+   The hidden path has contract cover only: no matrix map uses randomised
+   spawns, so it is untested in a live match.
 2. **The secondary slot, empty.** Allocation gives everything to primary and
    behaviour is identical. Land this alone: a measurable no-op proves the split
    before any policy question is reached, and if it changes anything the

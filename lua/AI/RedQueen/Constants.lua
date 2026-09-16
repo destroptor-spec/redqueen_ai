@@ -21,6 +21,10 @@ Policy = {
     -- How near a start an observed enemy structure must be to resolve it as
     -- that enemy's base. Only consulted when the lobby hid the spawns.
     EnemyBaseDiscoveryRadius = 60,
+    -- How close a start marker must be to a friendly spawn to count as that
+    -- army's own. Absorbs any rounding between GetArmyStartPos and the marker,
+    -- and sits far below the distance between two starts on any map.
+    FriendlySpawnMatchRadius = 12,
     ObservationRadius = 48,
     ObserversPerUpdate = 16,
     IntelLifetimeSeconds = 180,

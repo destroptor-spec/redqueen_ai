@@ -82,6 +82,11 @@ end
 -- knows the map's start locations but not who is standing on which, and
 -- neither should we.
 --
+-- Randomisation only hides anything while the map has empty slots, though. If
+-- every start on the map has a player on it, then every start that is not ours
+-- and not an ally's holds an enemy, and that is a deduction any player makes
+-- without scouting. Occupancy is therefore the second half of the question.
+--
 -- Absent means fixed. That is FAF's default and what a command-line skirmish
 -- gets, so reading nothing must not silently blind the brain.
 local RevealedSpawns = {
@@ -209,10 +214,9 @@ WorldModel = ClassSimple {
         -- Where the enemy is, in two tiers.
         --
         -- The positions are always kept: they are where an army can spawn, and
-        -- something has to be scouted. What the lobby controls is whether we
-        -- also know who is standing on each one. `Known` is that distinction,
-        -- and it is what separates a place worth looking at from a place worth
-        -- attacking.
+        -- something has to be scouted. What varies is whether we also know an
+        -- enemy is standing on one. `Known` is that distinction, and it is what
+        -- separates a place worth looking at from a place worth attacking.
         --
         -- Resolved starts survive every rebuild. Every intel record decays at
         -- IntelLifetimeSeconds; a base does not stop being there because
@@ -221,50 +225,106 @@ WorldModel = ClassSimple {
         self.ResolvedStarts = self.ResolvedStarts or {}
         self.EnemyStarts = {}
 
-        local candidates = {}
-        for _, armyIndex in pairs(self.Context.EnemyArmies) do
-            local enemyBrain = ArmyBrains[armyIndex]
-            if enemyBrain then
-                local x, z = enemyBrain:GetArmyStartPos()
-                table.insert(candidates, {
-                    Army = armyIndex,
-                    Position = { x, GetSurfaceHeight(x, z), z },
-                })
+        -- FAF caches every ARMY_n marker on the map under "Spawn", each
+        -- carrying whether a player actually took that slot. That is the whole
+        -- occupancy question answered by the engine, empty slots included,
+        -- which is what distinguishes "the enemy is somewhere in these seven
+        -- places" from "the enemy is in the one place left".
+        local spawnMarkers, spawnCount = MarkerUtilities.GetMarkersByType("Spawn")
+        self.SpawnMarkerCount = spawnCount or 0
+        self.OccupiedSpawnCount = 0
+        for index = 1, self.SpawnMarkerCount do
+            if spawnMarkers[index].IsOccupied then
+                self.OccupiedSpawnCount = self.OccupiedSpawnCount + 1
             end
         end
+        self.AllSpawnsOccupied = self.SpawnMarkerCount > 0
+            and self.OccupiedSpawnCount == self.SpawnMarkerCount
 
         if self.SpawnsRevealed then
-            for _, candidate in ipairs(candidates) do
-                table.insert(self.EnemyStarts, {
-                    Army = candidate.Army,
-                    Position = candidate.Position,
-                    Known = true,
-                })
+            for _, armyIndex in pairs(self.Context.EnemyArmies) do
+                local enemyBrain = ArmyBrains[armyIndex]
+                if enemyBrain then
+                    local x, z = enemyBrain:GetArmyStartPos()
+                    table.insert(self.EnemyStarts, {
+                        Army = armyIndex,
+                        Position = { x, GetSurfaceHeight(x, z), z },
+                        Known = true,
+                    })
+                end
             end
-        else
-            -- Which enemy holds which start is hidden, so the attribution is
-            -- dropped. Sorting by distance from home is the useful scouting
-            -- order and also destroys the positional correspondence a caller
-            -- could otherwise read the army index back out of.
+        elseif self.SpawnMarkerCount > 0 then
+            -- Our own start and our allies' are ours to see either way, so the
+            -- candidates are every other slot on the map. Which enemy holds
+            -- which is still not ours to read, so no army is attached.
+            local friendlyRadius = Constants.Policy.FriendlySpawnMatchRadius
+            local friendly = {}
+            for _, armyIndex in pairs(self.Context.AlliedArmies or {}) do
+                local allyBrain = ArmyBrains[armyIndex]
+                if allyBrain then
+                    local x, z = allyBrain:GetArmyStartPos()
+                    table.insert(friendly, { x, GetSurfaceHeight(x, z), z })
+                end
+            end
+            table.insert(friendly, self.StartPosition)
+
+            local candidates = {}
+            for index = 1, self.SpawnMarkerCount do
+                local marker = spawnMarkers[index]
+                local position = marker.Position or marker.position
+                local ours = false
+                for _, own in ipairs(friendly) do
+                    if DistanceSquared(own, position) <= friendlyRadius * friendlyRadius then
+                        ours = true
+                        break
+                    end
+                end
+                if not ours then
+                    table.insert(candidates, {
+                        Marker = marker.Name,
+                        Position = { position[1], position[2], position[3] },
+                        -- A full map leaves nowhere for an enemy to hide: every
+                        -- slot that is not ours holds one.
+                        Known = self.AllSpawnsOccupied
+                            or self.ResolvedStarts[StartKey(position)] or false,
+                    })
+                end
+            end
+            -- Nearest first is the order scouting wants, and it also destroys
+            -- any correspondence a caller could read an army index back out of.
             local home = self.StartPosition
             table.sort(candidates, function(a, b)
                 return DistanceSquared(home, a.Position) < DistanceSquared(home, b.Position)
             end)
-            for _, candidate in ipairs(candidates) do
-                table.insert(self.EnemyStarts, {
-                    Position = candidate.Position,
-                    Known = self.ResolvedStarts[StartKey(candidate.Position)] or false,
-                })
+            self.EnemyStarts = candidates
+        else
+            -- No spawn markers means the cache was read before the engine
+            -- populated it. Fall back to the occupied enemy starts so the brain
+            -- is not blind, and say so, because this is a bug and not a map.
+            Logger.Info(self.Brain,
+                "spawn markers unavailable, falling back to occupied enemy starts")
+            for _, armyIndex in pairs(self.Context.EnemyArmies) do
+                local enemyBrain = ArmyBrains[armyIndex]
+                if enemyBrain then
+                    local x, z = enemyBrain:GetArmyStartPos()
+                    local position = { x, GetSurfaceHeight(x, z), z }
+                    table.insert(self.EnemyStarts, {
+                        Position = position,
+                        Known = self.ResolvedStarts[StartKey(position)] or false,
+                    })
+                end
             end
         end
 
         Logger.Info(self.Brain, string.format(
-            "map type=%s size=%dkm water=%.2f massClusters=%d spawns=%s starts=%d",
+            "map type=%s size=%dkm water=%.2f massClusters=%d spawns=%s slots=%d/%d starts=%d",
             self.MapType,
             self.MapKilometers,
             self.WaterRatio,
             table.getn(self.MassClusters),
-            self.SpawnsRevealed and "revealed" or "hidden",
+            self.SpawnsRevealed and "revealed" or (self.AllSpawnsOccupied and "hidden-full" or "hidden"),
+            self.OccupiedSpawnCount,
+            self.SpawnMarkerCount,
             table.getn(self.EnemyStarts)
         ))
     end,

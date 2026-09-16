@@ -590,7 +590,7 @@ CombatManager = ClassSimple {
         end
         for _, enemy in pairs(world.EnemyStarts or {}) do
             table.insert(candidates, {
-                Name = "start-" .. tostring(enemy.Army),
+                Name = "start-" .. tostring(enemy.Marker or enemy.Army),
                 Position = enemy.Position,
                 Weight = 2,
             })
