@@ -126,3 +126,56 @@ real, but the arms show it is not being caused or cured here. What remains
 untested is whether blindness costs anything: coverage feeds the commitment
 gate, where an unobserved destination is indistinguishable from one seen and
 empty. That is measured by commitment holds and by what waves do on arrival.
+
+## The lever wired, and what blindness costs — 2026-09-16
+
+`demand.Scouts` now drives two builders, air before land. It binds: on Syrtis
+`31337`, the cell characterised in every arm above, the same seed goes from
+defeat at tick 28165 to **victory** at 30125, K/L 0.73 to 1.13 against an
+opponent falling from 1.27 to 0.82, blind 56% to 50%, scouts held 12 to 15, and
+peak mass 43.1 to 67.2.
+
+Across the eight LandLarge cells:
+
+| Arm | Record |
+| --- | --- |
+| `combined` | 0W/8L |
+| `dispatch-only` | 0W/8L |
+| `production-only` | 1W/7L |
+| **wired** | **2W/6L** |
+
+Both wins are on Syrtis. Fields of Isis stays 0W/4L in every arm.
+
+### Blindness costs something
+
+Thirty-two LandLarge runs now exist across four arms, sharing maps, seeds,
+faction and opponent. Three are victories, and they are the 1st, 4th and 9th
+least blind runs of the thirty-two:
+
+- victory blind: **50%, 52%, 55%**
+- defeat blind: min 51%, median 59%, max 71%
+- a victory is less blind than a defeat in **79 of 87** pairings
+- all three victories fall in the nine least-blind runs: p = 0.017 under a
+  random-rank null
+
+Scouts held tells the same story: 8, 14 and 15 for the victories against a
+defeat median of 6.
+
+That is the first direct evidence that coverage is worth something on these
+maps rather than merely correlating with them. It is three victories, so it is
+a signal and not a settled magnitude, and blindness co-varies with scout count
+and with match length.
+
+### What has never been tested
+
+**Blind has never gone below 50% on a LandLarge map** — the observed range
+across all thirty-two runs is 50-71%, while Naval and LandSmall sit at 15-31%.
+The two bands do not overlap anywhere. So the relationship above is measured
+entirely inside the blind half of the range, and the question "what happens when
+a large map is actually covered" has never been asked.
+
+Wiring the production lever moved blind by about six points at best. Getting
+into the 15-31% band needs the coverage budget itself to scale with the map:
+`ObserversPerUpdate` 16, `ObservationRadius` 48 and `IntelLifetimeSeconds` 180
+are fixed while LandLarge is four times the area of LandSmall. That is the next
+thing to change, and now there is a measure that will show whether it works.
