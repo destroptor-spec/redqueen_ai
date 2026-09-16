@@ -194,10 +194,44 @@ accepts, and should be seen doing.
    `spawns=` (`revealed`, `hidden-full` or `hidden`) and `slots=occupied/total`.
    The hidden path has contract cover only: no matrix map uses randomised
    spawns, so it is untested in a live match.
-2. **The secondary slot, empty.** Allocation gives everything to primary and
-   behaviour is identical. Land this alone: a measurable no-op proves the split
-   before any policy question is reached, and if it changes anything the
-   allocation is wrong and that is cheap to find out.
+2. ~~**The secondary slot, empty.**~~ — done, with ranked selection.
+
+   Selection moved off the first-match if-chain onto `SelectionWeights`, and
+   the weights were chosen to reproduce the chain's order **exactly**, so that
+   moving selection onto weights did not move behaviour at the same time.
+   `SelectionOrder` is derived from the weights at load, so the two cannot
+   drift; the weights must stay distinct or the sort stops being total, and a
+   contract pins that.
+
+   The carried `Priority` is not the selection weight and never was. A ping
+   escalates 80 → 120 and a coordinated attack inherits its ally's priority, so
+   those numbers cross Support's fixed 82 — but the chain tested each kind in a
+   fixed sequence, so they never ordered anything. Three cases now pin it: a
+   ping at 80 still outranks Support at 82, an allied attack carrying 60 still
+   outranks our own Raid at 75, and an alert outranks a local defence even
+   though both produce `Type == "Defend"`.
+
+   **Adopting the proposed ladder is therefore a separate, measurable change.**
+   The three disagreements between the shipped weights and this document are
+   recorded in the table below.
+
+   | kind | shipped | proposed | effect of adopting |
+   | --- | --- | --- | --- |
+   | `LocalDefense` | 120 | 110 | ping rises above local defence |
+   | `Ping` | 118 | 120 | as above |
+   | `JointAttack` | 80 | 95 | joint attacks rise above `Support` |
+   | `Offensive` | 75 | Raid 85 / Pressure 60 | must split; `Pressure` falls below `Support` |
+
+   The slots are filled but the secondary is always empty, so the winning
+   objective still commands the whole army exactly as before. What is new is
+   that the army says which kind of thing it is doing, and the state line now
+   carries `primary=<type>/<fraction> secondary=<type>/<fraction> pressure=held|yielded`.
+   A secondary-intent objective holding the entire force is reported as
+   `pressure=yielded` rather than counted as an objective held — so this step
+   produces the baseline count of how often a defensive trigger takes the whole
+   army today, which is the number step 3 has to improve.
+
+   Ten mutations run against the contracts, all caught.
 3. **Move `Defend` to secondary.** The behavioural change, with a specific
    prediction: the walk-back-and-forth stops appearing and `CanInterrupt`
    reduces to a tie-break on primary replacement rather than a preemption rule.
@@ -206,9 +240,10 @@ accepts, and should be seen doing.
 5. **`Deny expansion`**, the mirror, natural once anything outside the enemy
    base is by definition an expansion.
 
-Ranked selection must land with step 2, because objectives are currently chosen
-by a first-match if-chain in code order — adding to it orders them by where they
-were pasted, not by weight.
+Ranked selection landed with step 2. Adding an objective now means giving it a
+weight, not pasting it into a chain — but `Offensive` still covers `Raid` and
+`Pressure` as one candidate, which holds only while nothing sits between them.
+Step 4 or 5 forces that split.
 
 ## Known dead ends, recorded so they are not retried
 

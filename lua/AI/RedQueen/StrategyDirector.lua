@@ -96,6 +96,62 @@ local OffensiveObjectives = {
     JointAttack = true,
 }
 
+-- What decides which objective is selected.
+--
+-- These weights currently reproduce, exactly, the order the first-match
+-- if-chain produced by code position. That is deliberate: moving selection onto
+-- weights must not move behaviour at the same time, or neither change can be
+-- measured. docs/objective-priorities.md proposes a different ladder -- ping
+-- above local defence, JointAttack and Raid above Support -- and adopting it is
+-- a behaviour change that lands on its own.
+--
+-- The dynamic `Priority` carried on an objective is not this. A ping's priority
+-- escalates from 80 to 120 and a coordinated attack inherits its ally's, but
+-- neither ever reordered selection, because the chain tested them in a fixed
+-- sequence. Selection weight is that sequence, made explicit.
+--
+-- `Offensive` covers Raid and Pressure together because nothing currently sits
+-- between them; splitting it is required as soon as anything does.
+SelectionWeights = {
+    DefenseAlert = 140,   -- proposed: 140
+    LocalDefense = 120,   -- proposed: 110
+    Ping         = 118,   -- proposed: 120
+    Support      = 82,    -- proposed: 82
+    JointAttack  = 80,    -- proposed: 95
+    Offensive    = 75,    -- proposed: Raid 85, Pressure 60
+    Stage        = 0,
+}
+
+-- Derived so the two can never drift apart. Distinct weights make the sort
+-- total, which is what keeps selection deterministic across a `pairs` walk.
+SelectionOrder = {}
+for kind in pairs(SelectionWeights) do
+    table.insert(SelectionOrder, kind)
+end
+table.sort(SelectionOrder, function(left, right)
+    return SelectionWeights[left] > SelectionWeights[right]
+end)
+
+-- Which slot an objective belongs to: what we are doing to them, or what we are
+-- protecting. The split is by direction, not by urgency.
+local ObjectiveSlots = {
+    DefenseAlert = "Secondary",
+    LocalDefense = "Secondary",
+    Support      = "Secondary",
+    JointAttack  = "Primary",
+    Offensive    = "Primary",
+    Stage        = "Primary",
+}
+
+-- A ping inherits its slot from what was asked for: an attack ping is offensive
+-- intent, a reinforce or investigate request is protection.
+local function SlotForObjective(kind, objective)
+    if kind == "Ping" then
+        return (objective and objective.Type == "Attack") and "Primary" or "Secondary"
+    end
+    return ObjectiveSlots[kind] or "Primary"
+end
+
 local function CanInterrupt(self, previous, objective, tick)
     if not previous or not previous.ExpiresTick or previous.ExpiresTick <= tick then
         return true
@@ -1735,9 +1791,18 @@ StrategyDirector = ClassSimple {
         local localThreat = self.Intel:GetThreatNear(start, math.max(100, self.World.Width / 12))
         local defenseAlert = self:UpdateDefenseAlert()
         local airDrop = self:UpdateAirDropOpportunity(start)
-        local objective = nil
-
-        if defenseAlert.Active then
+        -- Objective selection, ranked rather than pasted.
+        --
+        -- Each kind is built only if nothing above it fired, so the offensive
+        -- block's pathing queries still run only when they would have before.
+        -- The order comes from SelectionWeights, not from where a block sits in
+        -- this function, which is what lets a new objective be added at its
+        -- weight instead of at the end.
+        local builders = {
+            DefenseAlert = function()
+            if not defenseAlert.Active then
+                return nil
+            end
             local landPosition = PositionForLayer(
                 "Land",
                 defenseAlert.AnchorPosition,
@@ -1751,7 +1816,7 @@ StrategyDirector = ClassSimple {
             -- Held positions for layers the enemy is not currently attacking on.
             local landAnchor = PositionForLayer("Land", defenseAlert.AnchorPosition)
             local waterAnchor = PositionForLayer("Water", defenseAlert.AnchorPosition)
-            objective = {
+            return {
                 Type = "Defend",
                 Position = defenseAlert.AnchorPosition,
                 ThreatPosition = defenseAlert.Position,
@@ -1796,19 +1861,27 @@ StrategyDirector = ClassSimple {
                 Critical = true,
                 CreatedTick = GetGameTick(),
             }
-        elseif localThreat >= Constants.Policy.LocalDefenseThreat then
-            objective = {
+            end,
+
+            LocalDefense = function()
+            if localThreat < Constants.Policy.LocalDefenseThreat then
+                return nil
+            end
+            return {
                 Type = "Defend",
                 Position = start,
                 Layer = "Land",
                 Priority = 120,
                 CreatedTick = GetGameTick(),
             }
-        end
+            end,
 
-        local ping = self.Pings:GetBestRequest()
-        if not objective and ping then
-            objective = {
+            Ping = function()
+            local ping = self.Pings:GetBestRequest()
+            if not ping then
+                return nil
+            end
+            return {
                 Type = ping.Type,
                 Position = ping.Position,
                 Layer = PositionLayer(ping.Position),
@@ -1816,11 +1889,14 @@ StrategyDirector = ClassSimple {
                 CreatedTick = ping.CreatedTick,
                 RequestedBy = ping.OwnerArmy,
             }
-        end
+            end,
 
-        local support = self.Team:GetSupportRequest(start)
-        if not objective and support then
-            objective = {
+            Support = function()
+            local support = self.Team:GetSupportRequest(start)
+            if not support then
+                return nil
+            end
+            return {
                 Type = "Support",
                 Position = support.Position,
                 Layer = PositionLayer(support.Position),
@@ -1828,11 +1904,14 @@ StrategyDirector = ClassSimple {
                 CreatedTick = GetGameTick(),
                 RequestedBy = support.Army,
             }
-        end
+            end,
 
-        local alliedAttack = self.Team:GetCoordinatedAttack()
-        if not objective and alliedAttack then
-            objective = {
+            JointAttack = function()
+            local alliedAttack = self.Team:GetCoordinatedAttack()
+            if not alliedAttack then
+                return nil
+            end
+            return {
                 Type = "JointAttack",
                 Position = alliedAttack.Position,
                 Layer = alliedAttack.Layer,
@@ -1840,9 +1919,9 @@ StrategyDirector = ClassSimple {
                 CreatedTick = GetGameTick(),
                 LaunchTick = alliedAttack.LaunchTick,
             }
-        end
+            end,
 
-        if not objective then
+            Offensive = function()
             -- Try the surface layers this map actually supports, in order, and
             -- fall back to Air only when no surface force can reach anything.
             --
@@ -1899,7 +1978,7 @@ StrategyDirector = ClassSimple {
             end
 
             if known then
-                objective = {
+                return {
                     Type = "Raid",
                     Position = known.Position,
                     Layer = preferredLayer,
@@ -1907,7 +1986,7 @@ StrategyDirector = ClassSimple {
                     CreatedTick = GetGameTick(),
                 }
             elseif position then
-                objective = {
+                return {
                     Type = "Pressure",
                     Position = position,
                     Layer = preferredLayer,
@@ -1915,17 +1994,46 @@ StrategyDirector = ClassSimple {
                     CreatedTick = GetGameTick(),
                 }
             end
+            return nil
+            end,
+
+            Stage = function()
+                return {
+                    Type = "Stage",
+                    Position = start,
+                    Layer = "Land",
+                    Priority = 0,
+                    CreatedTick = GetGameTick(),
+                }
+            end,
+        }
+
+        local objective, objectiveKind = nil, nil
+        for _, kind in ipairs(SelectionOrder) do
+            objective = builders[kind]()
+            if objective then
+                objectiveKind = kind
+                break
+            end
         end
 
-        if not objective then
-            objective = {
-                Type = "Stage",
-                Position = start,
-                Layer = "Land",
-                Priority = 0,
-                CreatedTick = GetGameTick(),
-            }
+        -- The two slots. The secondary is not filled yet, so whichever single
+        -- objective won still commands the whole army exactly as before; what
+        -- is new is that the army now says which kind of thing it is doing.
+        -- A secondary-intent objective holding the entire force is precisely
+        -- the failure this design exists to remove, so it is reported as
+        -- pressure yielded rather than quietly counted as an objective held.
+        local slot = SlotForObjective(objectiveKind, objective)
+        if slot == "Primary" then
+            self.PrimaryObjective, self.SecondaryObjective = objective, nil
+            self.ObjectiveAllocation = { Primary = 1, Secondary = 0 }
+        else
+            self.PrimaryObjective, self.SecondaryObjective = nil, objective
+            self.ObjectiveAllocation = { Primary = 0, Secondary = 1 }
         end
+        self.ObjectiveKind = objectiveKind
+        self.ObjectiveSlot = slot
+        self.PressureHeld = slot == "Primary"
 
         -- Mixed maps usually lead on Land, leaving ships without a destination
         -- unless they receive the water beside the same target. Resolve this

@@ -1951,4 +1951,116 @@ for _, kind in ipairs({ "Reinforce", "Investigate" }) do
         "defensive pings must not resolve an offensive naval approach")
 end
 
+
+-- Selection is ranked, and the ranking is not the objective's own Priority.
+--
+-- A ping escalates from 80 to 120 and a coordinated attack inherits its ally's
+-- priority, so those numbers cross each other and cross Support's fixed 82.
+-- They never ordered selection, because the old if-chain tested each kind in a
+-- fixed sequence; these contracts pin that sequence now that it is data, so
+-- that changing the ladder is a deliberate act and not a side effect.
+pings.GetBestRequest = function() return nil end
+team.GetSupportRequest = function() return nil end
+team.GetCoordinatedAttack = function() return nil end
+world.GetNavalApproach = function() return nil end
+currentTick = 9000
+
+local lowPing = { Type = "Reinforce", Position = { 120, 0, 120 }, Priority = 80,
+    CreatedTick = 9000, OwnerArmy = 3 }
+local supportRequest = { Position = { 140, 0, 140 }, Army = 4 }
+
+-- A ping of priority 80 outranks a Support of 82, because ping is selected
+-- first. Ranking on the carried Priority would reverse this.
+pings.GetBestRequest = function() return lowPing end
+team.GetSupportRequest = function() return supportRequest end
+director.CurrentObjective = nil
+director:Update()
+assert(director.CurrentObjective.Type == "Reinforce",
+    "a ping outranks a support request regardless of its escalating priority")
+assert(director.ObjectiveKind == "Ping", "the winning kind must be recorded")
+
+-- And a coordinated attack carrying an ally's Pressure priority of 60 still
+-- outranks our own Raid, which carries 75.
+pings.GetBestRequest = function() return nil end
+team.GetSupportRequest = function() return nil end
+team.GetCoordinatedAttack = function()
+    return { Position = { 700, 0, 800 }, Layer = "Land", Priority = 60, LaunchTick = 9100 }
+end
+director.CurrentObjective = nil
+director:Update()
+assert(director.CurrentObjective.Type == "JointAttack",
+    "a coordinated attack outranks local targeting whatever priority the ally sent")
+team.GetCoordinatedAttack = function() return nil end
+
+-- The order is derived from the weights, so the two cannot drift apart.
+local order = strategyModule.SelectionOrder or {}
+local weights = strategyModule.SelectionWeights or {}
+assert(table.getn(order) > 0, "the selection order must be exported for inspection")
+for index = 2, table.getn(order) do
+    assert(weights[order[index - 1]] > weights[order[index]],
+        "selection order must be strictly descending by weight, or it is not total")
+end
+
+-- Both defensive kinds produce Type == "Defend", so only the critical flag
+-- separates them. An alert at a protected anchor must outrank a raider near
+-- home, or the alert's per-layer dispatch and its power to preempt an attack in
+-- contact are both silently lost to the weaker reading.
+local previousLocalThreat = localThreat
+localThreat = 1000
+local previousAlertFn = director.UpdateDefenseAlert
+local previousAlert = director.DefenseAlert
+director.UpdateDefenseAlert = function(self)
+    local alert = {
+        Active = true, AnchorPosition = { 0, 0, 0 }, Position = { 60, 0, 60 },
+        PrimaryLayer = "Land", AnchorKind = "MainBase", Severity = 2,
+        Threat = 100, Ratio = 2, Land = 100, Naval = 0, Air = 0, Surface = 100,
+        ExpiresTick = 0,
+    }
+    self.DefenseAlert = alert
+    self.ProductionDemand.DefenseAlert = alert
+    return alert
+end
+director.CurrentObjective = nil
+director:Update()
+assert(director.CurrentObjective.Type == "Defend" and director.CurrentObjective.Critical,
+    "an alert must outrank a local threat, not merely tie with it on type")
+assert(director.ObjectiveKind == "DefenseAlert", "the alert is the kind that won")
+director.UpdateDefenseAlert = previousAlertFn
+director.DefenseAlert = previousAlert
+director.ProductionDemand.DefenseAlert = previousAlert
+localThreat = previousLocalThreat
+
+-- The two slots. The secondary is empty by construction at this step, so an
+-- objective either holds pressure or has displaced it entirely -- which is the
+-- measurement this step exists to produce.
+director.CurrentObjective = nil
+director:Update()
+assert(director.PrimaryObjective and not director.SecondaryObjective,
+    "an offensive objective occupies the primary slot")
+assert(director.ObjectiveAllocation.Primary == 1 and director.ObjectiveAllocation.Secondary == 0,
+    "with no secondary the primary keeps the whole army")
+assert(director.PressureHeld, "an offensive objective is pressure held")
+
+pings.GetBestRequest = function() return lowPing end
+director.CurrentObjective = nil
+director:Update()
+assert(director.SecondaryObjective and not director.PrimaryObjective,
+    "a protective objective occupies the secondary slot")
+assert(director.ObjectiveAllocation.Secondary == 1,
+    "with one slot filled that slot holds the whole army")
+assert(not director.PressureHeld,
+    "a secondary objective commanding the whole army is pressure yielded, not pressure held")
+
+-- An attack ping is offensive intent and keeps the primary slot, even though
+-- every other ping kind is protective.
+pings.GetBestRequest = function()
+    return { Type = "Attack", Position = { 700, 0, 800 }, Priority = 90,
+        CreatedTick = 9000, OwnerArmy = 3 }
+end
+director.CurrentObjective = nil
+director:Update()
+assert(director.PrimaryObjective and director.PressureHeld,
+    "an attack ping is offensive intent and holds pressure")
+pings.GetBestRequest = function() return nil end
+
 print("Red Queen strategy director contracts passed")
