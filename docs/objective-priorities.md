@@ -263,9 +263,50 @@ accepts, and should be seen doing.
    extractor-churn story arriving through a different door.
 
    Step 3 has to move both numbers: the yielded share, and the refusal count.
-3. **Move `Defend` to secondary.** The behavioural change, with a specific
-   prediction: the walk-back-and-forth stops appearing and `CanInterrupt`
-   reduces to a tie-break on primary replacement rather than a preemption rule.
+It moved the refusal count to zero. The yielded share turned out not to be
+measurable across the change, and the run that produced it showed why neither
+number decides these matches yet.
+3. ~~**Move `Defend` to secondary.**~~ — done. The prediction held, and the
+   result says the objective system is no longer what is losing these matches.
+
+   Same cell as the baseline: Fields of Isis, seed 31337, Red Queen Aeon.
+
+   | measure | step 2 baseline | step 3 | comparable? |
+   | --- | --- | --- | --- |
+   | objective changes refused | 9 | **0** | yes |
+   | primary slot empty | 18 of 28 samples | **never** | yes |
+   | primary slot contents | `none` 18, `Raid` 6, `Pressure` 4 | `Raid` 31, `Pressure` 4 | yes |
+   | both slots active at once | impossible | 25 samples | yes |
+   | result | defeat, 28:08 | defeat, 35:14 | yes |
+   | mass built, RQ vs winner | 53k vs 197k | 106k vs 351k | yes |
+   | extractors held | 7 of 44 | 6 of 44 | yes |
+   | pressure yielded share | 64.3% | 100% | **no — see below** |
+
+   The prediction was right: `CanInterrupt` no longer preempts across slots, so
+   every one of the nine refusals disappeared, and the primary slot is never
+   empty again.
+
+   **The pressure percentages are not comparable and must not be read as a
+   regression.** The state line changed meaning between the runs. In step 2 the
+   slot figures were allocation *fractions*, so `secondary=Defend/1.00` meant a
+   defence held the whole allocation; in step 3 they are *dispatched unit
+   counts*. The analyzer reads both, but 64.3% and 100% are measuring different
+   things. Comparing them would need the baseline re-run under the new logging.
+
+   **What the absolute figures do say is that the army is the problem, not the
+   objectives.** `commitment held objective=Raid units=3 threat=15 required=68`
+   is typical: Red Queen fields about three combat units, holds six of the
+   map's forty-four mass points, and is out-built three to one. Splitting a
+   three-unit army between two objectives cannot matter, and no objective policy
+   will show a win-rate effect until that changes.
+
+   One interaction to watch: forward bases blocked on `defense-alert` rose from
+   13 to 25, and alert samples from 16 to 24. The economic cost of being under
+   alert is now the larger drag, which is the argument for building the point
+   defence that ends the alert.
+
+   Single seed, single map, one run each. Ten mutations run against the
+   contracts; nine caught, the tenth equivalent.
 4. **`Cover expansion`**, reusing the garrison machinery that already covers
    forward bases. Judge it on extractor churn, not on win rate.
 5. **`Deny expansion`**, the mirror, natural once anything outside the enemy
