@@ -319,6 +319,22 @@ if tier_samples:
         f"Engineers by tier: peak T1={peak[0]} T2={peak[1]} T3={peak[2]}; "
         f"{with_t2}/{len(tier_samples)} samples had a Tech 2 engineer"
     )
+ARMY_CENSUS = re.compile(r"army=(\d+)/(\d+)/(\d+)")
+census_samples = [m for m in (ARMY_CENSUS.search(l) for l in states) if m]
+if census_samples:
+    owned = [int(m.group(1)) for m in census_samples]
+    pooled = [int(m.group(2)) for m in census_samples]
+    available = [int(m.group(3)) for m in census_samples]
+    peak = max(owned) if owned else 0
+    unreachable = [o - p for o, p in zip(owned, pooled)]
+    print(
+        f"Army census: peak owned={peak}, peak pooled={max(pooled) if pooled else 0}, "
+        f"peak available={max(available) if available else 0}"
+    )
+    print(
+        f"  units Red Queen cannot command (owned-pooled): "
+        f"mean {sum(unreachable) / len(unreachable):.1f}, peak {max(unreachable)}"
+    )
 print(f"Objective changes: {len(objective_changes)}")
 for description, count in change_kinds.most_common(12):
     print(f"  {count:5d}  {description}")

@@ -1500,3 +1500,48 @@ assert(slotManager.SlotDispatch.Secondary == 0,
 assert(slotManager.SlotDispatch.Primary > 0, "the attack keeps the whole army")
 
 print("Red Queen objective slot dispatch contracts passed")
+
+-- Where the army actually is.
+--
+-- Three counts, because they fail for different reasons. Owned minus pooled is
+-- what native platoon formation holds and Red Queen cannot command; pooled
+-- minus available is what Red Queen has already spoken for. A match reported 33
+-- of 36 samples dispatching nothing while running 26 factories, and a single
+-- total could not say which number was the small one.
+local censusUnits = {}
+local censusManager = Create(
+    {
+        GetPlatoonUniquelyNamed = function()
+            return { GetPlatoonUnits = function() return censusUnits end }
+        end,
+        GetCurrentUnits = function() return 20 end,
+    },
+    { CanPath = function() return true end }, {},
+    { Intel = { GetThreatNear = function() return 0 end }, ProductionDemand = {} }
+)
+
+local function CensusUnit(id, held)
+    return {
+        EntityId = id,
+        IsCombat = true,
+        RedQueenOrderUntil = held and (GetGameTick() + 100) or nil,
+        GetPosition = function() return { 0, 0, 0 } end,
+        GetBlueprint = function()
+            return { CategoriesHash = { LAND = true, MOBILE = true, DIRECTFIRE = true },
+                     Defense = { SurfaceThreatLevel = 5 } }
+        end,
+    }
+end
+
+censusUnits = { CensusUnit(801, false), CensusUnit(802, false), CensusUnit(803, true) }
+censusManager:GatherAvailableUnits()
+local census = censusManager.PoolCensus
+assert(census.Owned == 20, "every combat unit the army has must be counted")
+assert(census.Pooled == 3, "only the pooled ones are Red Queen's to command, got "
+    .. tostring(census.Pooled))
+assert(census.Available == 2,
+    "a unit inside an order hold is pooled but not available, got " .. tostring(census.Available))
+assert(census.Owned - census.Pooled == 17,
+    "the gap between owned and pooled is what native platoons hold")
+
+print("Red Queen army census contracts passed")

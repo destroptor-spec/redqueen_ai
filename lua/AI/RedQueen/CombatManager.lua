@@ -409,19 +409,57 @@ CombatManager = ClassSimple {
         return 0
     end,
 
+    -- Where the army actually is.
+    --
+    -- Three counts, because they fail for different reasons and the difference
+    -- between them is the diagnosis. `Owned` is every combat unit this army
+    -- has. `Pooled` is how many of those are in the ArmyPool, so `Owned` minus
+    -- `Pooled` is what native platoon formation has taken and Red Queen cannot
+    -- command at all. `Available` is how many of the pooled ones are not inside
+    -- an order or garrison hold, so `Pooled` minus `Available` is what Red
+    -- Queen itself has already spoken for.
+    --
+    -- Measured need: 33 of 36 samples in a match dispatched no units to either
+    -- slot, while the army ran 26 factories and lost 27 land units a minute,
+    -- and SelectTaskForce reported three units available. A total alone cannot
+    -- say which of those three numbers is the small one.
+    CensusArmy = function(self, groups, pooled)
+        local owned = 0
+        if self.Brain.GetCurrentUnits and categories then
+            owned = self.Brain:GetCurrentUnits(
+                categories.MOBILE
+                    - categories.ENGINEER
+                    - categories.COMMAND
+                    - categories.SCOUT) or 0
+        end
+        local available = 0
+        for _, units in pairs(groups) do
+            available = available + table.getn(units)
+        end
+        self.PoolCensus = { Owned = owned, Pooled = pooled, Available = available }
+        return self.PoolCensus
+    end,
+
     GatherAvailableUnits = function(self)
         local pool = self.Brain:GetPlatoonUniquelyNamed("ArmyPool")
         if not pool then
-            return { Land = {}, Amphibious = {}, Hover = {}, Air = {}, Water = {} }
+            local empty = { Land = {}, Amphibious = {}, Hover = {}, Air = {}, Water = {} }
+            self:CensusArmy(empty, 0)
+            return empty
         end
 
         local tick = GetGameTick()
         local groups = { Land = {}, Amphibious = {}, Hover = {}, Air = {}, Water = {} }
+        local pooled = 0
         for _, unit in pairs(pool:GetPlatoonUnits()) do
+            if IsCombatUnit(unit) then
+                pooled = pooled + 1
+            end
             if AvailableForOrder(unit, tick) then
                 table.insert(groups[UnitLayer(unit)], unit)
             end
         end
+        self:CensusArmy(groups, pooled)
         return groups
     end,
 
