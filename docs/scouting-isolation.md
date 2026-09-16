@@ -64,3 +64,65 @@ diagnostic sample, not necessarily the end of the match. Existing logs lack
 those totals; their last-pass counts must not be summed as complete dispatch
 counts. Logs without a recorded mode remain `unrecorded`; a manifest without a
 runtime selection line is labeled `unverified`.
+
+## Both arms run — 2026-09-16
+
+Go-ahead given. Both arms run across the eight LandLarge cells (Fields of Isis
+and Syrtis Major, Aeon against Cybran, four seeds each), same payload as the
+`combined` series.
+
+| Arm | Record |
+| --- | --- |
+| `combined` | 0W/8L |
+| `production-only` (dispatch off) | 1W/7L |
+| `dispatch-only` (binary production) | 0W/8L |
+
+Scouting is not what is wrong with LandLarge. No arm wins it.
+
+### `dispatch-only` reproduces `combined` exactly
+
+| cell | combined | dispatch-only | production-only |
+| --- | --- | --- | --- |
+| Isis 8675309 | defeat 15149 | defeat **15149** | defeat 9581 |
+| Isis 31337 | defeat 17425 | defeat **17425** | defeat 10661 |
+| Isis 2071971 | defeat 12653 | defeat **12653** | defeat 8777 |
+| Isis 5772156 | defeat 20177 | defeat **20177** | defeat 18885 |
+| Syrtis 8675309 | defeat 21717 | defeat **21717** | defeat 20421 |
+| Syrtis 31337 | defeat 28165 | defeat **28165** | victory 26413 |
+| Syrtis 2071971 | defeat 20529 | defeat **20529** | defeat 20953 |
+| Syrtis 5772156 | defeat 19317 | defeat **19317** | defeat 20421 |
+
+Every cell ends on the same tick. The only difference between those two arms is
+scout production sizing — coverage-scaled against the old binary 15%/7% rule —
+so identical matches mean that sizing has **no effect on the simulation at all**.
+
+### Why: the production lever is not connected
+
+`demand.Scouts` has exactly one consumer, `Diagnostics.lua` writing
+`scoutfraction=` into the state line. No production code reads it, and
+`CounterBuilders` subtracts `categories.SCOUT` from its builders, so Red Queen
+never requests a scout. Every scout in every match comes from native FAF
+builders, which is why scout counts never varied between arms.
+
+So the "coverage-scaled, 5-18%" production mechanism described above does not
+exist in effect. It is computed, clamped, probed and reported, and nothing
+builds anything because of it. The scout ceiling probe recorded in
+`docs/variety-matrix.md` was inert for the same reason, and that was the first
+symptom rather than a separate result.
+
+### What directed dispatch is worth
+
+`production-only` turns it off, and that changes every match — the ticks differ
+in all eight. It is worse in five of the eight, and substantially so early:
+9581 against 15149, 10661 against 17425, 8777 against 12653. It wins one cell.
+So directed dispatch is doing real and mostly useful work; 1W/7L against 0W/8L
+is not an improvement worth reading on eight samples.
+
+### What is left
+
+The LandLarge weakness is not in scout production, which does nothing, nor in
+directed dispatch, whose removal makes things worse. Blindness at 55-67% is
+real, but the arms show it is not being caused or cured here. What remains
+untested is whether blindness costs anything: coverage feeds the commitment
+gate, where an unobserved destination is indistinguishable from one seen and
+empty. That is measured by commitment holds and by what waves do on arrival.
