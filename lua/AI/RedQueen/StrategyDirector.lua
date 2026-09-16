@@ -631,6 +631,29 @@ StrategyDirector = ClassSimple {
         }
     end,
 
+    -- Whether the commander is actually being hurt.
+    --
+    -- Health, not proximity. A full-health ACU behind its own defences is not
+    -- an emergency however large the force standing in the base, and treating
+    -- it as one is what turned a siege into a permanent one.
+    CommanderInDanger = function(self)
+        if not self.Brain.GetListOfUnits or not categories or not categories.COMMAND then
+            return false
+        end
+        local threshold = Constants.Policy.CommanderEmergencyHealthFraction
+        for _, commander in pairs(self.Brain:GetListOfUnits(categories.COMMAND, false) or {}) do
+            if commander and not commander.Dead
+                and commander.GetHealth and commander.GetMaxHealth
+            then
+                local maximum = commander:GetMaxHealth() or 0
+                if maximum > 0 and (commander:GetHealth() or maximum) / maximum <= threshold then
+                    return true
+                end
+            end
+        end
+        return false
+    end,
+
     GetProtectedAnchors = function(self)
         local anchors = {
             self:MakeAnchor(self.World.StartPosition, "MainBase", "MAIN"),
@@ -1560,8 +1583,27 @@ StrategyDirector = ClassSimple {
             -- zero experimental weight for all thirty of its alert samples
             -- while it sat on 41-67 mass income, so it finished no project at
             -- all across a 69-minute game.
+            -- A commander emergency is the ACU in danger, not an enemy in the
+            -- base.
+            --
+            -- The Commander anchor is the ACU's own position, and the ACU
+            -- stands in the main base, so every attack on the base anchored
+            -- here -- and in Assassination that zeroed Tech3, Experimental,
+            -- Nuke and every major project slot. Measured on Fields of Isis:
+            -- the veto latched at the first base contact and held for 24 of the
+            -- remaining 25 samples, while the army finished on 349 energy
+            -- income and 17.9 mass with nothing it was permitted to build. The
+            -- alert could not clear, because clearing it needed exactly the
+            -- investment the veto forbade. Extractors fell 18 to 6 and never
+            -- recovered.
+            --
+            -- The absolute veto is kept for the case it was written for: the
+            -- commander actually being hurt. Everything else falls through to
+            -- the severity and wealth tax below, which was added for this same
+            -- failure on the other branch.
             local commanderEmergency = defenseAlert.AnchorKind == "Commander"
                 and self.Context.VictoryCondition == "Assassination"
+                and self:CommanderInDanger()
             weights.Army = 100
             demand.PrimaryFocus = "Army"
             if commanderEmergency then

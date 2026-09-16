@@ -71,6 +71,7 @@ local constants = {
         ObjectiveInterruptPriorityGap = 15,
         CommitmentThreatRatio = 1.10,
         CommitmentThreatRadius = 60,
+        CommanderEmergencyHealthFraction = 0.75,
         MinimumSecondaryCeiling = 0.20,
         MaximumSecondaryFraction = 0.60,
         MinimumPressureFraction = 0.25,
@@ -1168,17 +1169,43 @@ assert(stormed.Experimental < calm.Experimental,
 economy.State.MassIncome = 30
 director.DefenseAlert.Severity = 4
 
--- The commander is the exception. In Assassination, losing the ACU ends the
--- match, so a credible attack on it vetoes every project absolutely.
+-- The commander is the exception, but only when it is actually being hurt.
+--
+-- The Commander anchor is the ACU's own position and the ACU stands in the main
+-- base, so every attack on the base anchors there. Vetoing on the anchor alone
+-- latched the whole economy off at the first base contact: measured on Fields
+-- of Isis, 24 of the last 25 samples sat in commander-emergency while the army
+-- finished on 349 energy income with nothing it was allowed to build, and its
+-- extractors fell from 18 to 6 without ever recovering.
 local previousVictory = director.Context.VictoryCondition
 local previousAnchorKind = director.DefenseAlert.AnchorKind
+local previousCommanders = commanderUnits
 director.Context.VictoryCondition = "Assassination"
 director.DefenseAlert.AnchorKind = "Commander"
+
+-- A healthy commander with an enemy in the base is a siege, not an emergency.
+commanderUnits = {
+    { Dead = false, GetPosition = function() return { 0, 0, 0 } end,
+      GetHealth = function() return 10000 end, GetMaxHealth = function() return 10000 end },
+}
+director:UpdateStrategicFocus({ Type = "Raid" }, { Count = 0, Mass = 0 }, 10, 5)
+assert(director.ProductionDemand.FocusReason ~= "commander-emergency",
+    "a full-health commander must not veto the economy that would relieve it")
+assert(director.ProductionDemand.FocusWeights.Experimental > 0
+    or director.ProductionDemand.MajorProjectSlots > 0,
+    "a siege must leave some investment open, or it can never be broken")
+
+-- A commander that has taken real damage still vetoes absolutely.
+commanderUnits = {
+    { Dead = false, GetPosition = function() return { 0, 0, 0 } end,
+      GetHealth = function() return 5000 end, GetMaxHealth = function() return 10000 end },
+}
 director:UpdateStrategicFocus({ Type = "Raid" }, { Count = 0, Mass = 0 }, 10, 5)
 assert(director.ProductionDemand.MajorProjectSlots == 0, "a commander emergency must veto every major project")
 assert(director.ProductionDemand.FocusWeights.Experimental == 0, "a commander emergency must zero experimental weight")
 assert(director.ProductionDemand.FocusWeights.Tech3 == 0, "a commander emergency must zero tier investment")
 assert(director.ProductionDemand.FocusReason == "commander-emergency", "a commander emergency must be reported distinctly")
+commanderUnits = previousCommanders
 
 -- The same alert outside Assassination is graded, not absolute.
 director.Context.VictoryCondition = "Annihilation"
