@@ -167,6 +167,44 @@ local brain = {
 local gunshipCondition = builders["Red Queen T3 Gunship Counter"].BuilderConditions[1][1]
 assert(gunshipCondition(brain), "land-loss doctrine must enable native gunship builders")
 
+-- Scouts are asked for by share of the army, the same way gunships are. Before
+-- this existed demand.Scouts was computed, clamped and reported and nothing
+-- consumed it: every builder here subtracts categories.SCOUT, so every scout
+-- came from FAF's own builders. The isolation arms proved it -- dispatch-only
+-- reproduced combined tick for tick across eight LandLarge cells, because the
+-- only difference between those arms was a number nothing read.
+local scoutCategory = (categories.MOBILE * categories.SCOUT).Name
+local scoutArmy = (categories.MOBILE * (categories.LAND + categories.AIR)
+    - categories.ENGINEER - categories.COMMAND - categories.SCOUT).Name
+for _, name in ipairs({ "Red Queen Air Scout", "Red Queen Land Scout" }) do
+    assert(builders[name], name .. " must register, or demand.Scouts drives nothing")
+end
+local scoutCondition = builders["Red Queen Air Scout"].BuilderConditions[1][1]
+demand.Scouts = 0.10
+unitCounts[scoutArmy] = 40
+unitCounts[scoutCategory] = 2
+assert(scoutCondition(brain),
+    "two scouts against a forty-strong army at a tenth share must ask for more")
+unitCounts[scoutCategory] = 4
+assert(not scoutCondition(brain),
+    "and the share being met must stop the request, so scouts cannot crowd the queue")
+
+-- The floor keeps one scout coming for an army too small to earn a share.
+unitCounts[scoutArmy] = 2
+unitCounts[scoutCategory] = 0
+assert(scoutCondition(brain), "a small army must still get its first pair of eyes")
+unitCounts[scoutCategory] = 1
+assert(not scoutCondition(brain), "but only the floor, not a scout per unit")
+
+-- A stalling economy buys nothing, scouts included.
+unitCounts[scoutCategory] = 0
+economy.StallRisk = true
+assert(not scoutCondition(brain), "a stalling economy must not spend on scouts")
+economy.StallRisk = false
+unitCounts[scoutArmy] = nil
+unitCounts[scoutCategory] = nil
+demand.Scouts = nil
+
 local t2Builder = builders["Red Queen T1 Land Factory Tech"]
 local t2Condition = t2Builder.BuilderConditions[1][1]
 assert(t2Condition(brain), "a weighted T2 focus must enable a relevant factory upgrade")

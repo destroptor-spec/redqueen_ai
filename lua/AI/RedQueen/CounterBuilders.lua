@@ -169,6 +169,31 @@ local function ShouldBuildGunships(aiBrain)
     return gunships < desired
 end
 
+-- Scouts, asked for the same way gunships and anti-air are: a share of the
+-- army, with a floor of one so the picture never goes completely stale.
+--
+-- Until this existed `demand.Scouts` was computed, clamped, probed and written
+-- into the state line, and nothing read it -- every builder here subtracts
+-- categories.SCOUT, so every scout in every match came from FAF's own builders.
+-- The isolation arms proved it: dispatch-only reproduced combined tick for tick
+-- across eight cells, because the only difference between those arms was a
+-- number nothing consumed.
+local function ShouldBuildScouts(aiBrain)
+    local demand, economy = GetDemand(aiBrain)
+    if not demand or economy.StallRisk then
+        return false
+    end
+    local scouts = aiBrain:GetCurrentUnits(categories.MOBILE * categories.SCOUT)
+    local army = aiBrain:GetCurrentUnits(
+        categories.MOBILE * (categories.LAND + categories.AIR)
+            - categories.ENGINEER
+            - categories.COMMAND
+            - categories.SCOUT
+    )
+    local desired = math.max(1, math.floor(math.max(1, army) * (demand.Scouts or 0)))
+    return scouts < desired
+end
+
 local function ShouldBuildAirDefense(aiBrain)
     local demand, economy = GetDemand(aiBrain)
     if not demand
@@ -1158,6 +1183,31 @@ BuilderGroup {
 BuilderGroup {
     BuilderGroupName = "RedQueenCounterFactoryBuilders",
     BuildersType = "FactoryBuilder",
+
+    -- Air first: a scout that ignores terrain covers far more of a large map
+    -- per unit of time, which is the whole point of asking for one.
+    Builder {
+        BuilderName = "Red Queen Air Scout",
+        PlatoonTemplate = "T1AirScout",
+        Priority = 930,
+        BuilderType = "Air",
+        BuilderConditions = {
+            { ShouldBuildScouts, {} },
+            { InstantBuildConditions, "BrainNotLowPowerMode", {} },
+            { EconomyBuildConditions, "GreaterThanEconEfficiencyOverTime", { 0.70, 0.95 } },
+        },
+    },
+    Builder {
+        BuilderName = "Red Queen Land Scout",
+        PlatoonTemplate = "T1LandScout",
+        Priority = 920,
+        BuilderType = "Land",
+        BuilderConditions = {
+            { ShouldBuildScouts, {} },
+            { InstantBuildConditions, "BrainNotLowPowerMode", {} },
+            { EconomyBuildConditions, "GreaterThanEconEfficiencyOverTime", { 0.70, 0.95 } },
+        },
+    },
 
     Builder {
         BuilderName = "Red Queen T3 Gunship Counter",
