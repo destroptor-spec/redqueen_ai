@@ -232,6 +232,37 @@ accepts, and should be seen doing.
    army today, which is the number step 3 has to improve.
 
    Ten mutations run against the contracts, all caught.
+
+   ### The baseline this step exists to produce
+
+   Fields of Isis (SCMP_015, 512 = 10 km), seed 31337, Red Queen Aeon against
+   adaptive Cybran. Full match, 28:08 of game time, **defeat**.
+
+   | measure | value |
+   | --- | --- |
+   | samples with pressure yielded | **18 / 28 (64.3%)** |
+   | secondary slot contents | `Defend` in all 18 |
+   | objective changes in 28 minutes | 6 |
+   | objective changes **refused** | 9, every one `priority-gap` |
+   | forward bases blocked by `defense-alert` | 13 |
+   | alert samples with experimental weight zeroed | 16 |
+   | mass built, Red Queen vs winner | 53k vs 197k |
+
+   Two mechanisms, not one. A defence *takes* the army — that is the preemption
+   `CanInterrupt` was written to limit. But once it has the army it also *keeps*
+   it: `Raid` carries priority 75 and can never clear `Defend`'s 120 or 140 plus
+   `ObjectiveInterruptPriorityGap` of 15, so every attempt to resume the attack
+   is refused until the defensive objective simply expires. Nine refusals
+   against six actual changes says the second mechanism is the larger one, and
+   it is symmetric in the wrong direction: `CanInterrupt` protects a defence
+   from an attack exactly as hard as it protects an attack from a defence.
+
+   The defensive state is not only costing pressure. It blocked thirteen forward
+   base attempts and zeroed the experimental weight in sixteen alert samples,
+   while the winner out-built Red Queen roughly four to one. That is the
+   extractor-churn story arriving through a different door.
+
+   Step 3 has to move both numbers: the yielded share, and the refusal count.
 3. **Move `Defend` to secondary.** The behavioural change, with a specific
    prediction: the walk-back-and-forth stops appearing and `CanInterrupt`
    reduces to a tie-break on primary replacement rather than a preemption rule.
