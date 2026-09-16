@@ -473,3 +473,34 @@ sufficient, because there is still nothing to spend it on:
 The experimental throttle is still untested: `X` weight was zero in all four
 builds, because the experimental gate also needs `T3Factories > 0` and no run
 reached Tech 3.
+
+
+## The opening engineer floor: the first economic gain measured
+
+Same cell throughout — Fields of Isis, seed 31337, Red Queen Aeon. One match per
+build.
+
+| build | peak extractors | final extractors | RQ mass built | opponent | ended |
+| --- | --- | --- | --- | --- | --- |
+| slots (step 3) | 18 | 6 | 106k | 351k | defeat, 35 min |
+| tier throttle | 18 | 7 | 91k | 242k | defeat, 30 min |
+| breadth-first gate | 18 | 6 | 97k | 220k | defeat, 29 min |
+| **opening engineer floor** | **22** | **13** | **234k** | 426k | defeat, 41 min |
+
+Peak extractors had been exactly 18 in every build ever measured. The floor is
+the first change to move it, and the holding is the larger gain: 13 points at
+the end against 6, and 2.4 times the mass built.
+
+The engineer target reads `1/12, 3/12, 6/12, 10/12, 12/12` through the opening —
+the twelve engineers a player builds as the first factory completes — where it
+had read 2 or 3.
+
+**It did not convert.** The opponent still out-built 426k to 234k, and the
+exchange rate got worse rather than better: K/L fell from 1.09 to 0.40, with
+151k lost against 61k killed. More economy, spent worse. Whether that is the
+economy competing with army production or simply a longer life in a lost
+position is not answerable from one match.
+
+Two things in flight and unmeasured: the engineer tier ladder, where a cap
+filled with Tech 1 engineers meant no Tech 2 engineer was ever built, and the
+consolidation capabilities, which still do not exist.
