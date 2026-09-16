@@ -310,6 +310,15 @@ if pressure_samples:
     )
     print(f"  primary slot:   {dict(primary_kinds)}")
     print(f"  secondary slot: {dict(secondary_kinds) or 'never filled'}")
+ENGINEER_TIERS = re.compile(r"engtier=(\d+)/(\d+)/(\d+)")
+tier_samples = [m for m in (ENGINEER_TIERS.search(l) for l in states) if m]
+if tier_samples:
+    peak = [max(int(m.group(i)) for m in tier_samples) for i in (1, 2, 3)]
+    with_t2 = sum(1 for m in tier_samples if int(m.group(2)) > 0)
+    print(
+        f"Engineers by tier: peak T1={peak[0]} T2={peak[1]} T3={peak[2]}; "
+        f"{with_t2}/{len(tier_samples)} samples had a Tech 2 engineer"
+    )
 print(f"Objective changes: {len(objective_changes)}")
 for description, count in change_kinds.most_common(12):
     print(f"  {count:5d}  {description}")

@@ -160,7 +160,7 @@ Diagnostics = ClassSimple {
             or 0
 
         Logger.Info(self.Brain, string.format(
-            "state objective=%s primary=%s/%d secondary=%s/%d pressure=%s claim=%.0f/%.0f%s eco=%s mass=%.1f energy=%.1f factories=%d/%d intel=%d doctrine=%s focus=%s weights=A=%d,T2=%d,T3=%d,X=%d,N=%d ready=%.2f slots=%d reason=%s landloss=%d/%.0f airloss=%d/%.0f airdrop=%s alert=%s/%.1f/%.2f/%s/%.0f/%.0f momentum=%.0f/%.0f/%s tiers=L%d,A%d,N%d forward=%d/%s/%s exp=%s/%d/%d eng=%d/%d/%d cover=%d/%d engpolicy=%d/%d mex=%d/%d scout=%d/%d/%d scoutorders=%d/%d scouts=%d scoutfraction=%.3f/%.3f dispatch=L%d,A%d,W%d,M%d,H%d",
+            "state objective=%s primary=%s/%d secondary=%s/%d pressure=%s claim=%.0f/%.0f%s eco=%s mass=%.1f energy=%.1f factories=%d/%d intel=%d doctrine=%s focus=%s weights=A=%d,T2=%d,T3=%d,X=%d,N=%d ready=%.2f slots=%d reason=%s landloss=%d/%.0f airloss=%d/%.0f airdrop=%s alert=%s/%.1f/%.2f/%s/%.0f/%.0f momentum=%.0f/%.0f/%s tiers=L%d,A%d,N%d forward=%d/%s/%s exp=%s/%d/%d eng=%d/%d/%d engtier=%d/%d/%d cover=%d/%d engpolicy=%d/%d mex=%d/%d scout=%d/%d/%d scoutorders=%d/%d scouts=%d scoutfraction=%.3f/%.3f dispatch=L%d,A%d,W%d,M%d,H%d",
             tostring(objective.Type or "none"),
             primary and tostring(primary.Type) or "none",
             slotDispatch.Primary or 0,
@@ -217,6 +217,15 @@ Diagnostics = ClassSimple {
             engineers,
             demand.DesiredEngineers or 0,
             (demand.EngineerLossPressure or {}).Count or 0,
+            -- Split by tier, because a cap filled with Tech 1 engineers used to
+            -- mean no Tech 2 engineer was ever built and the total could not
+            -- show it.
+            self.Brain.GetCurrentUnits and self.Brain:GetCurrentUnits(
+                categories.ENGINEER * categories.MOBILE * categories.TECH1) or 0,
+            self.Brain.GetCurrentUnits and self.Brain:GetCurrentUnits(
+                categories.ENGINEER * categories.MOBILE * categories.TECH2) or 0,
+            self.Brain.GetCurrentUnits and self.Brain:GetCurrentUnits(
+                categories.ENGINEER * categories.MOBILE * categories.TECH3) or 0,
             -- Forward-base cover, and where native engineer production is being
             -- cut. Both were previously inferable only indirectly: a garrison
             -- filter that stood down for 86% of bases and a suppression ceiling
