@@ -534,3 +534,43 @@ K/L of 0.31 against the opponent's 3.06. Two consecutive builds now show the
 same shape — more economy, spent worse. The economy work is succeeding at
 economy and failing at winning, and the next question is not how to earn more
 mass but why the army that mass buys dies three to one.
+
+
+## Step E: where the army actually is
+
+Fields of Isis, seed 31337. The run ended on the identical tick as the one
+before it (21293), so the instrumentation is provably inert — pure observation,
+no behavioural change.
+
+```
+Army census: peak owned=57, peak pooled=23, peak available=7
+  units Red Queen cannot command (owned-pooled): mean 20.2, peak 45
+```
+
+Trajectory of `owned/pooled/available`:
+
+```
+13/8/0   15/4/3   15/4/4   25/8/2   28/8/5   46/13/6   41/5/3   57/17/5   46/16/0
+```
+
+**Red Queen commands between 8 and 12 per cent of its own army.** At the peak it
+owned 57 combat units, 17 were in the ArmyPool, and 5 were available to order.
+
+Two separate losses, not one:
+
+- **Native platoon formation holds the majority.** Owned minus pooled averages
+  20 units and peaks at 45. These are never visible to the objective system at
+  all, so every mechanism built for slots, allocation and dispatch is steering a
+  minority of the force.
+- **Red Queen locks most of what is left.** Pooled minus available is typically
+  two thirds of the pool — units inside `RedQueenOrderUntil` or
+  `RedQueenGarrisonUntil` holds.
+
+Only the first was predicted. The second matters for sequencing: taking
+ownership of production hands Red Queen more units, and on this evidence it
+would park most of them. Whatever fixes ownership has to be measured against
+`available`, not `pooled`.
+
+This also explains the dispatch record without any further theory. `33 of 36
+samples dispatched nothing` and `commitment held ... units=3` are what a pool of
+five available units looks like against a commitment gate that asks for a wave.
