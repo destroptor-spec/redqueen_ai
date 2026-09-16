@@ -319,3 +319,40 @@ to 300 seconds, and the whole twelve is well under an hour.
 
 Run cells **one at a time**. Two concurrent instances spike memory hard enough
 during Wine startup to be killed, even with 22 GiB available.
+
+## Scout ceiling probe: correct, and inert — 2026-09-16
+
+The scout fraction was pinned near its ceiling for whole LandLarge matches, so
+production was capped by a probe that steps the ceiling down while blindness
+will not move and the scouts we have stay alive. In a match it does exactly
+that: on Syrtis `31337` the ceiling walked 0.180, 0.160, 0.140, 0.120, 0.080,
+0.050 and the request followed it down.
+
+**It changed nothing else.** The same cell, same seed, before and after:
+
+| | pinned | probed |
+| --- | --- | --- |
+| requested fraction | 0.090-0.174 | 0.050-0.174 |
+| K/L | 0.73 | 0.73 |
+| scout orders / peak held | 175 / 12 | 175 / 12 |
+| factories / engineers | 24 / 48 | 24 / 48 |
+| extractors built / lost | 39 / 25 | 39 / 25 |
+| peak mass | 43.1 | 43.1 |
+| end tick | 28165 | 28165 |
+
+Asking for 5% scouts instead of 17% produced the same army, the same scouts and
+the same match. So the premise behind the change — that blindness was taxing
+production on large maps — **is not supported**. `demand.Scouts` does not move
+what gets built here. Native FAF scouting stays active in every mode and the
+scout count never varied, so the fraction is not the lever it looks like.
+
+That redirects the LandLarge question rather than answering it. Blindness at
+55-67% is real, and 175 scout orders holding 12 scouts did not move it, but the
+cost of it is not scout production. The causal path left to test is the one the
+`GetScoutTargets` comment already names: coverage feeds the commitment gate, and
+an unobserved destination reads as a threat of zero, which is indistinguishable
+from seen-and-empty. That is where the damage would show, and it is measured by
+commitment holds and by what waves do on arrival, not by production shares.
+
+The probe is kept because it is correct, bounded and contract-covered, and it
+costs nothing where it does not bind. It should not be counted as a fix.
