@@ -185,7 +185,7 @@ local function CanInterrupt(self, previous, objective, tick)
                 ) or 0
             end
             if committed > 0 then
-                return false
+                return false, "attack-in-contact"
             end
         end
         return true
@@ -193,7 +193,10 @@ local function CanInterrupt(self, previous, objective, tick)
     if previous.Type == "Stage" then
         return true
     end
-    return objective.Priority >= previous.Priority + Constants.Policy.ObjectiveInterruptPriorityGap
+    if objective.Priority >= previous.Priority + Constants.Policy.ObjectiveInterruptPriorityGap then
+        return true
+    end
+    return false, "priority-gap"
 end
 
 -- Affordability is judged on the better of the instantaneous and the smoothed
@@ -996,19 +999,45 @@ StrategyDirector = ClassSimple {
         if previous and objective and previous.Type == objective.Type and previous.ExpiresTick > tick then
             objective.CreatedTick = previous.CreatedTick
             objective.ExpiresTick = previous.ExpiresTick
-        elseif previous and objective and not CanInterrupt(self, previous, objective, tick) then
-            return previous
+        elseif previous and objective then
+            local allowed, refusal = CanInterrupt(self, previous, objective, tick)
+            if not allowed then
+                -- A refused interrupt is the event worth seeing. The army keeps
+                -- doing what it was doing, so nothing else in the log changes,
+                -- and the walk-back-and-forth failure this rule exists to
+                -- prevent is invisible unless the near-misses are counted.
+                Logger.Info(self.Brain, string.format(
+                    "strategy objective-held current=%s/%s wanted=%s/%s reason=%s",
+                    previous.Type,
+                    tostring(previous.Kind or "unknown"),
+                    objective.Type,
+                    tostring(objective.Kind or "unknown"),
+                    tostring(refusal or "unknown")
+                ))
+                return previous
+            end
+            objective.ExpiresTick = objective.ExpiresTick or tick + Constants.Policy.ObjectiveLifetimeTicks
         else
             objective.ExpiresTick = objective.ExpiresTick or tick + Constants.Policy.ObjectiveLifetimeTicks
         end
 
         self.CurrentObjective = objective
-        if objective and (not previous or previous.Type ~= objective.Type) then
+        -- Keyed on the kind, not the type: DefenseAlert and LocalDefense both
+        -- produce Type == "Defend", and which of the two took the army is the
+        -- difference between a real threat and a couple of raiders at home.
+        if objective and (not previous
+            or previous.Type ~= objective.Type
+            or previous.Kind ~= objective.Kind)
+        then
             Logger.Info(self.Brain, string.format(
-                "strategy objective=%s priority=%d layer=%s",
+                "strategy objective=%s kind=%s slot=%s priority=%d layer=%s from=%s/%s",
                 objective.Type,
+                tostring(objective.Kind or "unknown"),
+                tostring(objective.Slot or "Primary"),
                 objective.Priority,
-                objective.Layer
+                objective.Layer,
+                previous and previous.Type or "none",
+                previous and tostring(previous.Kind or "unknown") or "none"
             ))
         end
         return objective
@@ -2017,23 +2046,13 @@ StrategyDirector = ClassSimple {
             end
         end
 
-        -- The two slots. The secondary is not filled yet, so whichever single
-        -- objective won still commands the whole army exactly as before; what
-        -- is new is that the army now says which kind of thing it is doing.
-        -- A secondary-intent objective holding the entire force is precisely
-        -- the failure this design exists to remove, so it is reported as
-        -- pressure yielded rather than quietly counted as an objective held.
-        local slot = SlotForObjective(objectiveKind, objective)
-        if slot == "Primary" then
-            self.PrimaryObjective, self.SecondaryObjective = objective, nil
-            self.ObjectiveAllocation = { Primary = 1, Secondary = 0 }
-        else
-            self.PrimaryObjective, self.SecondaryObjective = nil, objective
-            self.ObjectiveAllocation = { Primary = 0, Secondary = 1 }
-        end
-        self.ObjectiveKind = objectiveKind
-        self.ObjectiveSlot = slot
-        self.PressureHeld = slot == "Primary"
+        -- The kind and slot travel on the objective itself, because selecting
+        -- one is not the same as adopting it: SetObjective may refuse the
+        -- interrupt and keep what we were already doing. Reading the slot back
+        -- off whatever it returns is what keeps the report describing the army
+        -- rather than the candidate.
+        objective.Kind = objectiveKind
+        objective.Slot = SlotForObjective(objectiveKind, objective)
 
         -- Mixed maps usually lead on Land, leaving ships without a destination
         -- unless they receive the water beside the same target. Resolve this
@@ -2061,6 +2080,26 @@ StrategyDirector = ClassSimple {
         end
 
         objective = self:SetObjective(objective)
+
+        -- The two slots, read off the objective actually in force. The
+        -- secondary is not filled yet, so whichever objective holds the army
+        -- holds all of it, exactly as before; what is new is that the army says
+        -- which kind of thing it is doing. A secondary-intent objective
+        -- commanding the whole force is precisely the failure this design
+        -- exists to remove, so it is reported as pressure yielded rather than
+        -- quietly counted as an objective held.
+        local slot = objective.Slot or "Primary"
+        if slot == "Primary" then
+            self.PrimaryObjective, self.SecondaryObjective = objective, nil
+            self.ObjectiveAllocation = { Primary = 1, Secondary = 0 }
+        else
+            self.PrimaryObjective, self.SecondaryObjective = nil, objective
+            self.ObjectiveAllocation = { Primary = 0, Secondary = 1 }
+        end
+        self.ObjectiveKind = objective.Kind
+        self.ObjectiveSlot = slot
+        self.PressureHeld = slot == "Primary"
+
         self:UpdateDemand(objective)
 
         if objective.Type == "Assault"

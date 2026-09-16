@@ -137,7 +137,8 @@ local constants = {
         DefenseAlertHoldSeconds = 30,
     },
 }
-local logger = { Info = function() end }
+local logLines = {}
+local logger = { Info = function(_, line) table.insert(logLines, line) end }
 
 -- Records where engineers die. Captured so a contract can assert the director
 -- reports the loss position, without pulling the real module's policy reads in.
@@ -2029,6 +2030,67 @@ director.UpdateDefenseAlert = previousAlertFn
 director.DefenseAlert = previousAlert
 director.ProductionDemand.DefenseAlert = previousAlert
 localThreat = previousLocalThreat
+
+-- Selecting an objective is not the same as adopting it.
+--
+-- SetObjective may refuse the interrupt and keep what the army was already
+-- doing. The slot fields must then describe the army, not the candidate that
+-- lost -- otherwise a raid that was correctly protected from a weak local
+-- defence reports itself as pressure yielded, and the measurement inverts.
+local previousOwnThreat = director.GetOwnThreatNear
+local previousLocal2 = localThreat
+director.GetOwnThreatNear = function(_, position)
+    return (position and position[1] == 900) and 250 or 0
+end
+world.GetClosestEnemyStart = function() return { 900, 0, 900 } end
+intel.GetBestKnownTarget = function() return nil end
+pings.GetBestRequest = function() return nil end
+localThreat = 0
+currentTick = 12000
+director.CurrentObjective = nil
+director:Update()
+assert(director.CurrentObjective.Type == "Pressure" and director.PressureHeld,
+    "the attack must be under way before the interrupt is tested")
+
+-- Now a weak local threat asks for the army back and is refused.
+localThreat = 1000
+currentTick = 12010
+logLines = {}
+director:Update()
+assert(director.CurrentObjective.Type == "Pressure",
+    "an attack in contact must not be abandoned for a local threat")
+assert(director.PressureHeld,
+    "a refused interrupt must still report pressure held, not the slot of the objective that lost")
+assert(director.PrimaryObjective and not director.SecondaryObjective,
+    "the army is still on its primary objective, so that is the slot it reports")
+
+-- And the near-miss must be visible, or the walk-back-and-forth this rule
+-- prevents can never be counted.
+local sawHeld = false
+for _, line in ipairs(logLines) do
+    if string.find(line, "objective%-held") and string.find(line, "attack%-in%-contact") then
+        sawHeld = true
+    end
+end
+assert(sawHeld, "a refused interrupt must be logged with its reason")
+director.GetOwnThreatNear = previousOwnThreat
+localThreat = previousLocal2
+
+-- A transition between two objectives of the same type but different kind must
+-- still be logged: both defensive kinds produce Type == "Defend".
+logLines = {}
+currentTick = 12500
+director.CurrentObjective = { Type = "Defend", Kind = "LocalDefense", Slot = "Secondary",
+    Priority = 120, Layer = "Land", CreatedTick = 12000, ExpiresTick = 12000 }
+director:SetObjective({ Type = "Defend", Kind = "DefenseAlert", Slot = "Secondary",
+    Priority = 140, Layer = "Land", Critical = true, CreatedTick = 12500 })
+local sawKindChange = false
+for _, line in ipairs(logLines) do
+    if string.find(line, "kind=DefenseAlert") and string.find(line, "from=Defend/LocalDefense") then
+        sawKindChange = true
+    end
+end
+assert(sawKindChange, "a change of defensive kind must be logged even though the type is unchanged")
 
 -- The two slots. The secondary is empty by construction at this step, so an
 -- objective either holds pressure or has displaced it entirely -- which is the
