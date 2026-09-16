@@ -1143,6 +1143,64 @@ StrategyDirector = ClassSimple {
         return current
     end,
 
+    -- How much scout production is still worth buying.
+    --
+    -- The fraction below is sized by the share of what the army cares about
+    -- that it cannot see, which is the right question only while another scout
+    -- would change the answer. Where it cannot -- a large map, where coverage
+    -- decays faster than scouts can refresh it -- blindness stays high, the
+    -- fraction stays at its ceiling, and the army pays for coverage it will
+    -- never get for the whole match.
+    --
+    -- So the ceiling is probed rather than fixed. Each window it steps down
+    -- while the scouts we have are alive and blindness has not improved, and it
+    -- is released to the maximum as soon as either changes. Scouts dying
+    -- releases it too: that shortfall is replacement, not saturation, and it is
+    -- exactly when production is worth paying for.
+    UpdateScoutCeiling = function(self, blindShare)
+        local ceiling = self.ScoutCeiling or Constants.Policy.ScoutFractionMaximum
+        local held = 0
+        if self.Brain.GetCurrentUnits then
+            held = self.Brain:GetCurrentUnits(categories.MOBILE * categories.SCOUT) or 0
+        end
+        local tick = GetGameTick()
+        local probe = self.ScoutProbe
+        if not probe then
+            self.ScoutCeiling = Constants.Policy.ScoutFractionMaximum
+            self.ScoutProbe = { Tick = tick, Blind = blindShare, Held = held }
+            return self.ScoutCeiling
+        end
+
+        -- Need is answered at once; withdrawal waits out the window. An army
+        -- that has just gone blind, or that is losing the scouts it has, cannot
+        -- afford to sit at a lowered ceiling until a probe interval expires.
+        if blindShare - probe.Blind >= Constants.Policy.ScoutSaturationImprovement
+            or held < probe.Held
+        then
+            self.ScoutCeiling = Constants.Policy.ScoutFractionMaximum
+            self.ScoutProbe = { Tick = tick, Blind = blindShare, Held = held }
+            return self.ScoutCeiling
+        end
+        if tick - probe.Tick < Constants.Policy.ScoutSaturationWindowSeconds * 10 then
+            self.ScoutCeiling = ceiling
+            return ceiling
+        end
+
+        -- A window has passed without the picture improving and without losing
+        -- a scout: the spend is not buying coverage, so step the ceiling down.
+        -- Improvement keeps it open, because that is a scout doing its job.
+        if probe.Blind - blindShare >= Constants.Policy.ScoutSaturationImprovement then
+            self.ScoutCeiling = Constants.Policy.ScoutFractionMaximum
+        else
+            self.ScoutCeiling = math.max(
+                Constants.Policy.ScoutFractionMinimum,
+                ceiling - Constants.Policy.ScoutSaturationStep
+            )
+        end
+        self.ScoutProbe = { Tick = tick, Blind = blindShare, Held = held }
+        return self.ScoutCeiling
+    end,
+
     UpdateStrategicFocus = function(self, objective, loss, surfaceThreat, airThreat)
         local demand = self.ProductionDemand
         local state = self.Economy.State
@@ -1463,10 +1521,11 @@ StrategyDirector = ClassSimple {
                         * (Constants.Policy.ScoutFractionMaximum
                             - Constants.Policy.ScoutFractionMinimum),
                 Constants.Policy.ScoutFractionMinimum,
-                Constants.Policy.ScoutFractionMaximum
+                self:UpdateScoutCeiling(blindShare)
             )
         end
         demand.ScoutBlindShare = blindShare
+        demand.ScoutCeiling = self.ScoutCeiling or Constants.Policy.ScoutFractionMaximum
         demand.Artillery = objective.Type == "Assault" and 0.18 or 0.10
         demand.Gunships = 0.18
         demand.Doctrine = "Balanced"

@@ -81,6 +81,9 @@ local constants = {
         GarrisonLossWindowSeconds = 60,
         ScoutFractionMinimum = 0.05,
         ScoutFractionMaximum = 0.18,
+        ScoutSaturationWindowSeconds = 30,
+        ScoutSaturationImprovement = 0.05,
+        ScoutSaturationStep = 0.02,
         GarrisonLossFraction = 0.5,
         EngineersPerFactory = 0.75,
         EngineersMinimum = 2,
@@ -1042,6 +1045,70 @@ assert(blindScouts <= constants.Policy.ScoutFractionMaximum
 local halfScouts = scoutFractionAt(0.5)
 assert(halfScouts > seeingScouts and halfScouts < blindScouts,
     "the response must be graded rather than a switch, got " .. tostring(halfScouts))
+
+-- Blindness sizes scout production, but it cannot say whether another scout
+-- would change anything. On a 10 km map coverage decays faster than scouts can
+-- refresh it, so a rule keyed on blindness alone sat at the ceiling for whole
+-- matches: eight LandLarge cells measured 55-67% blind with the requested
+-- fraction never returning to its floor, while Syrtis issued 86 to 175 scout
+-- orders and blind did not move. The ceiling is therefore probed.
+local heldScouts = 4
+brain.GetCurrentUnits = function() return heldScouts end
+director.ScoutCeiling = nil
+director.ScoutProbe = nil
+local window = constants.Policy.ScoutSaturationWindowSeconds * 10
+
+-- Blindness that will not move while the scouts stay alive is saturation, and
+-- the ceiling steps down for as long as that holds.
+currentTick = 100000
+scoutFractionAt(0.9)
+local firstCeiling = director.ScoutCeiling
+currentTick = currentTick + window
+scoutFractionAt(0.9)
+assert(director.ScoutCeiling < firstCeiling,
+    "a window of unmoved blindness must lower the ceiling, got "
+        .. tostring(director.ScoutCeiling))
+for _ = 1, 20 do
+    currentTick = currentTick + window
+    scoutFractionAt(0.9)
+end
+assert(director.ScoutCeiling == constants.Policy.ScoutFractionMinimum,
+    "it must settle at the floor and never below, got " .. tostring(director.ScoutCeiling))
+assert(scoutFractionAt(0.9) == constants.Policy.ScoutFractionMinimum,
+    "and the request must follow the ceiling down")
+
+-- Need is answered at once. An army that has just gone blind cannot wait out a
+-- probe interval for permission to look.
+scoutFractionAt(0.9)
+local raised = scoutFractionAt(0.99)
+assert(director.ScoutCeiling == constants.Policy.ScoutFractionMaximum,
+    "rising blindness must release the ceiling immediately")
+assert(raised > constants.Policy.ScoutFractionMinimum,
+    "and the request must rise with it, got " .. tostring(raised))
+
+-- Losing scouts releases it too: that shortfall is replacement, not saturation.
+for _ = 1, 20 do
+    currentTick = currentTick + window
+    scoutFractionAt(0.9)
+end
+assert(director.ScoutCeiling == constants.Policy.ScoutFractionMinimum,
+    "the ceiling must settle again before the loss case")
+heldScouts = 1
+scoutFractionAt(0.9)
+assert(director.ScoutCeiling == constants.Policy.ScoutFractionMaximum,
+    "losing scouts must release the ceiling at once")
+
+-- A scout that is buying coverage keeps the ceiling open.
+heldScouts = 4
+currentTick = currentTick + window
+scoutFractionAt(0.9)
+currentTick = currentTick + window
+scoutFractionAt(0.5)
+assert(director.ScoutCeiling == constants.Policy.ScoutFractionMaximum,
+    "improving coverage must keep the ceiling at its maximum")
+brain.GetCurrentUnits = nil
+director.ScoutCeiling = nil
+director.ScoutProbe = nil
 -- Observations existing is not the same as seeing what matters: with a full
 -- observation table but nothing covered where it counts, scouting must still
 -- rise.

@@ -205,6 +205,7 @@ local modules = {
         ProductionDemand = {
             Doctrine = "Balanced",
             Scouts = 0.128,
+            ScoutCeiling = 0.18,
             FocusWeights = { Army = 60, Tech2 = 0, Tech3 = 0, Experimental = 71, Nuke = 0 },
             PrimaryFocus = "Army",
             MajorProjectSlots = 1,
@@ -280,8 +281,8 @@ assert(string.find(state, "engpolicy=3/18", 1, true),
 -- so this is the figure that says whether there is cheap economy left to take.
 assert(string.find(state, "mex=1/24", 1, true),
     "the state line must report extractors held against the map's mass points: " .. state)
-assert(string.find(state, "scout=10/6/0 scoutorders=11/4 scouts=1 scoutfraction=0.128", 1, true),
-    "scouting must report coverage, cumulative orders, held scouts and requested fraction: " .. state)
+assert(string.find(state, "scout=10/6/0 scoutorders=11/4 scouts=1 scoutfraction=0.128/0.180", 1, true),
+    "scouting must report coverage, orders, held scouts, requested fraction and its ceiling: " .. state)
 
 -- Which arm qualified, and what each arm actually has defending it. Alert counts
 -- alone cannot say whether a change came from the surface reading, the air

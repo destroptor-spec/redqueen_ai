@@ -71,6 +71,21 @@ Policy = {
     ScoutFallbackMinimumWeight = 3,
     ScoutFractionMinimum = 0.05,
     ScoutFractionMaximum = 0.18,
+    -- Blind share says how much the army cannot see. It cannot say whether
+    -- another scout would change that. On a 10 km map coverage decays faster
+    -- than any affordable number of scouts can refresh it, so a rule keyed on
+    -- blindness alone pins production at its ceiling for the whole match: eight
+    -- LandLarge cells measured 55-67% blind with the requested fraction never
+    -- returning to its floor, against 15-31% and a floor of 0.05 on 5 km maps,
+    -- while Syrtis issued 86 to 175 scout orders and blind did not move.
+    --
+    -- These bound a probe on the ceiling: it steps down while scouts are alive
+    -- and blindness is not improving, and is released to the maximum the moment
+    -- either stops being true. Scouts dying is a reason to keep paying, because
+    -- the shortfall is replacement rather than saturation.
+    ScoutSaturationWindowSeconds = 30,
+    ScoutSaturationImprovement = 0.05,
+    ScoutSaturationStep = 0.02,
     UnitOrderLifetimeTicks = 300,
     ObjectiveLifetimeTicks = 300,
     ObjectiveInterruptPriorityGap = 15,
