@@ -356,3 +356,39 @@ commitment holds and by what waves do on arrival, not by production shares.
 
 The probe is kept because it is correct, bounded and contract-covered, and it
 costs nothing where it does not bind. It should not be counted as a fix.
+
+# Scout wiring measured across all twelve cells — 2026-09-16
+
+The scout production lever was wired and validated on eight LandLarge cells
+only. It changes global behaviour, so the whole matrix was re-run at
+`b5674abd28c3` against the post-review series `c6c64e797a84` and the original
+`0cbb34c70ae5`.
+
+| Profile | baseline | post-review | wired |
+| --- | --- | --- | --- |
+| Naval | 3W/2L | **4W/1L** | 3W/2L |
+| LandSmall | 2W/1L | 2W/1L | 2W/1L |
+| LandLarge | 2W/2L | 0W/4L | **1W/3L** |
+| total | 7W/5L | 6W/6L | 6W/6L |
+
+It is a wash on record, and it trades: Syrtis `31337` flips to victory,
+Sludge Seraphim `2071971` flips to defeat. One win bought on the profile it was
+aimed at, one lost on the profile that was already healthy.
+
+**K/L fell in eleven of the twelve cells**, mean 2.39 to 1.28, two-sided sign
+test p = 0.006. That is not noise, and the direction is consistent across every
+profile including the one whose record improved.
+
+The reason is straightforward once stated: before this, Red Queen built no
+scouts at all, and the fraction is blind-scaled but never zero, so it now spends
+5 to 18% of production on scouts **everywhere** — including the maps where
+native FAF scouting was already sufficient and blindness sits at 15-31%. On
+those maps the spend buys nothing and costs army.
+
+The lever is correct and it does what it claims. Where it should be allowed to
+spend is a separate question, and the evidence says it should not be everywhere:
+confine it to maps where coverage is structurally short, rather than paying the
+tax on every profile to win one LandLarge cell.
+
+These are single samples per cell, so individual flips are not conclusive. The
+K/L direction across eleven of twelve is.
