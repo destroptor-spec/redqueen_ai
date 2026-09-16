@@ -36,6 +36,39 @@ EXPERIMENTALS = {
     'uel0401': 'Fatboy/siege', 'ues0401': 'Atlantis/support',
     'ueb2401': 'Mavor/siege', 'xeb2402': 'Novax/intel',
 }
+def objectives(text: str) -> dict:
+    """What the army was told to do, and how much of it Red Queen could command.
+
+    A win rate cannot tell a defence that cost nothing from one that emptied the
+    attack, and a dispatch total cannot tell an army that does not exist from
+    one Red Queen is not allowed to command. Both are in the state line.
+    """
+    states = [line for line in text.splitlines() if 'state objective=' in line]
+    pressure = re.findall(
+        r'primary=(\S+?)/([0-9.]+) secondary=(\S+?)/([0-9.]+) pressure=(\w+)', text)
+    held = sum(1 for row in pressure if row[4] == 'held')
+    yielded = sum(1 for row in pressure if row[4] == 'yielded')
+    idle = sum(1 for row in pressure if row[4] == 'idle')
+    census = re.findall(r'army=(\d+)/(\d+)/(\d+)', text)
+    unreachable = [int(a) - int(b) for a, b, _ in census]
+    changes = len(re.findall(r'strategy objective=\w+ kind=', text))
+    refused = len(re.findall(r'strategy objective-held ', text))
+    kinds = re.findall(r'secondary=(\w+)/', text)
+    return {
+        'samples': len(states),
+        'held': held,
+        'yielded': yielded,
+        'idle': idle,
+        'changes': changes,
+        'refused': refused,
+        'peak_owned': max((int(c[0]) for c in census), default=0),
+        'peak_available': max((int(c[2]) for c in census), default=0),
+        'unreachable': (sum(unreachable) / len(unreachable)) if unreachable else 0.0,
+        'defended': sum(1 for kind in kinds if kind != 'none'),
+    }
+
+
+
 RESULT = re.compile(r'\[RedQueen\]\[[A-Z]+\]\[army=(\d+)\] lifecycle game-result result=(\w+)')
 # Red Queen labels its own log lines with the army it is playing, which is the
 # only reliable way to find it among six armies. In a team match it is not
@@ -330,6 +363,7 @@ for name in paths:
         'mechanism': mechanisms(text),
         'extractors': extractors(text),
         'scouting': scouting(text),
+        'objectives': objectives(text),
     })
 
 if not groups:
@@ -377,6 +411,15 @@ for payload, mode in sorted(groups):
                       mechanism['engineers'], 100.0 * mechanism['pinned'],
                       ', %d builders suppressed' % mechanism['suppressed']
                       if mechanism['suppressed'] else ''))
+        obj = row['objectives']
+        if obj['samples']:
+            print('      objectives: %d changes, %d refused; pressure %dh/%dy/%di;'
+                  ' secondary filled in %d of %d samples' % (
+                      obj['changes'], obj['refused'], obj['held'], obj['yielded'],
+                      obj['idle'], obj['defended'], obj['samples']))
+            print('      army: peak owned %d, peak commandable %d,'
+                  ' mean beyond reach %.1f' % (
+                      obj['peak_owned'], obj['peak_available'], obj['unreachable']))
         mex = row['extractors']
         if mex['peak']:
             print('      extractors: peak %d of %d on the map (%.0f%%),'

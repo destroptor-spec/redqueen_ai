@@ -1046,4 +1046,23 @@ for lua_path in lua_files:
                 "raises 'loop over expected but got number'"
             )
 
+
+# `pressure=` is the figure the whole objective-slot design is judged on, and
+# the flag it used to print says only that the primary slot holds an offensive
+# objective -- nearly always true once the slots landed. PressureState derives
+# the honest answer from what was actually dispatched. It was once defined and
+# never called: the edit that wired the call site raised before it wrote, the
+# helper landed on its own, and the log kept printing the naive flag while a
+# commit message said otherwise.
+diagnostics_source = (ROOT / "lua/AI/RedQueen/Diagnostics.lua").read_text(encoding="utf-8")
+if "function PressureState(" not in diagnostics_source:
+    fail("Diagnostics must derive the pressure state rather than reporting a slot label")
+if "PressureState(strategy, slotDispatch)" not in diagnostics_source:
+    fail(
+        "the state line must call PressureState; a derived figure that is never "
+        "called leaves the log reporting the naive flag"
+    )
+if re.search(r'strategy\.PressureHeld and "held"', diagnostics_source):
+    fail("the naive pressure flag must not be printed alongside the derived one")
+
 print(f"Validated {len(lua_files)} Lua files and The Red Queen mod contract")

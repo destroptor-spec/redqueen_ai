@@ -10,7 +10,7 @@ local Experimentals = import("/mods/TheRedQueen/lua/AI/RedQueen/Experimentals.lu
 -- nothing on its own. An attack sent no units while the defence was sent some
 -- has yielded the pressure whatever the slot is labelled, and an army with
 -- nothing to send is neither holding nor yielding.
-local function PressureState(strategy, slotDispatch)
+function PressureState(strategy, slotDispatch)
     if not strategy.PressureHeld then
         return (slotDispatch.Secondary or 0) > 0 and "yielded" or "idle"
     end
@@ -166,7 +166,7 @@ Diagnostics = ClassSimple {
             slotDispatch.Primary or 0,
             secondary and tostring(secondary.Type) or "none",
             slotDispatch.Secondary or 0,
-            strategy.PressureHeld and "held" or "yielded",
+            PressureState(strategy, slotDispatch),
             combat.SecondaryClaimedThreat or 0,
             combat.SecondaryRequiredThreat or 0,
             combat.SecondaryUnmet and "/unmet" or "",
