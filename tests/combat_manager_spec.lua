@@ -1520,11 +1520,12 @@ local censusManager = Create(
     { Intel = { GetThreatNear = function() return 0 end }, ProductionDemand = {} }
 )
 
-local function CensusUnit(id, held)
+local function CensusUnit(id, held, garrison)
     return {
         EntityId = id,
         IsCombat = true,
         RedQueenOrderUntil = held and (GetGameTick() + 100) or nil,
+        RedQueenGarrisonUntil = garrison and (GetGameTick() + 100) or nil,
         GetPosition = function() return { 0, 0, 0 } end,
         GetBlueprint = function()
             return { CategoriesHash = { LAND = true, MOBILE = true, DIRECTFIRE = true },
@@ -1533,15 +1534,23 @@ local function CensusUnit(id, held)
     }
 end
 
-censusUnits = { CensusUnit(801, false), CensusUnit(802, false), CensusUnit(803, true) }
+censusUnits = { CensusUnit(801, false), CensusUnit(802, false), CensusUnit(803, true),
+    CensusUnit(804, false, true) }
 censusManager:GatherAvailableUnits()
 local census = censusManager.PoolCensus
 assert(census.Owned == 20, "every combat unit the army has must be counted")
-assert(census.Pooled == 3, "only the pooled ones are Red Queen's to command, got "
+assert(census.Pooled == 4, "only the pooled ones are Red Queen's to command, got "
     .. tostring(census.Pooled))
 assert(census.Available == 2,
-    "a unit inside an order hold is pooled but not available, got " .. tostring(census.Available))
-assert(census.Owned - census.Pooled == 17,
+    "a unit inside a hold is pooled but not available, got " .. tostring(census.Available))
+assert(census.Owned - census.Pooled == 16,
     "the gap between owned and pooled is what native platoons hold")
+
+-- The two holds are Red Queen's own and are answered differently: an order hold
+-- means the unit is already committed, a garrison hold means it is parked.
+assert(census.OrderHeld == 1, "an order hold must be counted as one, got "
+    .. tostring(census.OrderHeld))
+assert(census.GarrisonHeld == 1, "a garrison hold must be counted separately, got "
+    .. tostring(census.GarrisonHeld))
 
 print("Red Queen army census contracts passed")

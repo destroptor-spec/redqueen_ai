@@ -244,6 +244,7 @@ local function GuardBuilderPriority(builder)
             or current.RedQueenTierDisabled
             or current.RedQueenCapacityDisabled
             or current.RedQueenEngineerDisabled
+            or current.RedQueenFormationDisabled
         then
             local changed = current.Priority ~= 0
             current.Priority = 0
@@ -891,6 +892,75 @@ ProductionManager = ClassSimple {
     -- 15-20, and finished on 6 factories instead of 26. The ceiling therefore
     -- scales with what there is to feed and sits above the target, so the
     -- policy trims a runaway without capping growth.
+    -- Keep combat units in the pool, where Red Queen can command them.
+    --
+    -- Native platoon formation pulls units out of the ArmyPool into platoons of
+    -- its own, and every dispatch Red Queen makes reads that pool. Measured on
+    -- Fields of Isis: 57 combat units owned, 23 pooled, 7 available -- so the
+    -- objective system was steering about a tenth of the army while the rest
+    -- fought under native's orders.
+    --
+    -- Suppression is by builder priority, the same reversible lever the tier and
+    -- engineer policies already use: PlatoonFormManager forms nothing from a
+    -- builder whose Priority is below one.
+    --
+    -- Only builders whose template leads with a mobile combat unit. Engineer,
+    -- scout and support formations stay native's to run -- Red Queen has no
+    -- replacement for them -- and its own builders registered into this manager,
+    -- the tech-upgrade group among them, are left alone by name.
+    ApplyFormationPolicy = function(self)
+        local factionName = FactionNames[self.Context.FactionIndex] or "UEF"
+        local managers = self.Brain.BuilderManagers or {}
+        local locationTypes = {}
+        for locationType, _ in pairs(managers) do
+            table.insert(locationTypes, locationType)
+        end
+        table.sort(locationTypes)
+
+        local suppressed, seen = 0, 0
+        for _, locationType in pairs(locationTypes) do
+            local formManager = managers[locationType].PlatoonFormManager
+            if formManager and formManager.BuilderData then
+                local changed = false
+                for _, data in pairs(formManager.BuilderData) do
+                    for _, builder in pairs(data.Builders or {}) do
+                        local name = builder.BuilderName or ""
+                        local profile = BuilderProfile(builder, factionName)
+                        local combat = profile
+                            and not profile.Engineer
+                            and string.sub(name, 1, 9) ~= "Red Queen"
+                        if combat then
+                            seen = seen + 1
+                            if not builder.RedQueenFormationDisabled then
+                                GuardBuilderPriority(builder)
+                                builder.RedQueenFormationDisabled = true
+                                builder.RedQueenFormationPriority = builder.Priority
+                                if builder.SetPriority then
+                                    builder:SetPriority(0)
+                                else
+                                    builder.Priority = 0
+                                end
+                                changed = true
+                            end
+                            suppressed = suppressed + 1
+                        end
+                    end
+                end
+                if changed and formManager.SortBuilderList then
+                    formManager:SortBuilderList("Any")
+                end
+            end
+        end
+
+        local previous = self.FormationPolicy or {}
+        self.FormationPolicy = { Suppressed = suppressed, Combat = seen }
+        if (previous.Suppressed or 0) ~= suppressed then
+            Logger.Info(self.Brain, string.format(
+                "formation policy suppressed=%d combat-builders=%d", suppressed, seen))
+        end
+        return self.FormationPolicy
+    end,
+
     ApplyEngineerPolicy = function(self, counts)
         local demand = self.Strategy and self.Strategy.ProductionDemand
         local target = demand and demand.DesiredEngineers or 0
@@ -2863,6 +2933,7 @@ ProductionManager = ClassSimple {
         self:UpdateTierPolicy(factories)
         self:ApplyTierPolicy()
         self:ApplyEngineerPolicy(counts)
+        self:ApplyFormationPolicy()
         self:TryExpandFactoryCapacity(counts, targets)
         -- One ArmyPool walk per pass, shared by both engineer consumers.
         local unassigned, unassignedByEntityId = self:GetUnassignedEngineers()

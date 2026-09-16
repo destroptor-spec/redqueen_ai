@@ -2564,3 +2564,71 @@ assert(table.getn(coreOrders) == 1 and coreOrders[1].Target.EntityId == 77,
     "the commander must be put on the extractor that is upgrading")
 
 print("Red Queen core extractor upgrade contracts passed")
+
+-- Wrapped in a function: this chunk is already near Lua's 200-local
+-- limit, and a function body gets its own budget.
+local function FormationPolicyContracts()
+    -- Combat units must stay in the pool, where Red Queen can command them.
+    --
+    -- Native platoon formation pulls them into platoons of its own, and every
+    -- dispatch reads the pool. Measured: 57 owned, 23 pooled, 7 available, so the
+    -- objective system was steering about a tenth of the army.
+    local function FormBuilder(name, blueprintId, priority)
+        return {
+            BuilderName = name,
+            Priority = priority or 100,
+            GetPlatoonTemplate = function() return name .. "Template" end,
+            SetPriority = function(self, value) self.Priority = value end,
+            CalculatePriority = function() return false end,
+        }
+    end
+
+    local formBuilders = {
+        FormBuilder("Native Land Attack", "uel0201"),
+        FormBuilder("Native Engineer Assist", "uel0105"),
+        FormBuilder("Red Queen Tech Upgrade", "uel0201"),
+    }
+    local sortedLists = {}
+    local formManagers = {
+        MAIN = {
+            PlatoonFormManager = {
+                BuilderData = { Any = { Builders = formBuilders } },
+                SortBuilderList = function(_, listType) table.insert(sortedLists, listType) end,
+            },
+        },
+    }
+    PlatoonTemplates = {
+        ["Native Land AttackTemplate"] = { FactionSquads = { UEF = { { "uel0201" } } } },
+        ["Native Engineer AssistTemplate"] = { FactionSquads = { UEF = { { "uel0105" } } } },
+        ["Red Queen Tech UpgradeTemplate"] = { FactionSquads = { UEF = { { "uel0201" } } } },
+    }
+    __blueprints = {
+        uel0201 = { CategoriesHash = { MOBILE = true, LAND = true, DIRECTFIRE = true, TECH1 = true } },
+        uel0105 = { CategoriesHash = { MOBILE = true, LAND = true, ENGINEER = true, TECH1 = true } },
+    }
+
+    local formManager = Create(
+        { BuilderManagers = formManagers },
+        { FactionIndex = 1 }, { StartPosition = { 0, 0, 0 } }, { State = {} }, {},
+        { ProductionDemand = {} }
+    )
+    local policy = formManager:ApplyFormationPolicy()
+    assert(formBuilders[1].Priority == 0,
+        "a native combat formation must be suppressed so its units stay in the pool")
+    assert(formBuilders[2].Priority == 100,
+        "engineer formations stay native's to run: Red Queen has no replacement")
+    assert(formBuilders[3].Priority == 100,
+        "Red Queen's own builders in this manager must not be suppressed by it")
+    assert(policy.Suppressed == 1, "exactly the combat builder is suppressed, got "
+        .. tostring(policy.Suppressed))
+    assert(table.getn(sortedLists) > 0, "the manager must be re-sorted after a priority change")
+
+    -- The guard survives native's own priority recalculation.
+    formBuilders[1].Priority = 500
+    assert(formBuilders[1]:CalculatePriority() == true
+        or formBuilders[1].Priority == 0,
+        "a suppressed formation builder must be pinned at zero through recalculation")
+
+    print("Red Queen formation policy contracts passed")
+end
+FormationPolicyContracts()

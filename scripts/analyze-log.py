@@ -335,6 +335,17 @@ if census_samples:
         f"  units Red Queen cannot command (owned-pooled): "
         f"mean {sum(unreachable) / len(unreachable):.1f}, peak {max(unreachable)}"
     )
+HELD_SPLIT = re.compile(r"held=(\d+)/(\d+)")
+held_samples = [m for m in (HELD_SPLIT.search(l) for l in states) if m]
+if held_samples:
+    order_held = [int(m.group(1)) for m in held_samples]
+    garrison_held = [int(m.group(2)) for m in held_samples]
+    print(
+        f"  held by Red Queen itself: order mean "
+        f"{sum(order_held) / len(order_held):.1f} peak {max(order_held)}, "
+        f"garrison mean {sum(garrison_held) / len(garrison_held):.1f} "
+        f"peak {max(garrison_held)}"
+    )
 print(f"Objective changes: {len(objective_changes)}")
 for description, count in change_kinds.most_common(12):
     print(f"  {count:5d}  {description}")

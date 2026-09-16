@@ -423,7 +423,7 @@ CombatManager = ClassSimple {
     -- slot, while the army ran 26 factories and lost 27 land units a minute,
     -- and SelectTaskForce reported three units available. A total alone cannot
     -- say which of those three numbers is the small one.
-    CensusArmy = function(self, groups, pooled)
+    CensusArmy = function(self, groups, pooled, orderHeld, garrisonHeld)
         local owned = 0
         if self.Brain.GetCurrentUnits and categories then
             owned = self.Brain:GetCurrentUnits(
@@ -436,7 +436,16 @@ CombatManager = ClassSimple {
         for _, units in pairs(groups) do
             available = available + table.getn(units)
         end
-        self.PoolCensus = { Owned = owned, Pooled = pooled, Available = available }
+        -- Split by which hold is doing it. Both are Red Queen's own, and they
+        -- are answered differently: an order hold means a unit is already
+        -- committed, a garrison hold means it is parked on a site.
+        self.PoolCensus = {
+            Owned = owned,
+            Pooled = pooled,
+            Available = available,
+            OrderHeld = orderHeld or 0,
+            GarrisonHeld = garrisonHeld or 0,
+        }
         return self.PoolCensus
     end,
 
@@ -444,22 +453,28 @@ CombatManager = ClassSimple {
         local pool = self.Brain:GetPlatoonUniquelyNamed("ArmyPool")
         if not pool then
             local empty = { Land = {}, Amphibious = {}, Hover = {}, Air = {}, Water = {} }
-            self:CensusArmy(empty, 0)
+            self:CensusArmy(empty, 0, 0, 0)
             return empty
         end
 
         local tick = GetGameTick()
         local groups = { Land = {}, Amphibious = {}, Hover = {}, Air = {}, Water = {} }
-        local pooled = 0
+        local pooled, orderHeld, garrisonHeld = 0, 0, 0
         for _, unit in pairs(pool:GetPlatoonUnits()) do
             if IsCombatUnit(unit) then
                 pooled = pooled + 1
+                if unit.RedQueenOrderUntil and unit.RedQueenOrderUntil > tick then
+                    orderHeld = orderHeld + 1
+                end
+                if unit.RedQueenGarrisonUntil and unit.RedQueenGarrisonUntil > tick then
+                    garrisonHeld = garrisonHeld + 1
+                end
             end
             if AvailableForOrder(unit, tick) then
                 table.insert(groups[UnitLayer(unit)], unit)
             end
         end
-        self:CensusArmy(groups, pooled)
+        self:CensusArmy(groups, pooled, orderHeld, garrisonHeld)
         return groups
     end,
 
