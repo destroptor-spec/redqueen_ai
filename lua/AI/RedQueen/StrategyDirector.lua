@@ -223,6 +223,31 @@ end
 -- inside the weapon's reach, which is the right question for something that
 -- shoots from where it stands and the wrong one for something that flies to
 -- the fight.
+-- How much tier or project investment survives a threat at home.
+--
+-- A veto was the old answer and it was self-defeating: being raided is exactly
+-- when better tech is most needed, so forbidding it forbade the cure and kept
+-- the disease. Measured on Fields of Isis, thirty of forty-three samples could
+-- afford Tech 2 and none carried any weight for it. Removing the veto outright
+-- was worse -- that match ended in sixteen minutes instead of thirty-five --
+-- because it let tier spending compete with army production at the moment the
+-- army was being overrun. A throttle keeps the choice and makes it cost
+-- something.
+--
+-- Wealth lifts the throttle: an army far above the endgame gate can fund a
+-- project and its defence at once. So does being out-teched -- an enemy already
+-- a tier above us is the reason the raids are working, and matching them is the
+-- answer rather than a luxury to defer until they stop.
+local function PressureRetention(wealth, outteched)
+    local policy = Constants.Policy
+    local floor = policy.BaseDangerMinimumTierRetention
+    local retention = floor + (1 - floor) * Clamp(wealth or 0, 0, 1)
+    if outteched then
+        retention = retention + (1 - retention) * policy.OuttechedTierRelief
+    end
+    return Clamp(retention, 0, 1)
+end
+
 local function CanStrike(blueprint, firingLayer, targetLayer, distanceSquared, ranged)
     for _, weapon in ipairs(blueprint.Weapon or {}) do
         local caps = weapon.FireTargetLayerCapsTable or {}
@@ -1463,6 +1488,10 @@ StrategyDirector = ClassSimple {
             if picture.EnemyTech >= 2 then tech2 = tech2 + 25 end
             if demand.Doctrine ~= "Balanced" and forces.T2Factories == 0 then tech2 = tech2 + 15 end
             if lossPressure then tech2 = tech2 - 10 end
+            -- Throttled by the threat at home rather than forbidden by it.
+            if baseDanger then
+                tech2 = tech2 * PressureRetention(wealth, picture.EnemyTech >= 2)
+            end
         end
 
         -- Tech 3 is deliberately not gated on baseDanger. Local threat is the
@@ -1515,6 +1544,12 @@ StrategyDirector = ClassSimple {
             if picture.HasReachableTarget then experimental = experimental + 10 end
             if airThreat > math.max(10, surfaceThreat * 0.75) then
                 experimental = experimental - 25
+            end
+            -- Same throttle as the tier above. An enemy already fielding
+            -- experimentals is the out-teched case here.
+            if baseDanger then
+                experimental = experimental
+                    * PressureRetention(wealth, (picture.Experimentals or 0) > 0)
             end
         end
 

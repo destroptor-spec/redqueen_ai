@@ -65,6 +65,10 @@ Policy = {
     -- How much health the commander must have lost before an alert anchored on
     -- it counts as an emergency. Proximity is not danger: the ACU stands in the
     -- main base, so every attack on the base anchors there.
+    -- What survives of tier and project investment while the base is threatened.
+    -- A poor army keeps the floor; wealth lifts it, and so does being out-teched.
+    BaseDangerMinimumTierRetention = 0.35,
+    OuttechedTierRelief = 0.75,
     CommanderEmergencyHealthFraction = 0.75,
     MinimumSecondaryCeiling = 0.20,
     MaximumSecondaryFraction = 0.60,

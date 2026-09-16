@@ -71,6 +71,8 @@ local constants = {
         ObjectiveInterruptPriorityGap = 15,
         CommitmentThreatRatio = 1.10,
         CommitmentThreatRadius = 60,
+        BaseDangerMinimumTierRetention = 0.35,
+        OuttechedTierRelief = 0.75,
         CommanderEmergencyHealthFraction = 0.75,
         MinimumSecondaryCeiling = 0.20,
         MaximumSecondaryFraction = 0.60,
@@ -1200,11 +1202,62 @@ director.DefenseAlert.Active = false
 director.Context.VictoryCondition = "Annihilation"
 ownForces.MissingT2Coverage = 2
 localThreat = 1000
+local previousEnemyTech = strategicPicture.EnemyTech
+strategicPicture.EnemyTech = 1
 director:UpdateStrategicFocus({ Type = "Raid" }, { Count = 0, Mass = 0 }, 10, 5)
 assert(director.ProductionDemand.FocusWeights.Tech2 > 0,
     "a raid at home must not veto the tier that answers it")
 assert(director.ProductionDemand.FocusWeights.Experimental > 0,
     "a raid at home must not veto a project the army can afford")
+
+-- But it is a throttle, not an exemption. Removing the veto outright let tier
+-- spending compete with army production while the army was being overrun, and
+-- that match ended in sixteen minutes instead of thirty-five.
+local previousWealthIncome = economy.State.MassIncome
+economy.State.MassIncome = 11
+localThreat = 0
+director:UpdateStrategicFocus({ Type = "Raid" }, { Count = 0, Mass = 0 }, 10, 5)
+local calmTech2 = director.ProductionDemand.FocusWeights.Tech2
+localThreat = 1000
+director:UpdateStrategicFocus({ Type = "Raid" }, { Count = 0, Mass = 0 }, 10, 5)
+local raidedTech2 = director.ProductionDemand.FocusWeights.Tech2
+assert(raidedTech2 < calmTech2,
+    "a raid at home must still cost tier investment something, got "
+        .. tostring(raidedTech2) .. " against " .. tostring(calmTech2))
+
+-- Wealth lifts the throttle: an army far above the gate funds both at once.
+economy.State.MassIncome = 60
+director:UpdateStrategicFocus({ Type = "Raid" }, { Count = 0, Mass = 0 }, 10, 5)
+assert(director.ProductionDemand.FocusWeights.Tech2 > raidedTech2,
+    "wealth must lift the throttle on tier investment under pressure")
+economy.State.MassIncome = 11
+
+-- And so does being out-teched. An enemy already at Tech 2 is why the raids are
+-- working; matching them is the answer, not a luxury to defer until they stop.
+strategicPicture.EnemyTech = 2
+director:UpdateStrategicFocus({ Type = "Raid" }, { Count = 0, Mass = 0 }, 10, 5)
+local outtechedTech2 = director.ProductionDemand.FocusWeights.Tech2
+assert(outtechedTech2 > raidedTech2,
+    "discovering the enemy at Tech 2 must raise Tech 2's importance, got "
+        .. tostring(outtechedTech2) .. " against " .. tostring(raidedTech2))
+assert(outtechedTech2 >= constants.Policy.StrategicFocusMinimumScore,
+    "being out-teched while raided must actually clear the investment threshold, got "
+        .. tostring(outtechedTech2))
+-- The bump is independent of the throttle: seeing the enemy at Tech 2 raises
+-- Tech 2's importance whether or not anything is threatening our base.
+localThreat = 0
+strategicPicture.EnemyTech = 1
+director:UpdateStrategicFocus({ Type = "Raid" }, { Count = 0, Mass = 0 }, 10, 5)
+local calmBehind = director.ProductionDemand.FocusWeights.Tech2
+strategicPicture.EnemyTech = 2
+director:UpdateStrategicFocus({ Type = "Raid" }, { Count = 0, Mass = 0 }, 10, 5)
+assert(director.ProductionDemand.FocusWeights.Tech2 > calmBehind,
+    "an observed enemy at Tech 2 must raise Tech 2's weight on its own, got "
+        .. tostring(director.ProductionDemand.FocusWeights.Tech2)
+        .. " against " .. tostring(calmBehind))
+localThreat = 1000
+strategicPicture.EnemyTech = previousEnemyTech
+economy.State.MassIncome = previousWealthIncome
 
 -- Under a real alert the weight is taxed, not zeroed, and wealth lifts the tax.
 director.DefenseAlert.Active = true
