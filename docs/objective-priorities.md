@@ -430,3 +430,46 @@ which is the state `baseDanger` forbids. None of them exist yet either:
 
 So the order is: make investment legal under pressure, then give it something to
 buy.
+
+
+## Investment under pressure: four builds, one cell
+
+Fields of Isis, seed 31337, Red Queen Aeon against adaptive Cybran. One match
+per build, so survival time is not a reliable discriminator — the same seed
+produced 15 to 42 minutes across these four. The investment rate is a direct
+measure of the mechanism and is reliable.
+
+| build | samples | samples with T2 weight | extractors, final | ended |
+| --- | --- | --- | --- | --- |
+| slots (step 3) | 35 | 1 (2%) | 6 / 44 | defeat, 35 min |
+| commander veto fixed | 43 | 1 (2%) | 2 / 44 | defeat, 42 min |
+| `baseDanger` ungated | 16 | 3 (18%) | 7 / 44 | defeat, **15 min** |
+| `baseDanger` throttled | 31 | **10 (32%)** | 7 / 44 | defeat, 30 min |
+
+Ungating outright was the worst outcome: tier spending competed with army
+production while the army was being overrun and the match ended in fifteen
+minutes. The throttle keeps the investment and recovers the survival time.
+
+Under an active alert the throttled Tech 2 weight lands at 37 to 43 against a
+threshold of 35 — the out-teched relief is what carries it over the line, and
+without that relief a poor raided army keeps only the 0.35 floor and stays on
+army. Tier policy reached `L2` in 24 of 31 samples, having never left `L1` under
+the veto.
+
+**What it did not fix.** Extractors follow the same curve in every build: peak
+18 at sample 8, collapse to 5-7 by sample 18, flat thereafter. Red Queen was
+out-built 91k to 242k. Permission to invest was necessary and is not
+sufficient, because there is still nothing to spend it on:
+
+| capability | status |
+| --- | --- |
+| mass fabricators | absent |
+| mass storage / adjacency | absent |
+| energy storage | absent |
+| extractor upgrades T1→T2→T3 | absent |
+| SACUs | one build condition, capped at six |
+| `Cover expansion` | missing |
+
+The experimental throttle is still untested: `X` weight was zero in all four
+builds, because the experimental gate also needs `T3Factories > 0` and no run
+reached Tech 3.
