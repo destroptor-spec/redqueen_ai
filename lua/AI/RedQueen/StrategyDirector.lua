@@ -1442,9 +1442,17 @@ StrategyDirector = ClassSimple {
             army = army + 15
         end
 
+        -- Tech 2 is not gated on baseDanger, for the same reason Tech 3 is not.
+        --
+        -- It used to be, and that is what a contested midgame costs: a couple of
+        -- raiders within a hundred of the base is `localThreat >= 25`, which
+        -- held on Fields of Isis from the tenth sample to the end of the match.
+        -- Thirty of forty-three samples could afford Tech 2 and not one of them
+        -- carried any Tech 2 weight. Tier 2 is also the cheap answer to being
+        -- raided -- better point defence, better extractors -- so vetoing it
+        -- while raided forbids the cure and keeps the disease.
         local tech2 = 0
-        if not baseDanger
-            and forces.MissingT2Coverage > 0
+        if forces.MissingT2Coverage > 0
             and CanAfford(
                 state,
                 Constants.Policy.Tech2MinimumMassIncome,
@@ -1478,8 +1486,21 @@ StrategyDirector = ClassSimple {
         end
 
         local experimental = 0
-        if not baseDanger
-            and forces.T3Factories > 0
+        -- Nor is the experimental weight, and this one mattered most.
+        --
+        -- The alert branch below taxes this weight by severity and wealth
+        -- rather than zeroing it -- a mechanism added precisely because a
+        -- binary veto once held an army at zero experimental weight for all
+        -- thirty of its alert samples. While baseDanger zeroed the weight here,
+        -- that tax multiplied zero and could never fire: it was dead code in
+        -- exactly the case it was built for. Measured on Fields of Isis, the
+        -- experimental weight was zero in all forty-three samples while the
+        -- match ended on 27.8 mass, 828 energy and Tech 3 tier policy.
+        --
+        -- The throttle is the tax, not the veto. A poor army under a real alert
+        -- still keeps only the retention floor; a rich one keeps its project,
+        -- which is the difference between defending a siege and losing to one.
+        if forces.T3Factories > 0
             and forces.T3Engineers > 0
             and CanAfford(
                 state,
@@ -1503,6 +1524,10 @@ StrategyDirector = ClassSimple {
                 or picture.HasUnreachableTarget
                 or picture.Experimentals > 0
                 or picture.Nukes > 0)
+        -- The nuke gate keeps baseDanger deliberately. Tier and experimental
+        -- investment were measured losing matches; a nuke answering a raid on
+        -- our own base was not measured at all, and is not obviously the right
+        -- response to one. Changing it needs its own evidence.
         if not baseDanger
             and nukeOpportunity
             and picture.StrategicDefense < 0.5

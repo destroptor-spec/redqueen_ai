@@ -1183,6 +1183,50 @@ local previousCommanders = commanderUnits
 director.Context.VictoryCondition = "Assassination"
 director.DefenseAlert.AnchorKind = "Commander"
 
+-- A raid at home must not forbid the investment that answers it.
+--
+-- `baseDanger` is localThreat >= 25 -- a couple of raiders within a hundred of
+-- the base -- and it used to zero the Tech 2 and experimental weights where
+-- they are computed, upstream of everything. Measured on Fields of Isis: thirty
+-- of forty-three samples could afford Tech 2 and none carried any Tech 2
+-- weight, and the experimental weight was zero in all forty-three while the
+-- match ended on 27.8 mass, 828 energy and Tech 3 tier policy. The tax below
+-- exists to throttle this; while the weight was already zero it multiplied zero
+-- and could never fire.
+local previousAlertActive = director.DefenseAlert.Active
+local previousLocal3 = localThreat
+local previousMissingT2 = ownForces.MissingT2Coverage
+director.DefenseAlert.Active = false
+director.Context.VictoryCondition = "Annihilation"
+ownForces.MissingT2Coverage = 2
+localThreat = 1000
+director:UpdateStrategicFocus({ Type = "Raid" }, { Count = 0, Mass = 0 }, 10, 5)
+assert(director.ProductionDemand.FocusWeights.Tech2 > 0,
+    "a raid at home must not veto the tier that answers it")
+assert(director.ProductionDemand.FocusWeights.Experimental > 0,
+    "a raid at home must not veto a project the army can afford")
+
+-- Under a real alert the weight is taxed, not zeroed, and wealth lifts the tax.
+director.DefenseAlert.Active = true
+director.DefenseAlert.AnchorKind = "Base"
+director.DefenseAlert.Severity = 4
+local previousIncome = economy.State.MassIncome
+economy.State.MassIncome = 30
+director:UpdateStrategicFocus({ Type = "Raid" }, { Count = 0, Mass = 0 }, 10, 5)
+local wealthyWeight = director.ProductionDemand.FocusWeights.Experimental
+assert(wealthyWeight > 0,
+    "a wealthy army under alert must keep a project it can fund alongside its defence")
+economy.State.MassIncome = 11
+director:UpdateStrategicFocus({ Type = "Raid" }, { Count = 0, Mass = 0 }, 10, 5)
+assert(director.ProductionDemand.FocusWeights.Experimental < wealthyWeight,
+    "a poorer army under the same alert must be taxed harder, or the tax is not a tax")
+economy.State.MassIncome = previousIncome
+localThreat = previousLocal3
+ownForces.MissingT2Coverage = previousMissingT2
+director.DefenseAlert.Active = previousAlertActive
+director.Context.VictoryCondition = "Assassination"
+director.DefenseAlert.AnchorKind = "Commander"
+
 -- A healthy commander with an enemy in the base is a siege, not an emergency.
 commanderUnits = {
     { Dead = false, GetPosition = function() return { 0, 0, 0 } end,
