@@ -179,6 +179,29 @@ for index, line in enumerate(lines):
 starts = [line for line in red_queen if " started version=" in line]
 contracts = [line for line in red_queen if "income contract" in line]
 states = [line for line in red_queen if "state objective=" in line]
+
+# Objective slots. `pressure=yielded` counts the samples where a protective
+# objective held the whole army, which is the failure the two-slot design
+# exists to remove; `objective-held` counts the times a change was refused,
+# which is the walk-back-and-forth this AI used to do and must not resume.
+PRESSURE = re.compile(r"primary=(\S+?)/([0-9.]+) secondary=(\S+?)/([0-9.]+) pressure=(\w+)")
+OBJECTIVE_CHANGE = re.compile(
+    r"strategy objective=(\w+) kind=(\w+) slot=(\w+) priority=(-?\d+) layer=(\w+) from=(\S+)"
+)
+OBJECTIVE_HELD = re.compile(
+    r"strategy objective-held current=(\S+) wanted=(\S+) reason=(\S+)"
+)
+pressure_samples = [PRESSURE.search(line) for line in states]
+pressure_samples = [m for m in pressure_samples if m]
+pressure_yielded = [m for m in pressure_samples if m.group(5) == "yielded"]
+primary_kinds = Counter(m.group(1) for m in pressure_samples)
+secondary_kinds = Counter(m.group(3) for m in pressure_samples if m.group(3) != "none")
+objective_changes = [m for m in (OBJECTIVE_CHANGE.search(l) for l in red_queen) if m]
+change_kinds = Counter(f"{m.group(6)} -> {m.group(1)}/{m.group(2)} [{m.group(3)}]"
+                       for m in objective_changes)
+objective_holds = [m for m in (OBJECTIVE_HELD.search(l) for l in red_queen) if m]
+hold_reasons = Counter(f"{m.group(3)}: {m.group(1)} kept over {m.group(2)}"
+                       for m in objective_holds)
 defense_started = [line for line in red_queen if "defense alert started" in line]
 tier_policies = [line for line in red_queen if "tier policy " in line]
 forward_started = [line for line in red_queen if "forward base started" in line]
@@ -250,6 +273,21 @@ print(f"Brains started: {len(starts)}")
 print(f"Income contracts: {len(contracts)}")
 print(f"State samples: {len(states)}")
 print(f"Defense alerts raised: {len(defense_started)}")
+if pressure_samples:
+    held = len(pressure_samples) - len(pressure_yielded)
+    print(
+        f"Pressure: {held}/{len(pressure_samples)} samples held, "
+        f"{len(pressure_yielded)} yielded "
+        f"({100.0 * len(pressure_yielded) / len(pressure_samples):.1f}% of samples)"
+    )
+    print(f"  primary slot:   {dict(primary_kinds)}")
+    print(f"  secondary slot: {dict(secondary_kinds) or 'never filled'}")
+print(f"Objective changes: {len(objective_changes)}")
+for description, count in change_kinds.most_common(12):
+    print(f"  {count:5d}  {description}")
+print(f"Objective changes refused: {len(objective_holds)}")
+for description, count in hold_reasons.most_common(8):
+    print(f"  {count:5d}  {description}")
 print(f"Tier policy changes: {len(tier_policies)}")
 print(
     f"Forward bases: {len(forward_started)} started, "
