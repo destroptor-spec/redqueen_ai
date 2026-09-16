@@ -275,6 +275,39 @@ Before reading the LandLarge result as a property of the code, re-run those four
 cells at a second seed each. If they hold, the economy figures above are where
 to look, not the combat ones.
 
+**Re-run 2026-09-16: they hold.** Each LandLarge map was run at two further
+seeds, `2071971` and `5772156`, same faction and opponent, same payload.
+
+| Map | Seed | Result | K/L | Opp K/L | mean blind |
+| --- | --- | --- | --- | --- | --- |
+| Fields of Isis | 8675309 | defeat | 1.18 | 0.77 | 66% |
+| Fields of Isis | 31337 | defeat | 1.03 | 0.92 | 55% |
+| Fields of Isis | 2071971 | defeat | 0.45 | 2.08 | 63% |
+| Fields of Isis | 5772156 | defeat | 0.42 | 2.21 | 58% |
+| Syrtis Major | 8675309 | defeat | 0.86 | 1.13 | 56% |
+| Syrtis Major | 31337 | defeat | 0.73 | 1.27 | 56% |
+| Syrtis Major | 2071971 | defeat | – | – | 65% |
+| Syrtis Major | 5772156 | defeat | 0.42 | 2.33 | 67% |
+
+**0W/8L over four seeds on two maps.** This is not seed variance. The two fresh
+seeds are also the worse half: K/L 0.42-0.45 against an opponent trading at
+2.08-2.33, where the original pair read 0.73-1.18. The first four cells were
+flattering, not unlucky.
+
+The discriminator is vision, and it is present in every cell: mean blind
+**55-67%** on LandLarge against 15-31% on Naval and LandSmall, with no overlap
+between the two groups. Scout orders are not the shortfall — Syrtis issues 86 to
+175 of them — so the army is looking and still cannot see, which points at
+coverage per observer and map size rather than at dispatch.
+
+Whether this is a regression or a pre-existing weakness the baseline's two wins
+masked cannot be settled from four baseline samples. It does not need to be: on
+eight samples the current code does not win this profile at all, and that fails
+the gate either way.
+
+One cell, Syrtis `2071971`, recorded its result but no end-of-match statistics,
+so its K/L is absent above rather than zero.
+
 ## Runner note
 
 `run-matrix.sh` does not terminate. The match reaches `GameEnded` and the client
