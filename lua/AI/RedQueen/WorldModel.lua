@@ -73,6 +73,39 @@ local function ClusterMassMarkers(markers, count, clusterRadius)
 end
 
 ---@class RedQueenWorldModel
+-- What a player sitting in the lobby would know about where everyone spawned.
+--
+-- `TeamSpawn` is the host's choice. `fixed` puts everyone on a slot-determined
+-- start and the `*_reveal` variants randomise but show the result, so in both
+-- cases every player can see every start position and Red Queen may read them
+-- directly. Plain `random`, `balanced` and `balanced_flex` do not: a player
+-- knows the map's start locations but not who is standing on which, and
+-- neither should we.
+--
+-- Absent means fixed. That is FAF's default and what a command-line skirmish
+-- gets, so reading nothing must not silently blind the brain.
+local RevealedSpawns = {
+    fixed = true,
+    random_reveal = true,
+    balanced_reveal = true,
+    balanced_reveal_mirrored = true,
+    balanced_flex_reveal = true,
+}
+
+-- A start position's identity, stable across rebuilds.
+local function StartKey(position)
+    return string.format("%d:%d", position[1], position[3])
+end
+
+local function SpawnsRevealed()
+    local options = ScenarioInfo and ScenarioInfo.Options
+    local spawn = options and options.TeamSpawn
+    if spawn == nil then
+        return true
+    end
+    return RevealedSpawns[spawn] or false
+end
+
 WorldModel = ClassSimple {
     __init = function(self, brain, context)
         self.Brain = brain
@@ -173,24 +206,66 @@ WorldModel = ClassSimple {
             return a.Name < b.Name
         end)
 
+        -- Where the enemy is, in two tiers.
+        --
+        -- The positions are always kept: they are where an army can spawn, and
+        -- something has to be scouted. What the lobby controls is whether we
+        -- also know who is standing on each one. `Known` is that distinction,
+        -- and it is what separates a place worth looking at from a place worth
+        -- attacking.
+        --
+        -- Resolved starts survive every rebuild. Every intel record decays at
+        -- IntelLifetimeSeconds; a base does not stop being there because
+        -- nothing has looked at it lately.
+        self.SpawnsRevealed = SpawnsRevealed()
+        self.ResolvedStarts = self.ResolvedStarts or {}
         self.EnemyStarts = {}
+
+        local candidates = {}
         for _, armyIndex in pairs(self.Context.EnemyArmies) do
             local enemyBrain = ArmyBrains[armyIndex]
             if enemyBrain then
                 local x, z = enemyBrain:GetArmyStartPos()
-                table.insert(self.EnemyStarts, {
+                table.insert(candidates, {
                     Army = armyIndex,
                     Position = { x, GetSurfaceHeight(x, z), z },
                 })
             end
         end
 
+        if self.SpawnsRevealed then
+            for _, candidate in ipairs(candidates) do
+                table.insert(self.EnemyStarts, {
+                    Army = candidate.Army,
+                    Position = candidate.Position,
+                    Known = true,
+                })
+            end
+        else
+            -- Which enemy holds which start is hidden, so the attribution is
+            -- dropped. Sorting by distance from home is the useful scouting
+            -- order and also destroys the positional correspondence a caller
+            -- could otherwise read the army index back out of.
+            local home = self.StartPosition
+            table.sort(candidates, function(a, b)
+                return DistanceSquared(home, a.Position) < DistanceSquared(home, b.Position)
+            end)
+            for _, candidate in ipairs(candidates) do
+                table.insert(self.EnemyStarts, {
+                    Position = candidate.Position,
+                    Known = self.ResolvedStarts[StartKey(candidate.Position)] or false,
+                })
+            end
+        end
+
         Logger.Info(self.Brain, string.format(
-            "map type=%s size=%dkm water=%.2f massClusters=%d",
+            "map type=%s size=%dkm water=%.2f massClusters=%d spawns=%s starts=%d",
             self.MapType,
             self.MapKilometers,
             self.WaterRatio,
-            table.getn(self.MassClusters)
+            table.getn(self.MassClusters),
+            self.SpawnsRevealed and "revealed" or "hidden",
+            table.getn(self.EnemyStarts)
         ))
     end,
 
@@ -261,14 +336,52 @@ WorldModel = ClassSimple {
         return best
     end,
 
+    -- Only bases we are entitled to know about. With revealed spawns that is
+    -- all of them from the first tick; with hidden spawns it is the ones
+    -- something of ours has actually seen.
+    -- Learn which start the enemy is actually on when the lobby did not say.
+    --
+    -- A structure is the evidence: mobile units travel, buildings do not. The
+    -- resolution is recorded permanently and separately from EnemyStarts,
+    -- because the observation that produced it will decay and the base will
+    -- not. With revealed spawns this does nothing -- everything is known
+    -- already.
+    ResolveEnemyBases = function(self, intel)
+        if self.SpawnsRevealed or not intel or not intel.Observations then
+            return 0
+        end
+        local radius = Constants.Policy.EnemyBaseDiscoveryRadius
+        local resolved = 0
+        for _, observation in pairs(intel.Observations) do
+            local role = observation.Role
+            if role and role.Structure and observation.Position then
+                for _, enemy in ipairs(self.EnemyStarts) do
+                    if not enemy.Known
+                        and DistanceSquared(enemy.Position, observation.Position) <= radius * radius
+                    then
+                        enemy.Known = true
+                        self.ResolvedStarts[StartKey(enemy.Position)] = true
+                        resolved = resolved + 1
+                        Logger.Info(self.Brain, string.format(
+                            "enemy base resolved position=%.0f,%.0f",
+                            enemy.Position[1], enemy.Position[3]))
+                    end
+                end
+            end
+        end
+        return resolved
+    end,
+
     GetClosestEnemyStart = function(self, origin, layer)
         local best = nil
         local bestDistance = nil
         for _, enemy in pairs(self.EnemyStarts) do
+            if enemy.Known ~= false then
             local distance = DistanceSquared(origin, enemy.Position)
             if (not bestDistance or distance < bestDistance) and self:CanPath(layer or "Land", origin, enemy.Position) then
                 best = enemy.Position
                 bestDistance = distance
+            end
             end
         end
         return best

@@ -51,6 +51,7 @@ local constants = {
         ForwardBaseSiteRadius = 60,
         UnknownRoutePresumedThreat = 30,  -- spec keeps the shipping value
         RouteCoverageConfidenceForFull = 1.0,
+        EnemyBaseDiscoveryRadius = 60,
     },
 }
 local logger = { Info = function() end }
@@ -293,5 +294,101 @@ assert(not world:GetNavalApproach(world.StartPosition, enemyStart),
 assert(not world:GetNavalApproach(nil, enemyStart), "a missing origin must not select an approach")
 
 navUtils.CanPathTo = function() return true end
+
+
+-- Where the enemy lives, in two tiers.
+--
+-- A player in the lobby sees every start position unless the host hid them,
+-- and once a scout has found a base that player does not forget it when the
+-- scout dies. Both halves are contracts: what may be read for free, and what
+-- must survive the intel that produced it.
+ArmyBrains[7] = { GetArmyStartPos = function() return 800, 800 end }
+ArmyBrains[8] = { GetArmyStartPos = function() return 200, 100 end }
+local function EnemyWorld()
+    return Create(brain, { EnemyArmies = { 7, 8 } })
+end
+
+ScenarioInfo.Options = nil
+local revealed = EnemyWorld()
+assert(revealed.SpawnsRevealed, "an absent TeamSpawn is fixed spawns, not hidden ones")
+assert(table.getn(revealed.EnemyStarts) == 2, "revealed spawns must yield every enemy start")
+for _, enemy in ipairs(revealed.EnemyStarts) do
+    assert(enemy.Known, "a revealed start is known from the first tick")
+    assert(enemy.Army, "a revealed start carries its army, as the lobby showed it")
+end
+assert(revealed:GetClosestEnemyStart(revealed.StartPosition)[1] == 200,
+    "a known start must be offered as a destination")
+
+for _, option in ipairs({ "fixed", "random_reveal", "balanced_reveal",
+    "balanced_reveal_mirrored", "balanced_flex_reveal" }) do
+    ScenarioInfo.Options = { TeamSpawn = option }
+    assert(EnemyWorld().SpawnsRevealed, option .. " shows every start in the lobby")
+end
+
+for _, option in ipairs({ "random", "balanced", "balanced_flex" }) do
+    ScenarioInfo.Options = { TeamSpawn = option }
+    assert(not EnemyWorld().SpawnsRevealed, option .. " hides who spawned where")
+end
+
+ScenarioInfo.Options = { TeamSpawn = "random" }
+local hidden = EnemyWorld()
+-- The positions are public map data -- an army can spawn there. Keeping them
+-- is what gives scouting somewhere to go; CombatManager builds its scout
+-- candidates straight off this list, so emptying it would blind the AI exactly
+-- when it has the most to find out.
+assert(table.getn(hidden.EnemyStarts) == 2,
+    "hidden spawns must still offer every start as a place to look")
+for _, enemy in ipairs(hidden.EnemyStarts) do
+    assert(not enemy.Known, "nothing is known before anything has been seen")
+    assert(not enemy.Army, "which enemy holds which start is not ours to read")
+end
+assert(hidden.EnemyStarts[1].Position[1] == 200,
+    "candidates are ordered by distance from home, not by army index")
+assert(not hidden:GetClosestEnemyStart(hidden.StartPosition),
+    "an unresolved start is a place to scout, not a place to attack")
+
+-- A mobile unit proves nothing: it travelled to where it was seen.
+local intel = { Observations = {
+    mover = { Position = { 800, 0, 800 }, Role = { Structure = false } },
+} }
+assert(hidden:ResolveEnemyBases(intel) == 0, "a mobile unit must not resolve a base")
+assert(not hidden:GetClosestEnemyStart(hidden.StartPosition),
+    "seeing a tank must not hand us a base position")
+
+-- Nor does a structure standing somewhere that is not a start.
+intel.Observations.outpost = { Position = { 500, 0, 500 }, Role = { Structure = true } }
+assert(hidden:ResolveEnemyBases(intel) == 0,
+    "a structure away from every start resolves no start")
+
+-- A structure on a start does.
+intel.Observations.factory = { Position = { 820, 0, 790 }, Role = { Structure = true } }
+assert(hidden:ResolveEnemyBases(intel) == 1, "an observed structure resolves that start")
+assert(hidden:GetClosestEnemyStart(hidden.StartPosition)[1] == 800,
+    "a resolved start must be offered as a destination")
+assert(hidden:ResolveEnemyBases(intel) == 0, "an already-resolved start resolves once")
+
+-- The other start is still unknown, and still worth scouting.
+assert(table.getn(hidden.EnemyStarts) == 2, "resolving one start must not drop the others")
+
+-- The observation decays at IntelLifetimeSeconds. The base does not.
+intel.Observations = {}
+hidden:ResolveEnemyBases(intel)
+local afterDecay = hidden:GetClosestEnemyStart(hidden.StartPosition)
+assert(afterDecay and afterDecay[1] == 800,
+    "a resolved start must outlive the intel that produced it")
+hidden:Rebuild()
+local afterRebuild = hidden:GetClosestEnemyStart(hidden.StartPosition)
+assert(afterRebuild and afterRebuild[1] == 800,
+    "a resolved start must survive a world rebuild")
+
+-- With the lobby showing the spawns there is nothing to learn.
+ScenarioInfo.Options = { TeamSpawn = "fixed" }
+local open = EnemyWorld()
+assert(open:ResolveEnemyBases({ Observations = {
+    x = { Position = { 800, 0, 800 }, Role = { Structure = true } },
+} }) == 0, "revealed spawns have nothing left to resolve")
+ScenarioInfo.Options = nil
+ArmyBrains[7] = nil
+ArmyBrains[8] = nil
 
 print("Red Queen world model contracts passed")

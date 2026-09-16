@@ -167,6 +167,15 @@ local world = {
         return { 100, 0, 100 }
     end,
     CanPath = function() return true end,
+    -- Counted, not merely tolerated: the director is the only thing holding
+    -- both the world and the intel, so if it stops calling this the AI simply
+    -- never learns where a hidden enemy lives.
+    ResolveEnemyBaseCalls = 0,
+    ResolveEnemyBases = function(self, intel)
+        assert(intel, "base resolution must be handed the intel it reads")
+        self.ResolveEnemyBaseCalls = self.ResolveEnemyBaseCalls + 1
+        return 0
+    end,
 }
 local strategicPicture = {
     EnemyTech = 1,
@@ -251,6 +260,8 @@ local ownForces = {
 director.GetOwnForces = function() return ownForces end
 
 director:Update()
+assert(world.ResolveEnemyBaseCalls == 1,
+    "every update must fold what has been seen into standing knowledge")
 assert(director.CurrentObjective.Type == "Pressure", "public enemy starts must enable immediate pressure")
 assert(table.getn(published) == 1, "timer-free pressure must be shared with allies")
 assert(brain.TransportRequested, "an exposed economy target must request transport capacity immediately")

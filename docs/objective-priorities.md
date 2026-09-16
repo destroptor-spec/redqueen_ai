@@ -151,11 +151,30 @@ accepts, and should be seen doing.
 
 ## Build order
 
-1. **The standing enemy-base fact**, gated on `ScenarioInfo.Options.TeamSpawn`.
-   Usable directly when spawns are `fixed` or `*_reveal`; otherwise learned once
-   by observation and never expired, unlike every other intel record which
-   decays at `IntelLifetimeSeconds`. Small, testable without a match, and it
-   gives `Pressure` somewhere real to terminate instead of a fallback waypoint.
+1. ~~**The standing enemy-base fact**~~ — done. Gated on
+   `ScenarioInfo.Options.TeamSpawn`: `fixed` and the three `*_reveal` variants
+   are read directly, and an absent option means fixed, because that is FAF's
+   default and what a command-line skirmish gets. Everything else is learned by
+   observing an enemy **structure** within `EnemyBaseDiscoveryRadius` (60) of a
+   start, and recorded in `WorldModel.ResolvedStarts`, which does not decay with
+   the observation that produced it.
+
+   The design changed once during the build. The plan above said hidden spawns
+   should leave `GetClosestEnemyStart` empty, but `CombatManager:ScoutCandidates`
+   builds its scout destinations straight off `EnemyStarts` — so emptying that
+   list would have stopped Red Queen scouting toward enemy starts exactly when
+   she has the most to find out. The shipped version keeps **two tiers**: every
+   start stays in the list as a place to look, and `Known` decides whether it is
+   also a place to attack. Under hidden spawns the army attribution is dropped
+   and the candidates are sorted by distance from home, which is both the useful
+   scouting order and a way of not leaking the army index back out through list
+   position.
+
+   Verified by eleven mutations against `tests/world_model_spec.lua` and
+   `tests/strategy_director_spec.lua`, all caught. A smoke run on SCMP_007
+   records `spawns=revealed starts=5` with five brains and no errors. The hidden
+   path has contract cover only: no matrix map uses hidden spawns, so it is
+   untested in a live match.
 2. **The secondary slot, empty.** Allocation gives everything to primary and
    behaviour is identical. Land this alone: a measurable no-op proves the split
    before any policy question is reached, and if it changes anything the

@@ -1729,6 +1729,9 @@ StrategyDirector = ClassSimple {
 
     Update = function(self)
         local start = self.World.StartPosition
+        -- Turn what we have seen into standing knowledge before anything reads
+        -- it. No-op unless the lobby hid the spawns.
+        self.World:ResolveEnemyBases(self.Intel)
         local localThreat = self.Intel:GetThreatNear(start, math.max(100, self.World.Width / 12))
         local defenseAlert = self:UpdateDefenseAlert()
         local airDrop = self:UpdateAirDropOpportunity(start)

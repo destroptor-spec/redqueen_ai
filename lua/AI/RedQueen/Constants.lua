@@ -18,6 +18,9 @@ Ticks = {
 -- Economy income policy values are expressed in resources per game tick, the
 -- unit returned by GetEconomyIncome. Divide a mass-per-second figure by ten.
 Policy = {
+    -- How near a start an observed enemy structure must be to resolve it as
+    -- that enemy's base. Only consulted when the lobby hid the spawns.
+    EnemyBaseDiscoveryRadius = 60,
     ObservationRadius = 48,
     ObserversPerUpdate = 16,
     IntelLifetimeSeconds = 180,
