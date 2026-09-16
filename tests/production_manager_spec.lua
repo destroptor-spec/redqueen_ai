@@ -2586,6 +2586,8 @@ local function FormationPolicyContracts()
     local formBuilders = {
         FormBuilder("Native Land Attack", "uel0201"),
         FormBuilder("Native Engineer Assist", "uel0105"),
+        FormBuilder("Native Scout Patrol", "uel0101"),
+        FormBuilder("Native Artillery Group", "uel0103"),
         FormBuilder("Red Queen Tech Upgrade", "uel0201"),
     }
     local sortedLists = {}
@@ -2597,14 +2599,26 @@ local function FormationPolicyContracts()
             },
         },
     }
+    -- Form templates, not factory templates: a squad is
+    -- { category, min, max, role, formation } with a live category object and
+    -- no blueprint id, which is why the blueprint-reading classifier saw
+    -- nothing and suppressed nothing.
     PlatoonTemplates = {
-        ["Native Land AttackTemplate"] = { FactionSquads = { UEF = { { "uel0201" } } } },
-        ["Native Engineer AssistTemplate"] = { FactionSquads = { UEF = { { "uel0105" } } } },
-        ["Red Queen Tech UpgradeTemplate"] = { FactionSquads = { UEF = { { "uel0201" } } } },
-    }
-    __blueprints = {
-        uel0201 = { CategoriesHash = { MOBILE = true, LAND = true, DIRECTFIRE = true, TECH1 = true } },
-        uel0105 = { CategoriesHash = { MOBILE = true, LAND = true, ENGINEER = true, TECH1 = true } },
+        ["Native Land AttackTemplate"] = {
+            GlobalSquads = { { "category", 1, 100, "attack", "GrowthFormation" } },
+        },
+        ["Native Engineer AssistTemplate"] = {
+            GlobalSquads = { { "category", 1, 3, "support", "None" } },
+        },
+        ["Native Scout PatrolTemplate"] = {
+            GlobalSquads = { { "category", 1, 2, "scout", "None" } },
+        },
+        ["Native Artillery GroupTemplate"] = {
+            FactionSquads = { UEF = { { "category", 1, 10, "artillery", "None" } } },
+        },
+        ["Red Queen Tech UpgradeTemplate"] = {
+            GlobalSquads = { { "category", 1, 1, "attack", "None" } },
+        },
     }
 
     local formManager = Create(
@@ -2618,8 +2632,12 @@ local function FormationPolicyContracts()
     assert(formBuilders[2].Priority == 100,
         "engineer formations stay native's to run: Red Queen has no replacement")
     assert(formBuilders[3].Priority == 100,
+        "scout formations stay native's to run too")
+    assert(formBuilders[4].Priority == 0,
+        "an artillery formation fights, so it is a combat formation")
+    assert(formBuilders[5].Priority == 100,
         "Red Queen's own builders in this manager must not be suppressed by it")
-    assert(policy.Suppressed == 1, "exactly the combat builder is suppressed, got "
+    assert(policy.Suppressed == 2, "exactly the fighting builders are suppressed, got "
         .. tostring(policy.Suppressed))
     assert(table.getn(sortedLists) > 0, "the manager must be re-sorted after a priority change")
 

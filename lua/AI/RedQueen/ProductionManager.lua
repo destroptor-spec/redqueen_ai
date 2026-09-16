@@ -206,6 +206,51 @@ local function UnitTravelLayer(unit)
     return MotionLayers[physics.MotionType] or "Land"
 end
 
+-- Whether a platoon-form builder forms a fighting platoon.
+--
+-- Form templates are not factory templates: a squad is
+-- `{ category, min, max, role, formation }` with the category as a live
+-- category object and no blueprint id anywhere, so BuilderProfile -- which
+-- reads FactionSquads for a blueprint -- returns nil for every one of them.
+-- Classifying with it suppressed nothing at all, and the run that was supposed
+-- to measure this change came back byte-identical to the one before it.
+--
+-- The role string is the honest signal. FAF's own templates use "attack",
+-- "Attack", "artillery" and "guard" for formations that fight, against
+-- "support" for engineers and "scout" for reconnaissance -- both of which stay
+-- native's to run.
+local CombatSquadRoles = {
+    attack = true,
+    artillery = true,
+    guard = true,
+}
+
+local function FormsCombatPlatoon(builder)
+    if not builder.GetPlatoonTemplate or not PlatoonTemplates then
+        return false
+    end
+    local template = PlatoonTemplates[builder:GetPlatoonTemplate()]
+    if not template then
+        return false
+    end
+    local squadGroups = {}
+    if template.GlobalSquads then
+        table.insert(squadGroups, template.GlobalSquads)
+    end
+    for _, squads in pairs(template.FactionSquads or {}) do
+        table.insert(squadGroups, squads)
+    end
+    for _, squads in ipairs(squadGroups) do
+        for _, squad in pairs(squads) do
+            local role = squad[4]
+            if role and CombatSquadRoles[string.lower(role)] then
+                return true
+            end
+        end
+    end
+    return false
+end
+
 local function BuilderProfile(builder, factionName)
     if builder.RedQueenUnitProfile then
         return builder.RedQueenUnitProfile
@@ -925,9 +970,7 @@ ProductionManager = ClassSimple {
                 for _, data in pairs(formManager.BuilderData) do
                     for _, builder in pairs(data.Builders or {}) do
                         local name = builder.BuilderName or ""
-                        local profile = BuilderProfile(builder, factionName)
-                        local combat = profile
-                            and not profile.Engineer
+                        local combat = FormsCombatPlatoon(builder)
                             and string.sub(name, 1, 9) ~= "Red Queen"
                         if combat then
                             seen = seen + 1
