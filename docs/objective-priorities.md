@@ -1,15 +1,29 @@
-# Objectives, and the order they should be chosen in
+# Objectives: primary, secondary, and how force is split between them
 
-## Why this exists
+Working document. Nothing below is measured unless it says so.
 
-Scouting was investigated to exhaustion and is not where the large-map weakness
-lives. Production sizing turned out to be dead code; wiring it bought one
-LandLarge win, cost a Naval win and dropped K/L in eleven of twelve cells.
-Observer sampling was refuted arithmetically. Directed dispatch is already
-net-useful.
+## Why the foundation changes
 
-What the same runs show plainly is economy, and specifically economy that is
-built and then lost:
+Red Queen holds exactly one objective. `Strategy.CurrentObjective` is a single
+value, `CombatManager:Update` dispatches every layer against it, and
+`SelectTaskForce` hands it `available - reserve` units — where the reserve is
+`AttackReserveFraction` for an attack and **zero for anything defensive**.
+
+A defence therefore does not borrow from an attack. It replaces it, and takes
+everything. `CanInterrupt` exists because of that, and its own comment records
+the cost:
+
+> an army with the strength to cripple an enemy base was recalled repeatedly and
+> killed only a few engineers ... the army walked back and forth and never
+> landed a blow.
+
+With one slot the only answers are *switch* or *don't switch*, and both are
+wrong when two things need doing at once. The thing that loses that argument is
+always pressure — and pressure is what keeps the opponent reacting instead of
+expanding.
+
+The supporting evidence is economic. Across the twelve-cell matrix, extractor
+churn tracks the result better than any scouting figure:
 
 | cell | profile | extractors | churn | result |
 | --- | --- | --- | --- | --- |
@@ -19,97 +33,160 @@ built and then lost:
 | Syrtis Major 8675309 | LandLarge | 22 / 5 | 0.23 | defeat |
 | Sentry Point 31337 | LandSmall | 24 / 3 | **0.12** | victory |
 
-Churn tracks the result better than any scouting figure in this series. Peak
-capture is 39-56% of map extractors on LandLarge against 58% on LandSmall, so
-Red Queen both claims less of a bigger map and keeps less of what it claims.
+Nothing in the objective system defends that economy, and nothing keeps pressure
+on while it is defended.
 
-Nothing in the objective system defends that economy. There is no objective for
-covering our own expansion, and none for denying the enemy's.
+## The two slots
 
-## What exists today
+**Primary — what we are doing to them.** Offensive intent. Defaults to the
+enemy base as a standing fact and is never empty while an offensive force exists
+and a reachable enemy base is known.
 
-Objectives are chosen by a **first-match if-chain in code order**, not by
-sorting on priority. `Priority` rides on the objective and is read by
-`CanInterrupt` and by team coordination, but it does not decide which objective
-is selected. Anything described as a priority order below is therefore a
-proposal about selection, not a description of it.
+**Secondary — what we are protecting.** Defence, cover, escort, support. Sized
+by what its trigger requires, released back to primary when the trigger clears.
 
-| order | type | priority | trigger |
+The invariant: **a secondary trigger never empties the primary.** One exception,
+below.
+
+The split is by direction, not by urgency. Denying an enemy expansion is
+pressure and belongs in primary even though it is economic; covering our own is
+protection and belongs in secondary even though it is urgent.
+
+## Primary objectives
+
+Weights order selection **within the primary slot only**.
+
+| weight | objective | status | trigger |
 | --- | --- | --- | --- |
-| 1 | `Defend` (alert) | 140 | a qualifying cluster at a protected anchor |
-| 2 | `Defend` (local) | 120 | `LocalDefenseThreat` near home |
-| 3 | `Attack` (ping) | own, escalating to 120 | an ally or human ping |
-| 4 | `Support` | 82 | an ally support request |
-| 5 | `JointAttack` | ally + 5 | team coordination |
-| 6 | `Raid` | 75 | best scored observed target |
-| 7 | `Pressure` | 60 | fallback, a naval approach or enemy start |
-| 8 | `Stage` | 0 | nothing else applies |
+| 95 | `JointAttack` | exists | ally coordination; the launch window is time-critical |
+| 90 | `Assault` | **referenced, never constructed** | committed push once production and force justify it |
+| 85 | `Raid` | exists | best scored observed target |
+| 75 | `Deny expansion` | **missing** | observed enemy engineer or extractor outside their base |
+| 60 | `Pressure` | exists, needs the standing fact | the remembered enemy base; the floor, always available |
 
-`Reinforce` and `Investigate` are each constructed once. **`Assault`, `Recover`
-and `Supremacy` are referenced but never constructed** — dead branches. One of
-them is not harmless: `demand.Artillery = objective.Type == "Assault" and 0.18
-or 0.10` can never take its high branch, so artillery demand is pinned at 0.10
-for the whole match.
+`Pressure` is what makes the invariant achievable: there is always a primary
+available, because the enemy base is always a known place to be going.
 
-## The enemy base is a fact, not an observation
+## Secondary objectives
 
-Every intel record decays after `IntelLifetimeSeconds` (180). A base position
-should not. Where the enemy spawned is either known from the lobby or learned
-once, and it never stops being true.
+Weights order selection **within the secondary slot**, and set how much of the
+force that slot may claim.
 
-- `ScenarioInfo.Options.TeamSpawn` is `fixed`, or one of the `*_reveal`
-  variants: every player sees the start positions, so Red Queen may use
-  `GetArmyStartPos` directly — which is what `WorldModel` already does.
-- `random`, `balanced` or `balanced_flex` without reveal: a human does not know
-  who spawned where. Red Queen currently reads the starts anyway. It should
-  instead treat enemy starts as unknown until something of ours observes a
-  structure there, then record that position **permanently**.
-
-Either way the result is the same standing fact: a known enemy base, never
-re-scouted, never expired. Attack objectives default there, and `Pressure`
-stops being a generic waypoint at a naval approach.
-
-## Proposed order
-
-Selection becomes a ranked choice over candidate objectives rather than an
-if-chain. Ties break on the existing rule: higher priority first, then earlier
-`CreatedTick`.
-
-| priority | objective | status | trigger |
+| weight | objective | status | trigger |
 | --- | --- | --- | --- |
-| 160 | **Commander emergency** | partial, inside `Defend`/`Critical` | ACU credibly threatened; outranks everything under Assassination |
-| 140 | **Base defence** | exists | qualifying cluster at a protected anchor |
-| 120 | **Ally ping** | exists | explicit human or ally request, already escalating |
-| 115 | **Cover expansion** | **missing** | our own extractors or engineers under observed threat outside the base |
-| 110 | **Local defence** | exists | `LocalDefenseThreat` near home, still gated by `CanInterrupt` |
-| 82 | **Support ally** | exists | ally support request |
-| 80 | **Joint attack** | exists | team coordination |
-| 78 | **Deny expansion** | **missing** | observed enemy engineer or extractor outside their base |
-| 75 | **Raid** | exists | best scored observed target |
-| 70 | **Secure expansion** | **missing** | an unclaimed cluster on our side with a safe route, needing escort |
-| 60 | **Pressure enemy base** | exists, needs the standing fact | the remembered enemy spawn, not a waypoint |
-| 40 | **Investigate** | vestigial | a high-value area nothing has seen, or an unexplained loss |
-| 0 | **Stage** | exists | nothing else applies |
+| 160 | `Commander emergency` | partial, inside `Defend`/`Critical` | ACU credibly threatened; the one trigger that may take the primary slot and suspend pressure |
+| 140 | `Defend` (alert) | exists | qualifying cluster at a protected anchor |
+| 120 | Ally ping | exists | explicit request, already escalating to 120 |
+| 115 | `Cover expansion` | **missing** | our extractors or engineers under observed threat outside the base |
+| 110 | `Defend` (local) | exists | `LocalDefenseThreat` near home |
+| 82 | `Support` | exists | ally support request |
+| 70 | `Secure expansion` | **missing** | escort for an unclaimed cluster with a safe route |
+| 40 | `Investigate` | vestigial | a high-value area nothing has seen, or an unexplained loss |
 
-Three of these do not exist, and they are the three that concern economy.
-`Cover expansion` is placed above local defence deliberately: an extractor line
-being eaten is a larger loss than a couple of raiders near the base, and the
-churn figures say that is what is actually happening.
+`Cover expansion` sits above local defence deliberately: an extractor line being
+eaten is a larger loss than a couple of raiders near the base, and churn of 1.00
+says that is what actually happens.
 
-## What to build first
+A ping inherits its slot from its own type — an attack ping is primary intent,
+a help request is secondary.
 
-1. **The standing enemy-base fact**, gated on `TeamSpawn`. Small, testable
-   without a match, and it makes every attack objective terminate somewhere real
-   instead of at a fallback waypoint. It also removes enemy starts from the
-   scouting candidate set, which is the one remaining scouting hypothesis.
-2. **`Cover expansion`**, because churn of 1.00 on Fields of Isis says the
-   economy is being built and handed straight back. It reuses the garrison
-   machinery that already covers forward bases.
-3. **`Deny expansion`**, the mirror, once the enemy base is a fact and anything
-   outside it is by definition an expansion.
+## Allocation
 
-Ranked selection should land with the first of these, since adding objectives to
-an if-chain silently orders them by where they were pasted.
+The secondary is sized by what its trigger requires, the shape the garrison
+logic already uses when it compares prospective escort strength against site
+threat.
 
-Nothing here is measured. Each is a hypothesis with a stated trigger, and the
-churn column is the figure to judge them by.
+```
+required   = threat at the secondary objective * CommitmentThreatRatio
+ceiling(w) = MinimumSecondaryCeiling + (w - 40)/(140 - 40)
+                 * (MaximumSecondaryFraction - MinimumSecondaryCeiling)
+secondary  = min(required / offensive threat, ceiling(weight))
+primary    = remainder, never below MinimumPressureFraction
+```
+
+| constant | start | meaning |
+| --- | --- | --- |
+| `MinimumSecondaryCeiling` | 0.20 | what the lightest reaction may claim |
+| `MaximumSecondaryFraction` | 0.60 | what the heaviest may claim, so no alert strips the attack |
+| `MinimumPressureFraction` | 0.25 | what primary keeps whenever a reachable enemy base is known |
+
+A commander emergency ignores all three. It is the only trigger that may.
+
+If a secondary cannot be satisfied within its ceiling, that is **reported, not
+taken from the primary**. A defence that cannot be answered without abandoning
+the attack is a decision worth seeing in a log.
+
+## Changing in flight
+
+Reassignment is per unit, so adaptation is incremental rather than wholesale.
+
+1. **Units carry their slot** — `RedQueenObjectiveSlot` beside the existing
+   `RedQueenOrderUntil`, so a pass can move a portion without re-issuing
+   everything.
+2. **Hysteresis on movement.** A unit changes slot only when the imbalance
+   exceeds a margin and its current order has run a minimum time. Without this
+   the design reproduces the walk-back-and-forth failure at unit granularity
+   instead of army granularity.
+3. **Engaged units move last.** An arrived force is the most expensive to recall
+   and the closest to producing something; reassign from the units furthest from
+   their objective first.
+4. **Release immediate, commitment gradual.** A cleared trigger returns its
+   units at once; a new trigger fills over passes. The same asymmetry the scout
+   ceiling probe needed, for the same reason: need is answered quickly,
+   withdrawal is not.
+
+## What has to be observable
+
+None of this is judgeable from a win rate. The state line reports one
+`objective=` today and needs both slots, the split, and whether the invariant
+survived contact:
+
+```
+primary=Raid/0.71 secondary=Defend/0.29 pressure=held
+```
+
+`pressure=held` against `pressure=yielded` is the figure that says whether the
+design did its job. `secondary=unmet` marks the case the design deliberately
+accepts, and should be seen doing.
+
+## Build order
+
+1. **The standing enemy-base fact**, gated on `ScenarioInfo.Options.TeamSpawn`.
+   Usable directly when spawns are `fixed` or `*_reveal`; otherwise learned once
+   by observation and never expired, unlike every other intel record which
+   decays at `IntelLifetimeSeconds`. Small, testable without a match, and it
+   gives `Pressure` somewhere real to terminate instead of a fallback waypoint.
+2. **The secondary slot, empty.** Allocation gives everything to primary and
+   behaviour is identical. Land this alone: a measurable no-op proves the split
+   before any policy question is reached, and if it changes anything the
+   allocation is wrong and that is cheap to find out.
+3. **Move `Defend` to secondary.** The behavioural change, with a specific
+   prediction: the walk-back-and-forth stops appearing and `CanInterrupt`
+   reduces to a tie-break on primary replacement rather than a preemption rule.
+4. **`Cover expansion`**, reusing the garrison machinery that already covers
+   forward bases. Judge it on extractor churn, not on win rate.
+5. **`Deny expansion`**, the mirror, natural once anything outside the enemy
+   base is by definition an expansion.
+
+Ranked selection must land with step 2, because objectives are currently chosen
+by a first-match if-chain in code order — adding to it orders them by where they
+were pasted, not by weight.
+
+## Known dead ends, recorded so they are not retried
+
+- `Assault`, `Recover` and `Supremacy` are referenced but never constructed.
+  One is not harmless: `demand.Artillery = objective.Type == "Assault" and 0.18
+  or 0.10` can never take its high branch, so artillery demand is pinned at 0.10
+  for every match.
+- Scout **production sizing** was dead code; wiring it was a wash on record and
+  cost K/L in eleven of twelve cells.
+- Observer **sampling rate** was refuted arithmetically: every unit was already
+  sampled 15 to 30 times per intel lifetime.
+- Directed **dispatch** is already net-useful; removing it loses faster.
+
+## What this does not fix
+
+Nothing here claims the large-map economy. It removes the reason pressure stops,
+which is a precondition for judging the economic objectives rather than a
+substitute for them. Extractor churn stays the figure to judge those by, and
+Fields of Isis remains 0W in every arm tested so far.
