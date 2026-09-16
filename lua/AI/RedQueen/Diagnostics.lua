@@ -84,9 +84,11 @@ Diagnostics = ClassSimple {
         -- slot is always empty: `pressure=yielded` is then a count of exactly
         -- how often a defensive trigger takes the whole army today.
         local strategy = modules.Strategy
-        local allocation = strategy.ObjectiveAllocation or { Primary = 1, Secondary = 0 }
+        local allocation = strategy.ObjectiveAllocation or {}
         local primary = strategy.PrimaryObjective
         local secondary = strategy.SecondaryObjective
+        local combat = modules.Combat or {}
+        local slotDispatch = combat.SlotDispatch or {}
         local economy = modules.Economy.State
         local factoryCounts = modules.Production.Counts or { Total = 0, Land = 0, Air = 0, Naval = 0 }
         local observations = table.getsize(modules.Intel.Observations)
@@ -138,13 +140,16 @@ Diagnostics = ClassSimple {
             or 0
 
         Logger.Info(self.Brain, string.format(
-            "state objective=%s primary=%s/%.2f secondary=%s/%.2f pressure=%s eco=%s mass=%.1f energy=%.1f factories=%d/%d intel=%d doctrine=%s focus=%s weights=A=%d,T2=%d,T3=%d,X=%d,N=%d ready=%.2f slots=%d reason=%s landloss=%d/%.0f airloss=%d/%.0f airdrop=%s alert=%s/%.1f/%.2f/%s/%.0f/%.0f momentum=%.0f/%.0f/%s tiers=L%d,A%d,N%d forward=%d/%s/%s exp=%s/%d/%d eng=%d/%d/%d cover=%d/%d engpolicy=%d/%d mex=%d/%d scout=%d/%d/%d scoutorders=%d/%d scouts=%d scoutfraction=%.3f/%.3f dispatch=L%d,A%d,W%d,M%d,H%d",
+            "state objective=%s primary=%s/%d secondary=%s/%d pressure=%s claim=%.0f/%.0f%s eco=%s mass=%.1f energy=%.1f factories=%d/%d intel=%d doctrine=%s focus=%s weights=A=%d,T2=%d,T3=%d,X=%d,N=%d ready=%.2f slots=%d reason=%s landloss=%d/%.0f airloss=%d/%.0f airdrop=%s alert=%s/%.1f/%.2f/%s/%.0f/%.0f momentum=%.0f/%.0f/%s tiers=L%d,A%d,N%d forward=%d/%s/%s exp=%s/%d/%d eng=%d/%d/%d cover=%d/%d engpolicy=%d/%d mex=%d/%d scout=%d/%d/%d scoutorders=%d/%d scouts=%d scoutfraction=%.3f/%.3f dispatch=L%d,A%d,W%d,M%d,H%d",
             tostring(objective.Type or "none"),
             primary and tostring(primary.Type) or "none",
-            allocation.Primary or 0,
+            slotDispatch.Primary or 0,
             secondary and tostring(secondary.Type) or "none",
-            allocation.Secondary or 0,
+            slotDispatch.Secondary or 0,
             strategy.PressureHeld and "held" or "yielded",
+            combat.SecondaryClaimedThreat or 0,
+            combat.SecondaryRequiredThreat or 0,
+            combat.SecondaryUnmet and "/unmet" or "",
             economy.Mode,
             economy.MassIncome,
             economy.EnergyIncome,

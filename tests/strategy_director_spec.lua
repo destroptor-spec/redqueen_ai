@@ -69,6 +69,11 @@ local constants = {
     Policy = {
         ObjectiveLifetimeTicks = 300,
         ObjectiveInterruptPriorityGap = 15,
+        CommitmentThreatRatio = 1.10,
+        CommitmentThreatRadius = 60,
+        MinimumSecondaryCeiling = 0.20,
+        MaximumSecondaryFraction = 0.60,
+        MinimumPressureFraction = 0.25,
         LocalDefenseThreat = 25,
         ShoreTorpedoMinimumDepth = 2.0,
         ShoreTorpedoProbeRadius = 48,
@@ -247,6 +252,17 @@ local brain = {
     GetUnitsAroundPoint = function() return {} end,
 }
 local director = strategyModule.Create(brain, { VictoryCondition = "Supremacy" }, world, intel, economy, team, pings)
+
+-- Both slots must be cleared to force a fresh selection: each slot now
+-- replaces only itself, so clearing CurrentObjective alone leaves the
+-- secondary holding whatever it held last pass.
+local function ResetObjectives()
+    director.CurrentObjective = nil
+    director.SlotObjectives = nil
+    director.PrimaryObjective = nil
+    director.SecondaryObjective = nil
+end
+
 local ownForces = {
     T2Factories = 0,
     T3Factories = 0,
@@ -544,7 +560,13 @@ economy.State.StallRisk = false
 localThreat = 30
 currentTick = 4800
 director:Update()
-assert(director.CurrentObjective.Type == "Defend", "immediate base danger must redirect the army")
+-- Base danger is answered in the secondary slot, not by taking the army. The
+-- old contract asserted CurrentObjective became Defend, which is exactly the
+-- behaviour that made a raid vanish for the rest of the match.
+assert(director.SecondaryObjective and director.SecondaryObjective.Type == "Defend",
+    "immediate base danger must be answered")
+assert(director.CurrentObjective.Type ~= "Defend",
+    "answering base danger must not empty the primary slot")
 assert(director.ProductionDemand.FocusWeights.Tech3 == 0, "base danger must block new strategic investment")
 
 localThreat = 0
@@ -599,8 +621,8 @@ director.GetOwnThreatByArm = function() return { Surface = 20, Air = 20 } end
 currentTick = 4950
 director:Update()
 assert(director.DefenseAlert.Active, "a massive naval force must trigger a defense alert")
-assert(director.CurrentObjective.Position == navalAnchor, "naval defense must protect the selected anchor")
-assert(director.CurrentObjective.Layer == "Water", "a water anchor must dispatch naval defenders")
+assert(director.SecondaryObjective.Position == navalAnchor, "naval defense must protect the selected anchor")
+assert(director.SecondaryObjective.Layer == "Water", "a water anchor must dispatch naval defenders")
 
 observedPressure = {
     Position = { 350, 0, 350 },
@@ -617,9 +639,9 @@ observedPressure = {
 director.DefenseAlert = { Active = false }
 currentTick = 4975
 director:Update()
-assert(director.CurrentObjective.Layer == "Land", "land invasions must not inherit a shoreline anchor's water layer")
-assert(director.CurrentObjective.DefenseLayers.Land, "land defenders must remain eligible at water-adjacent bases")
-assert(director.CurrentObjective.LayerPositions.Land == observedPressure.Position, "land defenders must intercept at the observed land position")
+assert(director.SecondaryObjective.Layer == "Land", "land invasions must not inherit a shoreline anchor's water layer")
+assert(director.SecondaryObjective.DefenseLayers.Land, "land defenders must remain eligible at water-adjacent bases")
+assert(director.SecondaryObjective.LayerPositions.Land == observedPressure.Position, "land defenders must intercept at the observed land position")
 
 -- A defence keeps the destinations the alert computed for it. The offensive
 -- naval-approach resolution runs after objective selection and must not reach a
@@ -645,14 +667,14 @@ observedPressure = {
     ClosingThreat = 40, Approaching = true,
 }
 director.DefenseAlert = { Active = false }
-director.CurrentObjective = nil
+ResetObjectives()
 currentTick = 5050
 director:Update()
-assert(director.CurrentObjective.Type == "Defend" and director.CurrentObjective.Layer == "Land",
+assert(director.SecondaryObjective.Type == "Defend" and director.SecondaryObjective.Layer == "Land",
     "the land-led defence this case needs must actually be produced")
-assert(director.CurrentObjective.LayerPositions.Water,
+assert(director.SecondaryObjective.LayerPositions.Water,
     "and it must carry a water position at all, or this proves nothing")
-assert(director.CurrentObjective.LayerPositions.Water ~= offensiveApproach,
+assert(director.SecondaryObjective.LayerPositions.Water ~= offensiveApproach,
     "a defence must keep the water position its alert computed, not an offensive approach")
 world.GetNavalApproach = savedApproach
 brain.BuilderManagers.NAVAL = nil
@@ -673,8 +695,8 @@ director.GetOwnThreatByArm = function() return { Surface = 20, Air = 20 } end
 currentTick = 5000
 director:Update()
 assert(director.DefenseAlert.Active, "a massive observed army must be acknowledged")
-assert(director.CurrentObjective.Type == "Defend", "a massive army must override the active objective")
-assert(director.CurrentObjective.Layer == "Land", "a land anchor must dispatch land defenders")
+assert(director.SecondaryObjective.Type == "Defend", "a massive army must override the active objective")
+assert(director.SecondaryObjective.Layer == "Land", "a land anchor must dispatch land defenders")
 
 local airRaidPosition = { 30, 0, 30 }
 observedPressure = {
@@ -693,11 +715,11 @@ director.DefenseAlert = { Active = false }
 currentTick = 5010
 director:Update()
 assert(director.DefenseAlert.Active, "a massive observed air formation must be acknowledged")
-assert(director.CurrentObjective.Layer == "Land", "a land anchor under air attack must keep organizing its ground defenders")
-assert(director.CurrentObjective.DefenseLayers.Land, "a single-layer attack must not leave the land task force without a destination")
-assert(director.CurrentObjective.LayerPositions.Land == world.StartPosition, "ground defenders must hold the threatened anchor when there is no surface threat to intercept")
-assert(not director.CurrentObjective.DefenseLayers.Water, "an inland anchor must not order naval defenders to an unreachable layer")
-assert(director.CurrentObjective.LayerPositions.Air == airRaidPosition, "air defenders must intercept the observed air formation")
+assert(director.SecondaryObjective.Layer == "Land", "a land anchor under air attack must keep organizing its ground defenders")
+assert(director.SecondaryObjective.DefenseLayers.Land, "a single-layer attack must not leave the land task force without a destination")
+assert(director.SecondaryObjective.LayerPositions.Land == world.StartPosition, "ground defenders must hold the threatened anchor when there is no surface threat to intercept")
+assert(not director.SecondaryObjective.DefenseLayers.Water, "an inland anchor must not order naval defenders to an unreachable layer")
+assert(director.SecondaryObjective.LayerPositions.Air == airRaidPosition, "air defenders must intercept the observed air formation")
 -- A defence alert taxes endgame investment in proportion to severity; it does
 -- not cancel it. Zeroing the weights outright meant that a brain under
 -- sustained pressure -- exactly the late game of a hard match -- could never
@@ -876,79 +898,67 @@ economy.State.MassRequested = 0
 economy.State.EnergyRequested = 0
 economy.State.Surplus = true
 
--- An attack that has arrived is not abandoned for a couple of raiders at home.
+-- An attack is no longer something a defence can take the army from.
 --
--- Observed: an army with the strength to cripple an enemy base was recalled
--- repeatedly and killed only a few engineers. Any Defend used to preempt
--- unconditionally, and `LocalDefenseThreat` is 25 -- so a small home threat
--- pulled the army back, the objective expired after ObjectiveLifetimeTicks, the
--- attack resumed, and it walked back and forth without landing a blow.
+-- This used to be a cross-slot preemption rule, and its own comment recorded
+-- the cost: an army with the strength to cripple an enemy base was recalled
+-- repeatedly and killed only a few engineers, walking back and forth without
+-- landing a blow. CanInterrupt limited that in one direction and then caused it
+-- in the other -- the measured baseline on Fields of Isis was nine refusals
+-- against six actual changes, every refusal a Defend keeping the army from a
+-- Raid. With the slots separate the comparison is never made.
 local committedThreat = 0
 director.GetOwnThreatNear = function(_, position)
-    -- Strength at the enemy base only; nothing of ours at home.
     return (position and position[1] == 900) and committedThreat or 0
 end
 
-local function attackThenDefend(defence, ownStrengthAtTarget)
-    committedThreat = ownStrengthAtTarget
-    currentTick = 10000
-    director.CurrentObjective = nil
-    local attack = director:SetObjective({
-        Type = "Raid",
-        Position = { 900, 0, 900 },
-        Priority = 82,
-        Layer = "Land",
-        CreatedTick = currentTick,
-    })
-    assert(attack.Type == "Raid", "the attack must be taken first")
-    currentTick = currentTick + 10
-    return director:SetObjective(defence)
-end
-
-local marginal = {
-    Type = "Defend", Position = { 0, 0, 0 }, Priority = 120, Layer = "Land",
-    CreatedTick = 10010,
-}
-local critical = {
-    Type = "Defend", Position = { 0, 0, 0 }, Priority = 140, Layer = "Land",
-    Critical = true, CreatedTick = 10010,
-}
-
--- In contact: the marginal defence must not take the army home.
-local held = attackThenDefend(marginal, 250)
-assert(held.Type == "Raid",
-    "an attack in contact must not be abandoned for a local threat, got " .. held.Type)
-
--- The real thing still preempts, whatever the attack is doing.
-local preempted = attackThenDefend(critical, 250)
-assert(preempted.Type == "Defend",
-    "an observed cluster threatening an anchor must always preempt, got " .. preempted.Type)
-
--- An attack that never arrived is not protected: nothing of ours is there.
-local notArrived = attackThenDefend(marginal, 0)
-assert(notArrived.Type == "Defend",
-    "an attack with no force at the objective must yield to defence, got " .. notArrived.Type)
-
--- And the hold ends by itself as that force dies, rather than needing a timer.
-local dying = attackThenDefend(marginal, 0)
-assert(dying.Type == "Defend", "a dead assault force must release the hold")
-
--- The hold is for attacks only. Staging or recovering has nothing to protect,
--- so a local threat takes precedence there as it always did.
-committedThreat = 250
-currentTick = 20000
-director.CurrentObjective = nil
-director:SetObjective({
-    Type = "Stage", Position = { 900, 0, 900 }, Priority = 60, Layer = "Land",
-    CreatedTick = currentTick,
+-- The two slots do not disturb each other.
+ResetObjectives()
+currentTick = 10000
+director:SetSlotObjective("Primary", {
+    Type = "Raid", Position = { 900, 0, 900 }, Priority = 82, Layer = "Land",
+    Kind = "Offensive", Slot = "Primary", CreatedTick = currentTick,
 })
 currentTick = currentTick + 10
-local staged = director:SetObjective({
+director:SetSlotObjective("Secondary", {
     Type = "Defend", Position = { 0, 0, 0 }, Priority = 120, Layer = "Land",
-    CreatedTick = currentTick,
+    Kind = "LocalDefense", Slot = "Secondary", CreatedTick = currentTick,
 })
-assert(staged.Type == "Defend",
-    "staging must still yield to a local threat, got " .. staged.Type)
+assert(director.SlotObjectives.Primary.Type == "Raid",
+    "a defence must not displace the attack, got " .. director.SlotObjectives.Primary.Type)
+assert(director.SlotObjectives.Secondary.Type == "Defend",
+    "the defence must still be answered, in its own slot")
+
+-- Nor does the reverse: an attack replacing an attack leaves the defence alone.
+currentTick = currentTick + 10
+director:SetSlotObjective("Primary", {
+    Type = "Raid", Position = { 880, 0, 880 }, Priority = 120, Layer = "Land",
+    Kind = "Offensive", Slot = "Primary", CreatedTick = currentTick,
+})
+assert(director.SlotObjectives.Secondary.Type == "Defend",
+    "replacing the primary must not clear the secondary")
+
+-- CanInterrupt survives, scoped to one slot: an objective still cannot be
+-- swapped for a marginally better one of the same kind every pass.
+ResetObjectives()
+currentTick = 11000
+director:SetSlotObjective("Primary", {
+    Type = "Pressure", Position = { 900, 0, 900 }, Priority = 60, Layer = "Land",
+    Kind = "Offensive", Slot = "Primary", CreatedTick = currentTick,
+})
+currentTick = currentTick + 10
+local marginalSwap = director:SetSlotObjective("Primary", {
+    Type = "Raid", Position = { 800, 0, 800 }, Priority = 70, Layer = "Land",
+    Kind = "Offensive", Slot = "Primary", CreatedTick = currentTick,
+})
+assert(marginalSwap.Type == "Pressure",
+    "a marginal replacement inside one slot must still be refused, got " .. marginalSwap.Type)
+local clearSwap = director:SetSlotObjective("Primary", {
+    Type = "Raid", Position = { 800, 0, 800 }, Priority = 90, Layer = "Land",
+    Kind = "Offensive", Slot = "Primary", CreatedTick = currentTick,
+})
+assert(clearSwap.Type == "Raid",
+    "a replacement clearing the priority gap must still be adopted, got " .. clearSwap.Type)
 
 -- The alert-driven defence is the one marked critical, and it is marked where
 -- it is built rather than by the caller.
@@ -978,20 +988,22 @@ director.UpdateDefenseAlert = function(self)
     self.ProductionDemand.DefenseAlert = alert
     return alert
 end
-director.CurrentObjective = nil
+ResetObjectives()
 director:Update()
-alertObjective = director.CurrentObjective
+alertObjective = director.SecondaryObjective
 assert(alertObjective and alertObjective.Type == "Defend",
     "an active alert must produce a defensive objective")
 assert(alertObjective.Critical,
-    "the alert-driven defence must be marked critical, or it can no longer "
-        .. "preempt an attack in contact")
+    "the alert-driven defence must still be marked critical, which is what "
+        .. "raises its ceiling above a marginal local defence")
+assert(director.PrimaryObjective and director.PrimaryObjective.Type ~= "Defend",
+    "an alert must be answered without emptying the primary slot")
 director.UpdateDefenseAlert = previousUpdateAlert
 director.DefenseAlert = previousAlertState
 director.ProductionDemand.DefenseAlert = previousAlertState
-director.CurrentObjective = nil
+ResetObjectives()
 director.GetOwnThreatNear = nil
-director.CurrentObjective = nil
+ResetObjectives()
 
 -- An engineer death records the ground that killed it, so the replacement is
 -- not posted straight back to the same place. That loop is what turns a few
@@ -1763,7 +1775,7 @@ world.GetClosestEnemyStart = function(_, _, layer)
 end
 for _, mapType in ipairs({ "Naval", "Mixed" }) do
     world.MapType = mapType
-    director.CurrentObjective = nil
+    ResetObjectives()
     director:Update()
     local objective = director.CurrentObjective
     assert(objective.Type == "Raid" and objective.Layer == "Water",
@@ -1777,7 +1789,7 @@ end
 
 local distantContact = navalContact.Position
 navalContact.Position = { 24, 0, 24 }
-director.CurrentObjective = nil
+ResetObjectives()
 director:Update()
 assert(director.CurrentObjective.Type == "Raid" and director.CurrentObjective.Position == navalContact.Position,
     "an observed naval target near home must not be rejected by enemy-approach midpoint rules")
@@ -1786,7 +1798,7 @@ navalContact.Position = distantContact
 -- A route to nearby water does not prove a route to a contact in another
 -- basin. Keep the exact destination check before calling the result a raid.
 reachableContact = false
-director.CurrentObjective = nil
+ResetObjectives()
 director:Update()
 assert(director.CurrentObjective.Type == "Pressure"
     and director.CurrentObjective.Position == fallbackApproach,
@@ -1797,7 +1809,7 @@ assert(director.CurrentObjective.Type == "Pressure"
 waterOrigin = nil
 fallbackApproach = nil
 waterChecks = {}
-director.CurrentObjective = nil
+ResetObjectives()
 director:Update()
 assert(director.CurrentObjective.Type == "Pressure" and director.CurrentObjective.Layer == "Air",
     "a map without naval approaches must retain the Air fallback")
@@ -1907,7 +1919,7 @@ world.GetNavalApproach = function(_, origin, target)
 end
 for _, layer in ipairs({ "Land", "Air" }) do
     alliedAttack.Layer = layer
-    director.CurrentObjective = nil
+    ResetObjectives()
     currentTick = 8400
     director:Update()
     local objective = director.CurrentObjective
@@ -1934,7 +1946,6 @@ pings.GetBestRequest = function() return ping end
 local navalRequests = 0
 world.GetNavalApproach = function(_, origin, target)
     navalRequests = navalRequests + 1
-    assert(origin == world.StartPosition and target == alliedPosition)
     return navalApproach
 end
 currentTick = 8600
@@ -1944,12 +1955,19 @@ assert(director.CurrentObjective.Type == "Attack"
     "an attack ping on land must also dispatch the fleet toward that target")
 assert(director.CurrentObjective.RequestedBy == ping.OwnerArmy,
     "the attack ping must retain its requesting ally")
+-- A defensive ping is protection, so it lands in the secondary slot and no
+-- longer stops the attack. The primary resolving a route of its own is the
+-- point; what must not happen is the ping itself acquiring an offensive one.
 for _, kind in ipairs({ "Reinforce", "Investigate" }) do
     ping.Type = kind
-    navalRequests = 0
     director:Update()
-    assert(director.CurrentObjective.Type == kind and navalRequests == 0,
+    local answered = director.SecondaryObjective
+    assert(answered and answered.Type == kind,
+        "a defensive ping must be answered in the secondary slot")
+    assert(not (answered.LayerPositions or {}).Water,
         "defensive pings must not resolve an offensive naval approach")
+    assert(director.PrimaryObjective and director.PrimaryObjective.Type ~= kind,
+        "answering a defensive ping must not empty the primary slot")
 end
 
 
@@ -1974,11 +1992,11 @@ local supportRequest = { Position = { 140, 0, 140 }, Army = 4 }
 -- first. Ranking on the carried Priority would reverse this.
 pings.GetBestRequest = function() return lowPing end
 team.GetSupportRequest = function() return supportRequest end
-director.CurrentObjective = nil
+ResetObjectives()
 director:Update()
-assert(director.CurrentObjective.Type == "Reinforce",
+assert(director.SecondaryObjective.Type == "Reinforce",
     "a ping outranks a support request regardless of its escalating priority")
-assert(director.ObjectiveKind == "Ping", "the winning kind must be recorded")
+assert(director.SecondaryObjective.Kind == "Ping", "the winning kind must be recorded")
 
 -- And a coordinated attack carrying an ally's Pressure priority of 60 still
 -- outranks our own Raid, which carries 75.
@@ -1987,10 +2005,11 @@ team.GetSupportRequest = function() return nil end
 team.GetCoordinatedAttack = function()
     return { Position = { 700, 0, 800 }, Layer = "Land", Priority = 60, LaunchTick = 9100 }
 end
-director.CurrentObjective = nil
+ResetObjectives()
 director:Update()
 assert(director.CurrentObjective.Type == "JointAttack",
     "a coordinated attack outranks local targeting whatever priority the ally sent")
+assert(director.ObjectiveKind == "JointAttack", "the winning primary kind must be recorded")
 team.GetCoordinatedAttack = function() return nil end
 
 -- The order is derived from the weights, so the two cannot drift apart.
@@ -2021,22 +2040,23 @@ director.UpdateDefenseAlert = function(self)
     self.ProductionDemand.DefenseAlert = alert
     return alert
 end
-director.CurrentObjective = nil
+ResetObjectives()
 director:Update()
-assert(director.CurrentObjective.Type == "Defend" and director.CurrentObjective.Critical,
+assert(director.SecondaryObjective.Type == "Defend" and director.SecondaryObjective.Critical,
     "an alert must outrank a local threat, not merely tie with it on type")
-assert(director.ObjectiveKind == "DefenseAlert", "the alert is the kind that won")
+assert(director.SecondaryObjective.Kind == "DefenseAlert", "the alert is the kind that won")
 director.UpdateDefenseAlert = previousAlertFn
 director.DefenseAlert = previousAlert
 director.ProductionDemand.DefenseAlert = previousAlert
 localThreat = previousLocalThreat
 
--- Selecting an objective is not the same as adopting it.
+-- A local threat during an attack costs no pressure at all.
 --
--- SetObjective may refuse the interrupt and keep what the army was already
--- doing. The slot fields must then describe the army, not the candidate that
--- lost -- otherwise a raid that was correctly protected from a weak local
--- defence reports itself as pressure yielded, and the measurement inverts.
+-- This is the behaviour step 3 exists to produce. Before it, a weak local
+-- defence took the whole army and then held it: the measured baseline on Fields
+-- of Isis was 18 of 28 samples with pressure yielded and nine refused attempts
+-- to resume the attack. Now the attack keeps the primary slot and the defence
+-- is answered beside it.
 local previousOwnThreat = director.GetOwnThreatNear
 local previousLocal2 = localThreat
 director.GetOwnThreatNear = function(_, position)
@@ -2047,32 +2067,26 @@ intel.GetBestKnownTarget = function() return nil end
 pings.GetBestRequest = function() return nil end
 localThreat = 0
 currentTick = 12000
-director.CurrentObjective = nil
+ResetObjectives()
 director:Update()
 assert(director.CurrentObjective.Type == "Pressure" and director.PressureHeld,
-    "the attack must be under way before the interrupt is tested")
+    "the attack must be under way before the defence arrives")
 
--- Now a weak local threat asks for the army back and is refused.
 localThreat = 1000
 currentTick = 12010
 logLines = {}
 director:Update()
 assert(director.CurrentObjective.Type == "Pressure",
-    "an attack in contact must not be abandoned for a local threat")
-assert(director.PressureHeld,
-    "a refused interrupt must still report pressure held, not the slot of the objective that lost")
-assert(director.PrimaryObjective and not director.SecondaryObjective,
-    "the army is still on its primary objective, so that is the slot it reports")
+    "an attack must not be abandoned for a local threat")
+assert(director.PressureHeld, "pressure is held whenever the primary slot is offensive")
+assert(director.SecondaryObjective and director.SecondaryObjective.Type == "Defend",
+    "the local threat must still be answered, in the secondary slot")
 
--- And the near-miss must be visible, or the walk-back-and-forth this rule
--- prevents can never be counted.
-local sawHeld = false
+-- And there is nothing left to refuse: the two never compete.
 for _, line in ipairs(logLines) do
-    if string.find(line, "objective%-held") and string.find(line, "attack%-in%-contact") then
-        sawHeld = true
-    end
+    assert(not string.find(line, "objective%-held"),
+        "slots removed the cross-slot refusal, so none may be logged: " .. line)
 end
-assert(sawHeld, "a refused interrupt must be logged with its reason")
 director.GetOwnThreatNear = previousOwnThreat
 localThreat = previousLocal2
 
@@ -2080,10 +2094,10 @@ localThreat = previousLocal2
 -- still be logged: both defensive kinds produce Type == "Defend".
 logLines = {}
 currentTick = 12500
-director.CurrentObjective = { Type = "Defend", Kind = "LocalDefense", Slot = "Secondary",
-    Priority = 120, Layer = "Land", CreatedTick = 12000, ExpiresTick = 12000 }
-director:SetObjective({ Type = "Defend", Kind = "DefenseAlert", Slot = "Secondary",
-    Priority = 140, Layer = "Land", Critical = true, CreatedTick = 12500 })
+director.SlotObjectives = { Secondary = { Type = "Defend", Kind = "LocalDefense",
+    Slot = "Secondary", Priority = 120, Layer = "Land", CreatedTick = 12000, ExpiresTick = 12000 } }
+director:SetSlotObjective("Secondary", { Type = "Defend", Kind = "DefenseAlert",
+    Slot = "Secondary", Priority = 140, Layer = "Land", Critical = true, CreatedTick = 12500 })
 local sawKindChange = false
 for _, line in ipairs(logLines) do
     if string.find(line, "kind=DefenseAlert") and string.find(line, "from=Defend/LocalDefense") then
@@ -2092,26 +2106,79 @@ for _, line in ipairs(logLines) do
 end
 assert(sawKindChange, "a change of defensive kind must be logged even though the type is unchanged")
 
--- The two slots. The secondary is empty by construction at this step, so an
--- objective either holds pressure or has displaced it entirely -- which is the
--- measurement this step exists to produce.
-director.CurrentObjective = nil
+-- Both slots, and how much of the army the secondary may claim.
+ResetObjectives()
+pings.GetBestRequest = function() return nil end
+localThreat = 0
 director:Update()
 assert(director.PrimaryObjective and not director.SecondaryObjective,
     "an offensive objective occupies the primary slot")
-assert(director.ObjectiveAllocation.Primary == 1 and director.ObjectiveAllocation.Secondary == 0,
-    "with no secondary the primary keeps the whole army")
+assert(director.ObjectiveAllocation.Ceiling == 0,
+    "with no secondary there is nothing to allocate away from the attack")
 assert(director.PressureHeld, "an offensive objective is pressure held")
 
+-- A protective objective now runs beside the attack instead of replacing it,
+-- and its ceiling comes from its weight.
 pings.GetBestRequest = function() return lowPing end
-director.CurrentObjective = nil
+ResetObjectives()
 director:Update()
-assert(director.SecondaryObjective and not director.PrimaryObjective,
-    "a protective objective occupies the secondary slot")
-assert(director.ObjectiveAllocation.Secondary == 1,
-    "with one slot filled that slot holds the whole army")
-assert(not director.PressureHeld,
-    "a secondary objective commanding the whole army is pressure yielded, not pressure held")
+assert(director.SecondaryObjective and director.PrimaryObjective,
+    "a protective objective fills the secondary slot without emptying the primary")
+assert(director.PressureHeld,
+    "answering a protective objective must not be reported as pressure yielded")
+local pingCeiling = director.ObjectiveAllocation.Ceiling
+assert(pingCeiling > constants.Policy.MinimumSecondaryCeiling
+    and pingCeiling < constants.Policy.MaximumSecondaryFraction,
+    "a mid-weight secondary sits between the floor and the cap, got " .. tostring(pingCeiling))
+
+-- A heavier secondary may claim more of the army, but never all of it.
+ResetObjectives()
+pings.GetBestRequest = function() return nil end
+localThreat = 1000
+director:Update()
+assert(director.SecondaryObjective.Kind == "LocalDefense", "the local defence must be the secondary")
+assert(director.ObjectiveAllocation.Ceiling > pingCeiling,
+    "a heavier secondary objective may claim more of the army")
+assert(director.ObjectiveAllocation.Ceiling <= constants.Policy.MaximumSecondaryFraction,
+    "no secondary may claim more than the cap, whatever its weight")
+localThreat = 0
+
+-- What is already built there is credited against what must be sent.
+--
+-- A reinforced point defence holds a position against many tanks; if it covers
+-- the threat, the defence costs the attack nothing at all.
+local savedAroundPoint = brain.GetUnitsAroundPoint
+local staticDefence = {}
+brain.GetUnitsAroundPoint = function(_, _, _, _, _) return staticDefence end
+localThreat = 1000
+ResetObjectives()
+director:Update()
+local bare = director.ObjectiveAllocation.RequiredThreat
+assert(bare > 0, "an unanswered threat must require force, got " .. tostring(bare))
+
+-- A real point defence: it stands at the anchor, and its weapon reaches the
+-- ground in front of it.
+staticDefence = {
+    {
+        Dead = false,
+        GetPosition = function() return { 0, 0, 0 } end,
+        GetBlueprint = function()
+            return {
+                Defense = { SurfaceThreatLevel = 100000, AirThreatLevel = 0 },
+                CategoriesHash = { STRUCTURE = true, DEFENSE = true },
+                Weapon = { { MaxRadius = 200,
+                    FireTargetLayerCapsTable = { Land = "Land|Water|Seabed" } } },
+            }
+        end,
+    },
+}
+ResetObjectives()
+director:Update()
+assert(director.ObjectiveAllocation.Covered > 0, "standing defences must be counted")
+assert(director.ObjectiveAllocation.RequiredThreat == 0,
+    "a threat the point defence already covers must ask the army for nothing")
+brain.GetUnitsAroundPoint = savedAroundPoint
+localThreat = 0
 
 -- An attack ping is offensive intent and keeps the primary slot, even though
 -- every other ping kind is protective.
@@ -2119,9 +2186,10 @@ pings.GetBestRequest = function()
     return { Type = "Attack", Position = { 700, 0, 800 }, Priority = 90,
         CreatedTick = 9000, OwnerArmy = 3 }
 end
-director.CurrentObjective = nil
+ResetObjectives()
 director:Update()
-assert(director.PrimaryObjective and director.PressureHeld,
+assert(director.PrimaryObjective and director.PrimaryObjective.Type == "Attack"
+    and director.PressureHeld,
     "an attack ping is offensive intent and holds pressure")
 pings.GetBestRequest = function() return nil end
 

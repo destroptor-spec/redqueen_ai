@@ -1429,3 +1429,74 @@ assert(noObjectiveLooking == 0,
 print("Red Queen scouting contracts passed")
 
 print("Red Queen forward-base cover contracts passed")
+
+-- Two slots are served from one pool.
+--
+-- Before this, a defensive objective was the only objective, and every layer
+-- was dispatched against it: on Fields of Isis that emptied the attack in 18 of
+-- 28 samples. Now the secondary takes what its trigger requires and the primary
+-- keeps the rest.
+local slotUnits = {}
+for index = 1, 10 do
+    table.insert(slotUnits, {
+        EntityId = 500 + index,
+        IsCombat = true,
+        GetPosition = function() return { 0, 0, 0 } end,
+        GetBlueprint = function()
+            return { CategoriesHash = { LAND = true, MOBILE = true, DIRECTFIRE = true },
+                     Defense = { SurfaceThreatLevel = 10 } }
+        end,
+    })
+end
+local slotPool = { GetPlatoonUnits = function() return slotUnits end }
+local slotPrimary = { Type = "Raid", Layer = "Land", Position = { 900, 0, 900 } }
+local slotSecondary = { Type = "Defend", Layer = "Land", Position = { 0, 0, 0 },
+    DefenseLayers = { Land = true }, LayerPositions = { Land = { 0, 0, 0 } } }
+local slotStrategy = {
+    Intel = { GetThreatNear = function() return 0 end },
+    ProductionDemand = {},
+    PrimaryObjective = slotPrimary,
+    CurrentObjective = slotPrimary,
+    SecondaryObjective = slotSecondary,
+    ObjectiveAllocation = { Ceiling = 0.60, RequiredThreat = 30 },
+}
+local slotManager = Create(
+    { GetPlatoonUniquelyNamed = function() return slotPool end },
+    { CanPath = function() return true end }, {}, slotStrategy
+)
+slotManager:Update()
+assert(slotManager.SlotDispatch.Secondary > 0, "the defence must receive units")
+assert(slotManager.SlotDispatch.Primary > 0,
+    "the attack must keep units while the defence is answered")
+assert(slotManager.SecondaryClaimedThreat >= 30,
+    "the defence must be given at least what its trigger required")
+-- And no more. Ten units of ten threat against a requirement of thirty is three
+-- units; claiming the whole ceiling regardless of need would be the old failure
+-- wearing a cap.
+assert(slotManager.SecondaryClaimedThreat <= 40,
+    "the defence must stop claiming once its requirement is met, got "
+        .. tostring(slotManager.SecondaryClaimedThreat))
+assert(slotManager.SlotDispatch.Secondary <= 4,
+    "meeting a requirement of thirty must not divert most of the army, got "
+        .. tostring(slotManager.SlotDispatch.Secondary))
+assert(not slotManager.SecondaryUnmet, "a requirement inside the ceiling is not unmet")
+
+-- The ceiling bounds it: no defence may take the whole army, however large the
+-- threat that raised it.
+for _, unit in ipairs(slotUnits) do unit.RedQueenOrderUntil = nil end
+slotStrategy.ObjectiveAllocation = { Ceiling = 0.60, RequiredThreat = 100000 }
+slotManager:Update()
+assert(slotManager.SlotDispatch.Primary > 0,
+    "an unmeetable defence must still leave the attack with units")
+assert(slotManager.SecondaryUnmet,
+    "a requirement beyond the ceiling must be reported, not taken from the primary")
+
+-- And a requirement the point defence already covers costs the attack nothing.
+for _, unit in ipairs(slotUnits) do unit.RedQueenOrderUntil = nil end
+slotStrategy.ObjectiveAllocation = { Ceiling = 0.60, RequiredThreat = 0 }
+slotManager:Update()
+assert(slotManager.SlotDispatch.Secondary == 0,
+    "a covered threat must divert nothing from the attack")
+assert(slotManager.SlotDispatch.Primary > 0, "the attack keeps the whole army")
+
+print("Red Queen objective slot dispatch contracts passed")

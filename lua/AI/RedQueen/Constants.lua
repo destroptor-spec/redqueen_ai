@@ -57,6 +57,14 @@ Policy = {
     -- Offensive commitment is tactical, never economic. A wave must carry this
     -- multiple of the observed enemy threat at its destination before it goes.
     CommitmentThreatRatio = 1.10,
+    -- How the army divides between what we are doing to them and what we are
+    -- protecting. The ceiling rises with the secondary objective's weight, so
+    -- the lightest reaction may claim a fifth of the army and the heaviest may
+    -- claim three fifths -- never all of it, because an alert that strips the
+    -- attack is the failure this split exists to remove.
+    MinimumSecondaryCeiling = 0.20,
+    MaximumSecondaryFraction = 0.60,
+    MinimumPressureFraction = 0.25,
     CommitmentThreatRadius = 60,
     CommitmentDiagnosticSeconds = 30,
     -- Scouting. Coverage at or above this counts as seen, so the army stops

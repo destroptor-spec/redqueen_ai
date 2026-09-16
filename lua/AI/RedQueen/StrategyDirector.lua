@@ -242,6 +242,24 @@ end
 
 -- The defenders any threat comparison is measured against. One definition, so
 -- the scalar and the per-arm readings can never drift apart.
+-- What is already standing at a place, as distinct from what could be sent.
+--
+-- A reinforced point defence holds a position against many tanks and an AA
+-- tower answers an air raid, neither of which requires a single unit to leave
+-- the attack. Crediting what is already built is what lets a defensive trigger
+-- cost no pressure at all.
+--
+-- Structures only, deliberately. Counting the mobile units already dispatched
+-- would make the requirement fall as they arrive and rise again as they leave,
+-- which is the oscillation this whole design exists to remove.
+local function StaticDefendersNear(brain, position, radius)
+    if not brain.GetUnitsAroundPoint then
+        return {}
+    end
+    return brain:GetUnitsAroundPoint(
+        categories.STRUCTURE * categories.DEFENSE, position, radius, "Ally") or {}
+end
+
 local function DefendersNear(brain, position, radius)
     if not brain.GetUnitsAroundPoint then
         return {}
@@ -688,6 +706,57 @@ StrategyDirector = ClassSimple {
     -- Anti-air carries no reach test. AirThreatLevel is already the engine's
     -- own statement that the unit answers aircraft, and an aircraft comes to
     -- it; a tower that has to be flown over is still defending.
+    -- Threat of the defensive structures standing at a place, split the same
+    -- way a cluster is, so a tower is judged against what it can actually shoot.
+    GetStaticDefenseNear = function(self, position, radius, target)
+        local contactLayer = target and PositionLayer(target) or "Land"
+        local arms = { Surface = 0, Air = 0 }
+        for _, unit in pairs(StaticDefendersNear(self.Brain, position, radius)) do
+            if unit and not unit.Dead then
+                local defense = unit:GetBlueprint().Defense or {}
+                arms.Air = arms.Air + (defense.AirThreatLevel or 0)
+                arms.Surface = arms.Surface + SurfaceDefenseThreat(unit, target, contactLayer)
+            end
+        end
+        return arms
+    end,
+
+    -- How much of the army the secondary slot may claim, and how much it needs.
+    --
+    -- The ceiling is set by the objective's weight; the requirement is set by
+    -- what is actually threatening the place, less whatever is already built
+    -- there. A defence that the point defence can handle asks for nothing, and
+    -- a defence that cannot be answered within its ceiling is reported unmet
+    -- rather than allowed to empty the attack.
+    AllocationFor = function(self, secondary, secondaryKind)
+        local policy = Constants.Policy
+        if not secondary then
+            return { Ceiling = 0, RequiredThreat = 0, Covered = 0, Contact = 0 }
+        end
+        local weight = SelectionWeights[secondaryKind] or 40
+        local top = SelectionWeights.DefenseAlert or 140
+        local ceiling = policy.MinimumSecondaryCeiling
+            + Clamp((weight - 40) / math.max(1, top - 40), 0, 1)
+                * (policy.MaximumSecondaryFraction - policy.MinimumSecondaryCeiling)
+
+        local threatPosition = secondary.ThreatPosition or secondary.Position
+        local radius = policy.CommitmentThreatRadius
+        local contact = 0
+        if threatPosition and self.Intel and self.Intel.GetThreatNear then
+            contact = self.Intel:GetThreatNear(threatPosition, radius) or 0
+        end
+        local standing = self:GetStaticDefenseNear(
+            secondary.Position or threatPosition, radius, threatPosition)
+        local covered = (standing.Surface or 0) + (standing.Air or 0)
+        local required = math.max(0, contact * policy.CommitmentThreatRatio - covered)
+        return {
+            Ceiling = ceiling,
+            RequiredThreat = required,
+            Covered = covered,
+            Contact = contact,
+        }
+    end,
+
     GetOwnThreatByArm = function(self, position, radius, target)
         local contactLayer = target and PositionLayer(target) or "Land"
         local arms = { Surface = 0, Air = 0 }
@@ -992,8 +1061,25 @@ StrategyDirector = ClassSimple {
         return alert
     end,
 
-    SetObjective = function(self, objective)
-        local previous = self.CurrentObjective
+    -- Adopt an objective into one slot, comparing it only against what that
+    -- slot already held.
+    SetSlotObjective = function(self, slot, objective)
+        self.SlotObjectives = self.SlotObjectives or {}
+        if not objective then
+            self.SlotObjectives[slot] = nil
+            return nil
+        end
+        local adopted = self:SetObjective(objective, self.SlotObjectives[slot])
+        self.SlotObjectives[slot] = adopted
+        return adopted
+    end,
+
+    -- `previous` is what this slot held, and nothing else. It must not fall
+    -- back to CurrentObjective: an empty secondary slot would then be compared
+    -- against the primary, which is precisely the cross-slot contest the slots
+    -- exist to abolish -- a defence would be refused for interrupting a raid it
+    -- was never competing with.
+    SetObjective = function(self, objective, previous)
         local tick = GetGameTick()
 
         if previous and objective and previous.Type == objective.Type and previous.ExpiresTick > tick then
@@ -1021,7 +1107,6 @@ StrategyDirector = ClassSimple {
             objective.ExpiresTick = objective.ExpiresTick or tick + Constants.Policy.ObjectiveLifetimeTicks
         end
 
-        self.CurrentObjective = objective
         -- Keyed on the kind, not the type: DefenseAlert and LocalDefense both
         -- produce Type == "Defend", and which of the two took the army is the
         -- difference between a real threat and a couple of raiders at home.
@@ -2037,14 +2122,43 @@ StrategyDirector = ClassSimple {
             end,
         }
 
-        local objective, objectiveKind = nil, nil
+        -- Both slots are filled in one pass. The primary is the best offensive
+        -- candidate and the secondary the best protective one, and the two no
+        -- longer compete: a defence stops being something that beats an attack
+        -- and becomes something that runs beside it.
+        --
+        -- The offensive builder is no longer skipped when a defence fires,
+        -- which is the point -- that skip is exactly how a raid used to vanish
+        -- for the rest of the match. Its pathing work now runs on any pass
+        -- where nothing of higher offensive weight fired.
+        local primaryObjective, primaryKind = nil, nil
+        local secondaryObjective, secondaryKind = nil, nil
         for _, kind in ipairs(SelectionOrder) do
-            objective = builders[kind]()
-            if objective then
-                objectiveKind = kind
+            if primaryObjective and secondaryObjective then
                 break
             end
+            -- Skip a kind whose slot is already filled. Every kind but a ping
+            -- knows its slot without being built, and the offensive builder is
+            -- the expensive one -- it runs the layer and pathing queries -- so
+            -- this keeps the cost where it was before the slots existed.
+            local staticSlot = ObjectiveSlots[kind]
+            local wanted = staticSlot == nil
+                or (staticSlot == "Primary" and not primaryObjective)
+                or (staticSlot == "Secondary" and not secondaryObjective)
+            if wanted then
+                local candidate = builders[kind]()
+                if candidate then
+                    local slot = SlotForObjective(kind, candidate)
+                    if slot == "Primary" and not primaryObjective then
+                        primaryObjective, primaryKind = candidate, kind
+                    elseif slot == "Secondary" and not secondaryObjective then
+                        secondaryObjective, secondaryKind = candidate, kind
+                    end
+                end
+            end
         end
+
+        local objective, objectiveKind = primaryObjective, primaryKind
 
         -- The kind and slot travel on the objective itself, because selecting
         -- one is not the same as adopting it: SetObjective may refuse the
@@ -2052,7 +2166,11 @@ StrategyDirector = ClassSimple {
         -- off whatever it returns is what keeps the report describing the army
         -- rather than the candidate.
         objective.Kind = objectiveKind
-        objective.Slot = SlotForObjective(objectiveKind, objective)
+        objective.Slot = "Primary"
+        if secondaryObjective then
+            secondaryObjective.Kind = secondaryKind
+            secondaryObjective.Slot = "Secondary"
+        end
 
         -- Mixed maps usually lead on Land, leaving ships without a destination
         -- unless they receive the water beside the same target. Resolve this
@@ -2079,28 +2197,36 @@ StrategyDirector = ClassSimple {
             objective.AirDropTarget = airDrop.EntityId
         end
 
-        objective = self:SetObjective(objective)
-
-        -- The two slots, read off the objective actually in force. The
-        -- secondary is not filled yet, so whichever objective holds the army
-        -- holds all of it, exactly as before; what is new is that the army says
-        -- which kind of thing it is doing. A secondary-intent objective
-        -- commanding the whole force is precisely the failure this design
-        -- exists to remove, so it is reported as pressure yielded rather than
-        -- quietly counted as an objective held.
-        local slot = objective.Slot or "Primary"
-        if slot == "Primary" then
-            self.PrimaryObjective, self.SecondaryObjective = objective, nil
-            self.ObjectiveAllocation = { Primary = 1, Secondary = 0 }
-        else
-            self.PrimaryObjective, self.SecondaryObjective = nil, objective
-            self.ObjectiveAllocation = { Primary = 0, Secondary = 1 }
-        end
+        -- Each slot replaces only itself. CanInterrupt used to be asked
+        -- whether a defence could take the army from an attack, and the answer
+        -- governed both directions: an attack was protected from a defence, and
+        -- then the defence was protected from the attack just as hard, so a
+        -- raid could not resume until the defensive objective expired. The
+        -- measured baseline was nine refusals against six actual changes. With
+        -- the slots separate that comparison is never made.
+        objective = self:SetSlotObjective("Primary", objective)
+        self.SecondaryObjective = self:SetSlotObjective("Secondary", secondaryObjective)
+        self.PrimaryObjective = objective
+        self.CurrentObjective = objective
         self.ObjectiveKind = objective.Kind
-        self.ObjectiveSlot = slot
-        self.PressureHeld = slot == "Primary"
+        self.ObjectiveSlot = "Primary"
+        -- Pressure is held when the primary slot is actually attacking
+        -- something. Staging is not pressure: it means nothing was found to
+        -- attack, which is a different failure and must not be counted as
+        -- success here.
+        self.PressureHeld = (OffensiveObjectives[objective.Type]
+            or objective.Type == "Attack") and true or false
 
-        self:UpdateDemand(objective)
+        self.ObjectiveAllocation = self:AllocationFor(
+            self.SecondaryObjective,
+            self.SecondaryObjective and self.SecondaryObjective.Kind or nil
+        )
+
+        -- Production still answers to whatever is threatening us, exactly as it
+        -- did when that was the only objective. Splitting the army is one
+        -- change; what gets built is another, and the defence alert already
+        -- reaches production on its own channel.
+        self:UpdateDemand(self.SecondaryObjective or objective)
 
         if objective.Type == "Assault"
             or objective.Type == "Raid"

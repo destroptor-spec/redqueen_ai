@@ -789,6 +789,45 @@ CombatManager = ClassSimple {
         summary.Sent = sent
     end,
 
+    -- Units the secondary slot may take, removed from `groups` in place.
+    --
+    -- Highest threat first, so the requirement is met by diverting the fewest
+    -- bodies from the attack, and capped per layer by the objective's ceiling
+    -- so no arm is stripped entirely. A requirement already covered by standing
+    -- defences is zero here, and then nothing leaves the attack at all.
+    ClaimForSecondary = function(self, groups, allocation)
+        local required = allocation.RequiredThreat or 0
+        local ceiling = allocation.Ceiling or 0
+        if ceiling <= 0 or required <= 0 then
+            return nil
+        end
+
+        local claimed = { Land = {}, Amphibious = {}, Hover = {}, Air = {}, Water = {} }
+        local taken = 0
+        for layer, units in pairs(groups) do
+            local available = table.getn(units)
+            local cap = math.floor(available * ceiling)
+            if cap > 0 and taken < required then
+                table.sort(units, function(a, b)
+                    return UnitThreat(a) > UnitThreat(b)
+                end)
+                local moved = 0
+                while moved < cap and taken < required and table.getn(units) > 0 do
+                    local unit = table.remove(units, 1)
+                    table.insert(claimed[layer], unit)
+                    taken = taken + UnitThreat(unit)
+                    moved = moved + 1
+                end
+            end
+        end
+        self.SecondaryClaimedThreat = taken
+        self.SecondaryRequiredThreat = required
+        -- Reported, never taken from the primary: a defence that cannot be
+        -- answered within its ceiling is a decision worth seeing in a log.
+        self.SecondaryUnmet = taken < required
+        return claimed
+    end,
+
     Update = function(self)
         self:MaintainForwardGarrisons()
         self:MaintainScouts()
@@ -798,20 +837,40 @@ CombatManager = ClassSimple {
         -- both carried. Without this figure the fleet reaching an objective is
         -- invisible outside Logger.Debug, which behavioural runs do not carry.
         self.DispatchSummary = { Land = 0, Air = 0, Water = 0, Amphibious = 0, Hover = 0 }
-        local objective = self.Strategy.CurrentObjective
+        self.SlotDispatch = { Primary = 0, Secondary = 0 }
+        self.SecondaryClaimedThreat = 0
+        self.SecondaryRequiredThreat = 0
+        self.SecondaryUnmet = false
+
+        -- Both slots are served from one pool. The secondary takes what its
+        -- trigger requires and the primary keeps the rest, so a defence costs
+        -- the attack a measured share of the army instead of all of it.
+        local secondary = self.Strategy.SecondaryObjective
+        local primaryGroups = self:GatherAvailableUnits()
+        if secondary then
+            local claimed = self:ClaimForSecondary(
+                primaryGroups, self.Strategy.ObjectiveAllocation or {})
+            if claimed then
+                self.SlotDispatch.Secondary = self:DispatchObjective(claimed, secondary)
+            end
+        end
+        self.SlotDispatch.Primary = self:DispatchObjective(
+            primaryGroups, self.Strategy.PrimaryObjective or self.Strategy.CurrentObjective)
+    end,
+
+    DispatchObjective = function(self, groups, objective)
         if not objective or objective.Type == "Recover" or objective.Type == "Stage" then
             self:TraceDecision(objective, "all", "held", "staging")
-            return
+            return 0
         end
         if objective.LaunchTick and objective.LaunchTick > GetGameTick() then
             self:TraceDecision(objective, "all", "held", "launch-coordination")
-            return
+            return 0
         end
         local defensive = objective.Type == "Defend"
             or objective.Type == "Support"
             or objective.Type == "Reinforce"
             or objective.Type == "Investigate"
-        local groups = self:GatherAvailableUnits()
         local ordered = 0
 
         local layerPositions = objective.LayerPositions or {}
@@ -871,6 +930,7 @@ CombatManager = ClassSimple {
             self.OrderSequence = self.OrderSequence + 1
             Logger.Debug(self.Brain, string.format("combat order=%d objective=%s units=%d", self.OrderSequence, objective.Type, ordered))
         end
+        return ordered
     end,
 }
 
