@@ -133,6 +133,9 @@ local constants = {
         EngineerSurvivalThreatFloor = 8,
         CommanderLeashRadius = 120,
         CommanderAssistSeconds = 45,
+        CoreExtractorRadius = 45,
+        CoreExtractorUpgradeEngineers = 4,
+        CoreExtractorAssistSeconds = 30,
         ForwardBaseSourceMinimumEngineers = 2,
         FactoryCapDiagnosticSeconds = 60,
         MaximumManagedBases = 8,
@@ -205,6 +208,10 @@ function IssueGuard(units, target)
 end
 function IssueClearCommands(units)
     table.insert(cleared, units)
+end
+local upgrades = {}
+function IssueUpgrade(units, blueprintId)
+    table.insert(upgrades, { Units = units, BlueprintId = blueprintId })
 end
 
 local commander = {
@@ -2137,7 +2144,7 @@ end
 -- observed as an idle ACU through the early and mid game, and as an Aeon
 -- commander wandering alone to the centre of the map.
 local commanderHome = { 0, 0, 0 }
-local function commanderRun(position, idle, alertActive, factoryPositions, nativeManager)
+local function commanderRun(position, idle, alertActive, factoryPositions, nativeManager, coreUpgrade)
     local acu = {
         EntityId = 900,
         Dead = false,
@@ -2174,6 +2181,12 @@ local function commanderRun(position, idle, alertActive, factoryPositions, nativ
         GetListOfUnits = function(_, category)
             if category and category.Matches and category.Matches({ COMMAND = true }) then
                 return { acu }
+            end
+            if coreUpgrade
+                and category and category.Matches
+                and category.Matches({ STRUCTURE = true, MASSEXTRACTION = true })
+            then
+                return { coreUpgrade }
             end
             return factories
         end,
@@ -2350,3 +2363,135 @@ for tech = 1, 3 do
 end
 
 print("Red Queen forward-base tier contracts passed")
+
+
+-- Upgrading the extractors at the spawn.
+--
+-- For an army that has lost the map -- six or seven points of forty-four,
+-- measured on Fields of Isis -- this is the only income left that needs no
+-- ground taken first. One at a time, with engineers on the one in progress,
+-- because an extractor produces nothing while it upgrades and starting all four
+-- removes the whole core economy at the moment it is paying for them.
+local coreHome = { 0, 0, 0 }
+local function CoreExtractor(id, x, upgrading, upgradesTo)
+    return {
+        EntityId = id,
+        GetPosition = function() return { x, 0, 0 } end,
+        IsUnitState = function(_, state) return upgrading and state == "Upgrading" end,
+        GetBlueprint = function()
+            return {
+                CategoriesHash = { STRUCTURE = true, MASSEXTRACTION = true },
+                General = { UpgradesTo = upgradesTo },
+            }
+        end,
+    }
+end
+
+local function CoreEngineer(id)
+    return {
+        EntityId = id,
+        IsEngineer = true,
+        GetPosition = function() return { 5, 0, 5 } end,
+        GetBlueprint = function()
+            return { CategoriesHash = { ENGINEER = true, MOBILE = true } }
+        end,
+    }
+end
+
+local coreExtractors = {}
+local coreEngineers = {}
+local coreManager = Create(
+    {
+        GetListOfUnits = function() return coreExtractors end,
+        GetPlatoonUniquelyNamed = function()
+            return { GetPlatoonUnits = function() return coreEngineers end }
+        end,
+    },
+    { FactionIndex = 1 },
+    { StartPosition = coreHome },
+    { State = {} },
+    {},
+    { ProductionDemand = {} }
+)
+
+-- Four spawn extractors, none upgrading yet: exactly one upgrade is started.
+coreExtractors = {
+    CoreExtractor(20, 10, false, "ueb1202"),
+    CoreExtractor(21, 20, false, "ueb1202"),
+    CoreExtractor(22, 30, false, "ueb1202"),
+    -- Far from the spawn: held ground, but not core, so not the priority.
+    CoreExtractor(23, 400, false, "ueb1202"),
+}
+coreEngineers = { CoreEngineer(30), CoreEngineer(31), CoreEngineer(32),
+    CoreEngineer(33), CoreEngineer(34), CoreEngineer(35) }
+upgrades = {}
+guarded = {}
+assert(table.getn(coreManager:CoreExtractors()) == 3,
+    "only the extractors at the spawn are core, got "
+        .. tostring(table.getn(coreManager:CoreExtractors())))
+assert(coreManager:MaintainCoreExtractorUpgrades() == "started",
+    "an idle core extractor must be put on an upgrade")
+assert(table.getn(upgrades) == 1, "exactly one upgrade at a time, got " .. tostring(table.getn(upgrades)))
+assert(upgrades[1].Units[1].EntityId == 20, "the upgrade must start on a spawn extractor")
+assert(upgrades[1].BlueprintId == "ueb1202", "the upgrade must name the blueprint it upgrades to")
+
+-- Three or four engineers go onto it, not all six.
+assert(table.getn(guarded) == 4,
+    "four engineers must assist the upgrade, got " .. tostring(table.getn(guarded)))
+for _, order in ipairs(guarded) do
+    assert(order.Target.EntityId == 20, "every assisting engineer must be put on the upgrade")
+end
+assert(coreEngineers[5].RedQueenCoreUpgradeUntil == nil,
+    "engineers beyond the wanted count must stay free for other work")
+
+-- While one is upgrading, no second upgrade is started.
+coreExtractors[1] = CoreExtractor(20, 10, true, "ueb1202")
+upgrades = {}
+guarded = {}
+assert(coreManager:MaintainCoreExtractorUpgrades() == "upgrading",
+    "an upgrade already under way must be assisted, not duplicated")
+assert(table.getn(upgrades) == 0,
+    "a second core upgrade must not start while one is running, got " .. tostring(table.getn(upgrades)))
+assert(table.getn(guarded) > 0, "the upgrade in progress must keep its engineers")
+
+-- A stall risk stops it: the upgrade would not finish and the income is gone
+-- meanwhile.
+coreManager.Economy.State.StallRisk = true
+upgrades = {}
+assert(coreManager:MaintainCoreExtractorUpgrades() == "stall-risk",
+    "a stalling economy must not start an upgrade")
+assert(table.getn(upgrades) == 0, "nor issue one")
+coreManager.Economy.State.StallRisk = false
+
+-- Nothing to upgrade is not a failure.
+coreExtractors = { CoreExtractor(40, 10, false, nil) }
+coreEngineers = { CoreEngineer(50) }
+upgrades = {}
+assert(coreManager:MaintainCoreExtractorUpgrades() == "none",
+    "a fully upgraded core must simply report nothing to do")
+assert(table.getn(upgrades) == 0, "and must not issue an upgrade order")
+
+
+-- The commander is the largest build power on the field, so a core extractor
+-- part-way through an upgrade outranks a factory for its attention. It is the
+-- one piece of economy that pays off without taking any ground back.
+local upgradingCore = {
+    EntityId = 77,
+    Dead = false,
+    Categories = { STRUCTURE = true, MASSEXTRACTION = true },
+    GetPosition = function() return { 10, 0, 10 } end,
+    IsUnitState = function(_, state) return state == "Upgrading" end,
+    GetBlueprint = function()
+        return { CategoriesHash = { STRUCTURE = true, MASSEXTRACTION = true },
+                 General = { UpgradesTo = "ueb1202" } }
+    end,
+}
+local coreVerdict, _, coreOrders = commanderRun(
+    { 20, 0, 20 }, true, false, { { 40, 0, 40 } }, nil, upgradingCore)
+assert(coreVerdict == "assist-core-extractor",
+    "an idle commander must shorten a core upgrade before assisting a factory, got "
+        .. tostring(coreVerdict))
+assert(table.getn(coreOrders) == 1 and coreOrders[1].Target.EntityId == 77,
+    "the commander must be put on the extractor that is upgrading")
+
+print("Red Queen core extractor upgrade contracts passed")

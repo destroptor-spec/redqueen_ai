@@ -67,6 +67,13 @@ Policy = {
     -- main base, so every attack on the base anchors there.
     -- What survives of tier and project investment while the base is threatened.
     -- A poor army keeps the floor; wealth lifts it, and so does being out-teched.
+    -- Upgrading the extractors at the spawn is the cheapest income available to
+    -- an army that cannot take more ground: no new territory to hold, no
+    -- escort, no route. One at a time, because upgrading several takes them all
+    -- offline at once and stalls the mass that pays for the next.
+    CoreExtractorRadius = 45,
+    CoreExtractorUpgradeEngineers = 4,
+    CoreExtractorAssistSeconds = 30,
     BaseDangerMinimumTierRetention = 0.35,
     OuttechedTierRelief = 0.75,
     CommanderEmergencyHealthFraction = 0.75,

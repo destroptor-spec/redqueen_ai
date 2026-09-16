@@ -2199,9 +2199,28 @@ ProductionManager = ClassSimple {
         if commander.IsIdleState and not commander:IsIdleState() then
             return "busy"
         end
+        -- A core extractor part-way through an upgrade outranks a factory. The
+        -- commander is the largest build power on the field and the upgrade is
+        -- the one piece of economy that needs no ground taken to pay off, so
+        -- the ACU shortens exactly the wait that matters.
+        local target = nil
+        for _, extractor in ipairs(self:CoreExtractors()) do
+            if extractor.IsUnitState and extractor:IsUnitState("Upgrading") then
+                target = extractor
+                break
+            end
+        end
+        if target then
+            ReleaseEngineer(commander, nil, false)
+            if IssueGuard then IssueGuard({ commander }, target) end
+            commander.RedQueenAssistUntil = tick
+                + Constants.Policy.CommanderAssistSeconds * 10
+            self.CommanderAssists = (self.CommanderAssists or 0) + 1
+            return "assist-core-extractor"
+        end
+
         local factories = self.Brain:GetListOfUnits(
             categories.STRUCTURE * categories.FACTORY, false)
-        local target = nil
         local bestDistance = nil
         for _, factory in pairs(factories or {}) do
             if IsAlive(factory) and factory.GetPosition then
@@ -2236,6 +2255,111 @@ ProductionManager = ClassSimple {
             + Constants.Policy.CommanderAssistSeconds * 10
         self.CommanderAssists = (self.CommanderAssists or 0) + 1
         return "assist"
+    end,
+
+    -- The extractors at the spawn, which are the ones worth upgrading first.
+    --
+    -- Ground we already hold: no new territory to defend, no escort to spare,
+    -- no route to keep open. For an army that has lost the map -- six or seven
+    -- points of forty-four, measured -- this is the only income left that does
+    -- not require taking something back first.
+    CoreExtractors = function(self)
+        local home = self.World and self.World.StartPosition
+        if not home or not self.Brain.GetListOfUnits or not categories then
+            return {}
+        end
+        local radius = Constants.Policy.CoreExtractorRadius
+        local found = {}
+        local units = self.Brain:GetListOfUnits(
+            categories.STRUCTURE * categories.MASSEXTRACTION, false) or {}
+        for _, extractor in pairs(units) do
+            if IsAlive(extractor) and extractor.GetPosition
+                and DistanceSquared(extractor:GetPosition(), home) <= radius * radius
+            then
+                table.insert(found, extractor)
+            end
+        end
+        table.sort(found, function(a, b)
+            return (a.EntityId or 0) < (b.EntityId or 0)
+        end)
+        return found
+    end,
+
+    -- Upgrade them one at a time, with engineers on the one in progress.
+    --
+    -- Serialised deliberately. An extractor produces nothing while it upgrades,
+    -- so starting all four at once removes the whole core economy at the moment
+    -- it is paying for the upgrades -- which is why a player takes three or four
+    -- engineers, puts them on one, and waits.
+    MaintainCoreExtractorUpgrades = function(self)
+        local state = self.Economy.State or {}
+        -- A stall means the upgrade would not finish and the income is gone
+        -- meanwhile. Nothing here is urgent enough to risk that.
+        if state.StallRisk then
+            self.CoreUpgrade = { State = "stall-risk" }
+            return "stall-risk"
+        end
+
+        local upgrading, candidate = nil, nil
+        for _, extractor in ipairs(self:CoreExtractors()) do
+            if extractor.IsUnitState and extractor:IsUnitState("Upgrading") then
+                upgrading = extractor
+                break
+            end
+            if not candidate then
+                local blueprint = extractor.GetBlueprint and extractor:GetBlueprint() or {}
+                local upgradesTo = blueprint.General and blueprint.General.UpgradesTo
+                if upgradesTo and upgradesTo ~= "" then
+                    candidate = { Unit = extractor, BlueprintId = upgradesTo }
+                end
+            end
+        end
+
+        local target = upgrading
+        if not target and candidate then
+            if IssueUpgrade then
+                IssueUpgrade({ candidate.Unit }, candidate.BlueprintId)
+            end
+            target = candidate.Unit
+            Logger.Info(self.Brain, string.format(
+                "core extractor upgrade started to=%s", tostring(candidate.BlueprintId)))
+        end
+        if not target then
+            self.CoreUpgrade = { State = "none" }
+            return "none"
+        end
+
+        local assisted = self:AssistCoreExtractor(target)
+        self.CoreUpgrade = {
+            State = upgrading and "upgrading" or "started",
+            Engineers = assisted,
+        }
+        return self.CoreUpgrade.State
+    end,
+
+    -- Put engineers on the upgrade, and the commander too when it is idle.
+    AssistCoreExtractor = function(self, target)
+        local tick = GetGameTick()
+        local wanted = Constants.Policy.CoreExtractorUpgradeEngineers
+        local hold = Constants.Policy.CoreExtractorAssistSeconds * 10
+        local assigned = 0
+        for _, engineer in ipairs(self:GetUnassignedEngineers()) do
+            if assigned >= wanted then
+                break
+            end
+            local held = (engineer.RedQueenEmergencyDefenseUntil
+                    and engineer.RedQueenEmergencyDefenseUntil > tick)
+                or (engineer.RedQueenProductionBuildUntil
+                    and engineer.RedQueenProductionBuildUntil > tick)
+            if not held and not EngineerSurvival.IsRetreating(engineer) then
+                ReleaseEngineer(engineer, nil, false)
+                if IssueGuard then IssueGuard({ engineer }, target) end
+                engineer.RedQueenCoreUpgradeUntil = tick + hold
+                assigned = assigned + 1
+            end
+        end
+        self.CoreUpgradeAssists = (self.CoreUpgradeAssists or 0) + assigned
+        return assigned
     end,
 
     HasCurrentForwardBaseWork = function(self, record)
@@ -2313,6 +2437,8 @@ ProductionManager = ClassSimple {
                     and engineer.RedQueenEmergencyDefenseUntil > tick)
                 or (engineer.RedQueenProductionBuildUntil
                     and engineer.RedQueenProductionBuildUntil > tick)
+                or (engineer.RedQueenCoreUpgradeUntil
+                    and engineer.RedQueenCoreUpgradeUntil > tick)
         end
 
         local engineers = self.Brain:GetListOfUnits(
@@ -2713,6 +2839,10 @@ ProductionManager = ClassSimple {
         self:UpdateShoreArtillery(unassigned)
         self:UpdateShoreTorpedo(unassigned)
         self:UpdateFactoryAssistance(factories, unassigned, unassignedByEntityId)
+        -- Before forward bases deliberately. When the map is being lost there
+        -- is no ground to expand onto, and the spawn extractors are the income
+        -- that does not need any.
+        self:MaintainCoreExtractorUpgrades()
         self:UpdateForwardBases()
         self:UpdateEngineerRetreat()
         self:UpdateCommanderTasking()
