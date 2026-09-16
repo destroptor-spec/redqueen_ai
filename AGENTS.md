@@ -147,6 +147,15 @@ Name Lua tests `*_spec.lua`. Add pure tests for formulas and invariants, and ext
 
 Hooks must be placed in the file that *defines* the symbol they capture, not one that merely uses it. `hook/lua/<path>` is appended to the environment of `lua/<path>`, and `system/config.lua` installs a strict metatable that raises on reading a nonexistent global — so a misplaced capture aborts that file's import and crashes the simulation before the first frame, with a native callstack rather than a Lua error. It happened with `EngineerMoveWithSafePath`, which `platoon.lua` uses as `AIUtils.EngineerMoveWithSafePath` but `lua/AI/aiutilities.lua` defines. The contract gate cannot see this, because specs supply the hook's environment themselves. Run `scripts/check-hook-targets.py ~/.faforever/gamedata/lua.nx2` after adding or moving a hook; it resolves each hook to its native file in the installed archive and fails on a symbol that file does not define.
 
+The same strict metatable reaches ordinary modules, not only hooks. Reading a
+global that does not exist *yet* raises, so `if SomeEngineGlobal then` is not a
+safe probe inside a constructor: the brain is built before the engine has
+finished publishing its globals. `IntelManager.__init` probing `MapSize` that
+way killed the brain outright — zero brains started, seven log lines, and a
+recorded victory that meant nothing. Resolve engine globals lazily, on first
+use, and wrap the read in `pcall`. No contract can catch this, because specs
+supply their own permissive environment; only a match can.
+
 Before starting any in-game or command-line smoke test, verify that the active `mods/TheRedQueen` path is a symbolic link and that `readlink -f` resolves to this repository checkout. Do not interpret runtime results from a copied directory, stale payload, or link targeting another checkout; correct the development installation first.
 
 ## Commit & Pull Request Guidelines

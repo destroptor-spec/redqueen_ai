@@ -35,8 +35,6 @@ local constants = {
         AnchorProximityTolerance = 16,
         ArmyClosingThreatFraction = 0.25,
         ObserversPerUpdate = 2,
-        ObserverBaselineKilometers = 5,
-        ObserversPerUpdateMaximum = 96,
         RouteCoverageConfidenceForFull = 1.0,
         CommitmentThreatRadius = 60,
         ObservationRadius = 70,
@@ -101,40 +99,6 @@ local observingBrain = {
 }
 local observingManager = Create(observingBrain)
 observingManager:Update()
-
--- The sampling budget scales with the map, because coverage exists only where
--- our units have been and a 10 km map is four times the area of a 5 km one.
--- Thirty-two LandLarge runs never got blind below 50% against 15-31% on the
--- small maps, with no overlap: a fixed budget does not reach.
-local budget = Create(observingBrain)
-budget.MapKilometers = constants.Policy.ObserverBaselineKilometers
-local baseTerrain, baseEnemy = budget:ObserverSamples(1000)
-assert(baseTerrain == constants.Policy.ObserversPerUpdate
-    and baseEnemy == constants.Policy.ObserversPerUpdate,
-    "the baseline map must sample exactly the fixed budget, got " .. tostring(baseTerrain))
-
-budget.MapKilometers = constants.Policy.ObserverBaselineKilometers * 2
-local wideTerrain, wideEnemy = budget:ObserverSamples(1000)
-assert(wideTerrain == baseTerrain * 4,
-    "twice the width is four times the area and must sample four times as much terrain, got "
-        .. tostring(wideTerrain))
--- The expensive half does not scale. Terrain sampling is a position and a
--- radius; the enemy proximity query is a spatial search per observer.
-assert(wideEnemy == constants.Policy.ObserversPerUpdate,
-    "but the enemy proximity query must keep its fixed budget, got " .. tostring(wideEnemy))
-
-budget.MapKilometers = constants.Policy.ObserverBaselineKilometers * 20
-local hugeTerrain = budget:ObserverSamples(1000)
-assert(hugeTerrain == constants.Policy.ObserversPerUpdateMaximum,
-    "and the scaling must stay bounded, got " .. tostring(hugeTerrain))
-
--- Never more samples than there are units to sample.
-budget.MapKilometers = constants.Policy.ObserverBaselineKilometers * 2
-local scarceTerrain, scarceEnemy = budget:ObserverSamples(3)
-assert(scarceTerrain == 3,
-    "a small army cannot be sampled more times than it has units, got " .. tostring(scarceTerrain))
-assert(scarceEnemy == constants.Policy.ObserversPerUpdate,
-    "and the enemy query keeps its own budget under that ceiling, got " .. tostring(scarceEnemy))
 assert(observingManager.Observations[101], "current visual intel must create an observation")
 assert(observingManager.Observations[102], "identified active radar intel must create an observation")
 assert(not observingManager.Observations[103], "hidden proximity units must not create observations")

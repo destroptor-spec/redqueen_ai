@@ -179,3 +179,43 @@ into the 15-31% band needs the coverage budget itself to scale with the map:
 `ObserversPerUpdate` 16, `ObservationRadius` 48 and `IntelLifetimeSeconds` 180
 are fixed while LandLarge is four times the area of LandSmall. That is the next
 thing to change, and now there is a measure that will show whether it works.
+
+## Sampling rate was never the constraint — 2026-09-16
+
+Proposal 3 was to scale the observer budget with map area, on the reasoning that
+`ObserversPerUpdate` 16 is fixed while LandLarge is four times the area of
+LandSmall. It was implemented, measured, and **refuted**, then reverted.
+
+Terrain sampling scaled with area while the enemy proximity query kept its fixed
+budget. On Syrtis `31337` the result was byte-identical to the run before it:
+victory at tick 30125, mean blind 50% over 51 samples. Nothing moved.
+
+The arithmetic says it never could. Intel updates every 20 ticks, so a 180
+second intel lifetime spans 90 passes. At 16 observers per pass that is 1440
+observer-samples per lifetime, against an army of order 50 to 100 units — every
+unit was already being sampled roughly 15 to 30 times before any of its
+observations expired. The army was never under-sampled. Raising the rate re-reads
+the same units standing in the same places and records the same terrain cells.
+
+The binding constraint is **where the units are**, not how often they are read.
+Coverage exists only where something has physically been, and an army occupies a
+small fraction of a 10 km map however often its positions are sampled. Lowering
+blindness on a large map therefore means going to more places — which is
+dispatch, already enabled, and whose removal in `production-only` made things
+worse — or changing what coverage is measured over.
+
+That leaves the candidate set. `GetScoutTargets` scores every mass cluster on the
+map: 16 on Isis and 21 on Syrtis, against 3 on Sludge. Most are irrelevant to the
+current objective, and each one nothing has visited counts as blind. A blind
+share computed over a bounded, objective-relevant set would measure something the
+army can actually act on, and would not be structurally unsatisfiable at scale.
+That is the next thing to test, and it is cheap.
+
+### Cost of the attempt
+
+`IntelManager.__init` probed `MapSize` with `if MapSize then`. The strict global
+metatable raises on reading a name that does not exist yet, and the brain is
+constructed before the engine has published that global, so `Create` threw: zero
+brains started, seven Red Queen log lines, and a recorded victory that meant
+nothing at all. The contract gate passed throughout, because specs supply their
+own permissive environment. `AGENTS.md` now carries the rule.
