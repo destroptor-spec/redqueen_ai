@@ -2368,7 +2368,13 @@ ProductionManager = ClassSimple {
         local wanted = Constants.Policy.CoreExtractorUpgradeEngineers
         local hold = Constants.Policy.CoreExtractorAssistSeconds * 10
         local assigned = 0
-        for _, engineer in ipairs(self:GetUnassignedEngineers()) do
+        -- Bound to a local first. GetUnassignedEngineers returns two values and
+        -- passing a multi-return call straight into ipairs breaks in the game's
+        -- Lua dialect -- "loop over expected but got number" -- while LuaJIT
+        -- accepts it, so the contract gate cannot see it. It cost 177 failed
+        -- production passes in a run that was reported as a result.
+        local available = self:GetUnassignedEngineers()
+        for _, engineer in ipairs(available) do
             if assigned >= wanted then
                 break
             end

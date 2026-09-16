@@ -1023,4 +1023,27 @@ if "os.environ.get('FAF_NO_HUMAN') == '1'" not in overlay_source:
 if "playerOptions.Human = false" not in overlay_source:
     fail("the no-human overlay must actually hand the player's start to an AI")
 
+
+# The game's Lua flattens a multi-return call into the generic-for's control
+# variables, so `for _, x in ipairs(f())` where f returns two values raises
+# "loop over expected but got number" at runtime. LuaJIT accepts it happily, so
+# the contract gate cannot see it -- it cost 177 failed production passes in a
+# run that had already been reported as a result. Bind such a call to a local
+# first.
+MULTI_RETURN_LINE = re.compile(r"^\s*return\s+[^,\n(){}]+,\s*\S", re.M)
+for lua_path in lua_files:
+    lua_source = lua_path.read_text(encoding="utf-8")
+    multi_return = set()
+    for method in re.finditer(r"(\w+)\s*=\s*function\(self[^)]*\)(.*?)\n    end,",
+                              lua_source, re.S):
+        if MULTI_RETURN_LINE.search(method.group(2)):
+            multi_return.add(method.group(1))
+    for use in re.finditer(r"in i?pairs\(self:(\w+)\(\)", lua_source):
+        if use.group(1) in multi_return:
+            fail(
+                f"{lua_path.name}: self:{use.group(1)}() returns several values and is "
+                "iterated directly; bind it to a local first or the game's Lua "
+                "raises 'loop over expected but got number'"
+            )
+
 print(f"Validated {len(lua_files)} Lua files and The Red Queen mod contract")
