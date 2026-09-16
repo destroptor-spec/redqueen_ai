@@ -335,3 +335,98 @@ Nothing here claims the large-map economy. It removes the reason pressure stops,
 which is a precondition for judging the economic objectives rather than a
 substitute for them. Extractor churn stays the figure to judge those by, and
 Fields of Isis remains 0W in every arm tested so far.
+
+
+## The economy latch, and a correction
+
+Three runs of the same cell — Fields of Isis, seed 31337, Red Queen Aeon. All
+three are byte-identical to sample 9, because the seed is fixed and nothing
+before the first defensive trigger differs.
+
+### When map control is lost
+
+| sample | extractors | engineers held/target | engineers lost | momentum | alert |
+| --- | --- | --- | --- | --- | --- |
+| 8 | **18 / 44** peak | 10 / 6 | 0 | stable | no |
+| 9 | 16 | 13 / 7 | 1 | **losing** | no |
+| 10 | 14 | 17 / 9 | 2 | losing | **yes** |
+
+`momentum=losing` and the first engineer loss arrive one sample *before* the
+alert, so the alert is a lagging signal. Extractors then fall to 6 and never
+recover across the next twenty minutes.
+
+### A wrong answer, recorded so it is not repeated
+
+The first diagnosis was that `commander-emergency` latched the economy off. The
+`Commander` anchor is the ACU's own position and the ACU stands in the main
+base, so every attack on the base anchored there; in Assassination that zeroed
+Tech3, Experimental, Nuke and every project slot. It held 21 of 35 samples.
+
+That was fixed — the veto now requires the commander to actually be losing
+health — and the fix was validated end to end on the same cell. **It changed
+nothing.**
+
+| measure | before | after |
+| --- | --- | --- |
+| `commander-emergency` samples | 21 | **7** |
+| samples with any T2 weight | 1 | 1 |
+| samples with any experimental weight | 0 | 0 |
+| extractors, peak → final | 18 → 6 | 18 → **2** |
+| result | defeat, 35:14 | defeat, 42:41 |
+
+The veto was real and the fix is correct on its own terms — proximity is not
+danger — but it was never the binding constraint. It zeroed values that were
+already zero.
+
+### The actual latch
+
+`baseDanger` is `localThreat >= LocalDefenseThreat`, which is 25: a couple of
+raiders within 100 of the base. It gates the *computation* of `experimental` and
+`nuke`, upstream of everything else.
+
+```
+local baseDanger = localThreat >= Constants.Policy.LocalDefenseThreat
+local tech2 = 0
+if not baseDanger and forces.MissingT2Coverage > 0 and CanAfford(...) then
+...
+if not baseDanger and nukeOpportunity and ...
+```
+
+So the severity-and-wealth tax in the alert branch — written to stop exactly
+this failure, after a binary veto held one army at zero experimental weight for
+all thirty of its alert samples — **cannot fire**. It multiplies
+`weights.Experimental` by a retention factor, and `weights.Experimental` is
+already zero whenever an enemy is near the base. The relief mechanism is dead
+code in precisely the case it was built for.
+
+The measurements isolate it from affordability:
+
+- 30 of 43 samples could afford Tech 2 (mass ≥ 4, energy ≥ 60). T2 weight was
+  zero in **all thirty**.
+- 9 samples could afford Tech 3 (mass ≥ 10, energy ≥ 250). T3 weight was zero in
+  all nine — though here `MissingT3Coverage` reaching zero is a legitimate
+  reason, since tier policy did reach `L3,A3`.
+- Experimental weight was zero in **all 43 samples**, while the match ended on
+  mass 27.8, energy 828 and `tiers=L3,A3,N1`.
+
+`Tech 3 is deliberately not gated on baseDanger` is already a comment in this
+file, added after a match that built 925 Tech 1 units against 669 Tech 3. The
+same lesson was never applied to `experimental` or `nuke`.
+
+### What this means for consolidation
+
+Defending remaining extractors, power-to-mass conversion, mass storage
+adjacency, extractor upgrades and SACUs are all investment under pressure —
+which is the state `baseDanger` forbids. None of them exist yet either:
+
+| capability | status |
+| --- | --- |
+| mass fabricators | absent |
+| mass storage / adjacency | absent |
+| energy storage | absent |
+| extractor upgrades T1→T2→T3 | absent (factory upgrades exist) |
+| SACUs | one build condition, capped at six |
+| `Cover expansion` | missing |
+
+So the order is: make investment legal under pressure, then give it something to
+buy.
