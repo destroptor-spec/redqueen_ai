@@ -528,9 +528,34 @@ StrategyDirector = ClassSimple {
         local replacements = pressure.Count
             * Constants.Policy.EngineerLossReplacementFactor
 
+        -- The opening floor. `ShouldBuildEngineer` stops at the target, so this
+        -- is the number that decides how fast the map gets claimed -- and a
+        -- target derived from one factory is two.
+        --
+        -- Held against the map's own point count rather than a timer: while
+        -- half the points are still unclaimed there is breadth worth taking,
+        -- and when there is not, the same engineers are what upgrade the core.
+        -- EngineersMaximum still caps the total, so this cannot become the
+        -- replacement spiral that once produced 101 engineers.
+        local extractors = 0
+        if self.Brain.GetCurrentUnits and categories then
+            extractors = self.Brain:GetCurrentUnits(
+                categories.STRUCTURE * categories.MASSEXTRACTION) or 0
+        end
+        local points = (self.World and self.World.MassPointCount) or 0
+        -- `feeding`, not the built count, for the same reason the structural
+        -- base uses it: the opening should be asking for the engineers before
+        -- the factory finishes, not a pass later.
+        local claiming = feeding >= 1
+            and points > 0
+            and extractors < points * Constants.Policy.ExpansionClaimedShare
+        local floor = claiming
+            and Constants.Policy.EngineersExpansionFloor
+            or Constants.Policy.EngineersMinimum
+
         demand.EngineerLossPressure = pressure
         demand.DesiredEngineers = math.max(
-            Constants.Policy.EngineersMinimum,
+            floor,
             math.min(
                 Constants.Policy.EngineersMaximum,
                 math.ceil(base + expansion + replacements)

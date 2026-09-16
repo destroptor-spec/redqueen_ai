@@ -63,6 +63,7 @@ categories = {
     SCOUT = 1,
     STRUCTURE = 1,
     DEFENSE = 1,
+    MASSEXTRACTION = 1,
 }
 
 local constants = {
@@ -95,6 +96,8 @@ local constants = {
         GarrisonLossFraction = 0.5,
         EngineersPerFactory = 0.75,
         EngineersMinimum = 2,
+        EngineersExpansionFloor = 12,
+        ExpansionClaimedShare = 0.5,
         EngineersMaximum = 18,
         EngineersPerForwardBase = 2,
         EngineerLossReplacementFactor = 1.5,
@@ -465,6 +468,40 @@ local function engineerTarget()
     director:UpdateDemand({ Type = "Raid" })
     return director.ProductionDemand.DesiredEngineers
 end
+
+-- The opening is an engineer problem, not a factory problem.
+--
+-- ShouldBuildEngineer stops at this target, so it is what decides how fast the
+-- map is claimed -- and derived from one factory it is two. A player builds ten
+-- to fifteen as the first factory completes and spreads them over the points.
+-- Red Queen peaked at 18 of 44 and never reached more.
+local claimedExtractors = 0
+local previousCurrentUnits = brain.GetCurrentUnits
+brain.GetCurrentUnits = function() return claimedExtractors end
+world.MassPointCount = 44
+director.RecentEngineerLosses = {}
+economy.State.DesiredFactories = 1
+claimedExtractors = 3
+local openingEngineers = engineerTarget()
+assert(openingEngineers >= constants.Policy.EngineersExpansionFloor,
+    "an opening with points left to claim must ask for the engineers to claim them, got "
+        .. tostring(openingEngineers))
+
+-- Once the map is mostly held, the floor lifts and the structural need governs.
+claimedExtractors = 40
+local settledEngineers = engineerTarget()
+assert(settledEngineers < constants.Policy.EngineersExpansionFloor,
+    "a map already claimed must not keep demanding expansion engineers, got "
+        .. tostring(settledEngineers))
+
+-- And the floor never overrides the ceiling, so it cannot become the
+-- replacement spiral that once produced 101 engineers.
+claimedExtractors = 3
+economy.State.DesiredFactories = 40
+assert(engineerTarget() <= constants.Policy.EngineersMaximum,
+    "the maximum still caps the target")
+brain.GetCurrentUnits = previousCurrentUnits
+world.MassPointCount = nil
 
 director.RecentEngineerLosses = {}
 economy.State.DesiredFactories = 4

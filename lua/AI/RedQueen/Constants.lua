@@ -293,6 +293,18 @@ Policy = {
     -- overbuilds so the next one costs it no tempo.
     EngineersPerFactory = 0.75,
     EngineersMinimum = 2,
+    -- What the opening actually needs, as distinct from what the factories do.
+    --
+    -- The structural target is derived from factory count, so the first factory
+    -- asks for 0.75 of an engineer and the opening ran on two or three. But the
+    -- opening's job is claiming mass points, and every point is an engineer
+    -- trip: the first factory completing is the cue to build ten to fifteen
+    -- engineers and spread them across the map. Red Queen peaked at 18 of 44
+    -- points and never reached more.
+    EngineersExpansionFloor = 12,
+    -- While fewer than this share of the map's points are held, there is still
+    -- breadth worth claiming and the floor applies.
+    ExpansionClaimedShare = 0.5,
     EngineersMaximum = 18,
     -- Where native engineer production is *cut*, which is not the same number
     -- as the target Red Queen builds toward.
