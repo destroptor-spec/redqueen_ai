@@ -1383,7 +1383,17 @@ BuilderGroup {
         -- rather than there. Additive: native keeps forming everything else,
         -- and suppressing it outright cost four cells.
         Priority = 700,
-        InstanceCount = 2,
+        -- Native's land attack form builders run at priority 1 with instance
+        -- counts of 10 to 15, so Red Queen wins every race it enters -- and
+        -- then stopped after two platoons, leaving the rest of the army to
+        -- native. Observed in a live match: 36 units owned, 6 in the pool, two
+        -- directed platoons, both slots dispatching nothing while the base was
+        -- outmatched 2.5 to 1 and the commander died defending it.
+        --
+        -- Matched to native's own count, because the number of formations is
+        -- what decides how much of the army Red Queen is able to point at
+        -- anything.
+        InstanceCount = 12,
         FormRadius = 10000,
         BuilderType = "Any",
         PlatoonAIFunction = {
