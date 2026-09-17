@@ -1989,7 +1989,12 @@ ProductionManager = ClassSimple {
         if not engineer.BuilderManagerData
             or not engineer.BuilderManagerData.EngineerManager
         then return "engineer-without-manager" end
-        if alert and alert.Active then return "defense-alert" end
+        -- Outmatched at home stops expansion; merely contested does not.
+        if alert and alert.Active
+            and (alert.Ratio or 0) >= Constants.Policy.ForwardBaseAlertRatioCeiling
+        then
+            return "defense-alert"
+        end
         if state.StallRisk then return "stall-risk" end
         if state.MassTrend < 0 then return "negative-mass-trend" end
         if state.EnergyTrend < 0 then return "negative-energy-trend" end

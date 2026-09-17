@@ -302,6 +302,19 @@ Policy = {
     DefenseAlertHoldSeconds = 30,
     ForwardBaseMinimumDistance = 80,
     ForwardBaseSiteRadius = 60,
+    -- How badly outmatched the base must be before expansion stops.
+    --
+    -- An active alert used to veto a forward base outright, and alerts are the
+    -- normal condition of a contested match: 13 to 25 forward bases were
+    -- blocked this way per match, and the measured record is 3 of 21
+    -- established. Observed in a live match, the army that got a forward base
+    -- early scaled its production and kept map control while the one that
+    -- never did lost both -- so a veto that fires whenever anything is
+    -- happening is a veto on scaling at all.
+    --
+    -- Ratio is enemy threat against ours at the anchor, so this reads as
+    -- "expand unless the base is losing".
+    ForwardBaseAlertRatioCeiling = 2.0,
     ForwardBaseSafetyRatio = 0.60,
     ForwardBaseCooldownSeconds = 120,
     ForwardBaseMapKilometersPerBase = 10,

@@ -128,6 +128,7 @@ local constants = {
         ForwardBaseEstablishSeconds = 900,
         ForwardBaseRouteRecheckSeconds = 20,
         ForwardBaseRecallThreatRatio = 1.5,
+        ForwardBaseAlertRatioCeiling = 2.0,
         ForwardBaseSafetyRatio = 0.60,
         EngineerSurvivalHomeRadius = 80,
         EngineerSurvivalThreatFloor = 8,
@@ -1347,7 +1348,14 @@ local function ExpansionAttempt(objectiveType, safeSite, alert, stall)
     }
     local candidateStrategy = {
         CurrentObjective = { Type = objectiveType, Position = { 900, 0, 900 } },
-        ProductionDemand = { DefenseAlert = { Active = alert } },
+        -- Ratio is enemy threat against ours at the anchor. An alert alone no
+        -- longer stops expansion -- alerts are the normal condition of a
+        -- contested match -- so a case that means "the base is losing" has to
+        -- say so.
+        ProductionDemand = {
+            DefenseAlert = type(alert) == "table" and alert
+                or { Active = alert, Ratio = alert and 3 or 0 },
+        },
         GetOwnThreatNear = routeStrategy.GetOwnThreatNear,
     }
     local attempt = Create(routeBrain, { FactionIndex = 1 }, candidateWorld,
@@ -1374,7 +1382,19 @@ for _, objectiveType in ipairs({ "Stage", "Recover" }) do
     assert(not selected and not started, "opening and recovery reservations must remain")
 end
 local _, alertStarted, alertReason = ExpansionAttempt("Defend", true, true)
-assert(not alertStarted and alertReason == "defense-alert", "active emergency defense must retain engineers")
+assert(not alertStarted and alertReason == "defense-alert",
+    "a base being outmatched must retain its engineers")
+
+-- But merely being under alert must not. Alerts are the normal condition of a
+-- contested match: 13 to 25 forward bases were blocked this way per match and
+-- only 3 of 21 were ever established. Observed live, the army that got a
+-- forward base early scaled its production and kept map control while the one
+-- that never did lost both.
+do
+    local _, contestedStarted = ExpansionAttempt("Defend", true, { Active = true, Ratio = 1.0 })
+    assert(contestedStarted,
+        "a contested base that is holding must still be allowed to expand")
+end
 local _, stallStarted, stallReason = ExpansionAttempt("Defend", true, false, true)
 assert(not stallStarted and stallReason == "stall-risk", "defensive expansion must remain affordable")
 
