@@ -89,3 +89,30 @@ Directing platoons is not obviously enough to convert defeats. The three
 LandLarge cells lose at the session anchor too, and no change this session moved
 them. This work makes the objective system *live*, which is the precondition for
 judging it at all — not a win rate on its own.
+
+
+## Correction: InstanceCount was not the cap
+
+The commit that raised the directed builder's `InstanceCount` from 2 to 12 says
+"the cap was InstanceCount". A verification run says otherwise, and the claim is
+withdrawn.
+
+`directed=N/M` is a cumulative count of platoons ever formed, not platoons
+alive. A probe taken *before* the change already reached 7 formations in two
+minutes with `InstanceCount = 2`, because platoons die and the builder forms
+again. The cap was never reached.
+
+What actually limits formation is the pool. In the verification run the census
+reads `army=14/1/1`, `15/0/0`, `14/1/0` — between zero and six units free at any
+moment against fourteen owned, and the template needs three to form. In the live
+match it was `36/6/6`: six free, enough for two platoons of three, and two
+platoons is what formed.
+
+**And the census cannot attribute that gap.** `owned - pooled` counts every unit
+in any platoon, Red Queen's directed ones included, so "native holds thirty" was
+not a measurement — it was an assumption wearing one. Separating Red Queen's own
+platoons from native's needs a count the census does not yet take.
+
+The `InstanceCount = 12` change is harmless and matches native's own counts, so
+it stays. It is not expected to move anything, and the claim that it was "the
+first fix that plausibly changes a result" was wrong.
