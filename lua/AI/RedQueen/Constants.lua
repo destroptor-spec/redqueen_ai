@@ -112,7 +112,7 @@ Policy = {
     -- A wave that has lost this share of its strength has done its work or
     -- failed, and is dissolved so the survivors can join the next one.
     WaveSpentFraction = 0.34,
-    FormationOwnership = true,
+    FormationOwnership = false,
     CoreExtractorRadius = 45,
     CoreExtractorUpgradeEngineers = 4,
     CoreExtractorAssistSeconds = 30,

@@ -659,3 +659,53 @@ thing to fix. It needs C first. A and C are one change, not two.
 Sentry Point 2071971 UEF, Fields of Isis 8675309 and Syrtis Major 8675309 lose
 with ownership off as well, so something landed earlier in this session that
 cost them. That has not been bisected.
+
+
+## A+C measured, and what it actually showed
+
+Waves were built to supply the formation that taking the army off native
+platoon formation removed. Same twelve cells, zero scheduler failures.
+
+| arm | record |
+| --- | --- |
+| ownership off | **7W/5L** |
+| ownership on (A alone) | 3W/9L |
+| ownership on + waves (A+C) | **3W/9L** |
+
+Waves changed which cells were lost and not how many. C did not fix A.
+
+### Why, and it is not about waves
+
+Red Queen's own dispatch barely runs. Counting passes that ordered any unit at
+all, across a whole match:
+
+| cell | RQ dispatch passes, ownership off | result |
+| --- | --- | --- |
+| Sludge 2071971 Aeon | **0** | victory |
+| Sludge 2071971 Cybran | 2 | victory |
+| Sentry Point 31337 Aeon | 2 | victory |
+
+A naval cell wins having dispatched **nothing all match**, and loses with
+ownership on having also dispatched nothing. The difference between the arms is
+not what Red Queen did with the army. It is that with ownership off, native
+platoon formation was fighting, and with it on, nothing was.
+
+That reframes the whole line of work. Native does not merely *hold* the units --
+it runs continuous platoon behaviour: forming, attacking, patrolling,
+retreating, reforming. Red Queen's combat layer issues aggressive-moves a
+handful of times per match and has no equivalent of any of that. The 8-to-12 per
+cent ownership figure was real, but it measured the wrong thing: the army Red
+Queen could not command was the army that was doing the fighting.
+
+So ownership cannot be taken until the combat layer can run an army
+continuously, which is a far larger piece of work than gathering waves. It is
+off again.
+
+### What survives
+
+The wave machinery is sound on its own terms and stays, gated with ownership:
+contracts pin gathering, single-commitment, re-gating on lapse and membership.
+It is untested in isolation because it only engages on units Red Queen owns.
+
+The census stays and is the finding: it is what showed that dispatch runs two or
+three times a match, which no win rate or K/L figure could have said.
