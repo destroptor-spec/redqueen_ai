@@ -2594,10 +2594,22 @@ local function CommanderOpeningContracts()
 
     routeEconomy.State.Mode = "Opening"
     routeEconomy.State.EnergyStoredRatio = 1
-    local openingVerdict = commanderRun({ 20, 0, 20 }, true, false, { { 40, 0, 40 } })
+    local openingVerdict, openingAcu = commanderRun({ 20, 0, 20 }, true, false, { { 40, 0, 40 } })
     assert(openingVerdict == "opening-build",
         "an idle commander in the opening must be left to its own build order, got "
             .. tostring(openingVerdict))
+
+    -- And handed back, not merely left alone. A commander already guarding a
+    -- factory when the economy dips went on assisting for the whole window
+    -- while the verdict said it was building, which is the behaviour this gate
+    -- exists to stop.
+    openingAcu.RedQueenAssistUntil = 999999
+    commanderRun({ 20, 0, 20 }, true, false, { { 40, 0, 40 } })
+    local heldVerdict, heldAcu = commanderRun({ 20, 0, 20 }, true, false, { { 40, 0, 40 } })
+    heldAcu.RedQueenAssistUntil = 999999
+    local _, clearedAcu = commanderRun({ 20, 0, 20 }, true, false, { { 40, 0, 40 } })
+    assert(not clearedAcu.RedQueenAssistUntil,
+        "an outstanding Red Queen assist must be cleared when the economy needs the commander")
 
     -- And whenever energy is short later: doubling a factory's output is worth less
     -- than the generator that lets it run at all.

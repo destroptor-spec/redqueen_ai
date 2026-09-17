@@ -2359,13 +2359,24 @@ ProductionManager = ClassSimple {
         -- The same applies whenever energy is short later: doubling a factory's
         -- output is worth less than the generator that lets it run at all.
         local economy = self.Economy and self.Economy.State or {}
-        if economy.Mode == "Opening" then
-            return "opening-build"
-        end
-        if economy.StallRisk
-            or (economy.EnergyStoredRatio or 1) < Constants.Policy.CommanderAssistEnergyFloor
-        then
-            return "economy-build"
+        local buildInstead = economy.Mode == "Opening" and "opening-build"
+            or ((economy.StallRisk
+                or (economy.EnergyStoredRatio or 1) < Constants.Policy.CommanderAssistEnergyFloor)
+                and "economy-build")
+        if buildInstead then
+            -- Hand it back, rather than merely declining to task it.
+            --
+            -- Returning here without clearing an assist Red Queen had already
+            -- issued left the commander guarding a factory for the whole
+            -- window: the verdict said "build" and the unit went on assisting,
+            -- which is the behaviour this gate was added to stop. Only a claim
+            -- Red Queen made is cleared -- a native build order is native's and
+            -- cancelling it would strand whatever it was part-way through.
+            if commander.RedQueenAssistUntil then
+                commander.RedQueenAssistUntil = nil
+                ReleaseEngineer(commander, nil, false)
+            end
+            return buildInstead
         end
 
         -- Idle at home is the case worth fixing: the commander is build power
