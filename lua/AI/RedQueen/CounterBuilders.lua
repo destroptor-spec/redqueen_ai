@@ -663,8 +663,21 @@ local function HasDirectionTarget(aiBrain)
     local modules = aiBrain.RedQueenModules
     local strategy = modules and modules.Strategy
     local objective = strategy and strategy.PrimaryObjective
-    return (objective and objective.Position
-        and objective.Type ~= "Stage" and objective.Type ~= "Recover") and true or false
+    if not objective or not objective.Position
+        or objective.Type == "Stage" or objective.Type == "Recover"
+    then
+        return false
+    end
+    -- And reachable on foot from home, or these units are better left to
+    -- native: a land platoon formed against a target across water walks into
+    -- the sea instead of defending the base it was standing in.
+    local world = modules.World
+    if world and world.CanPath and world.StartPosition
+        and not world:CanPath("Land", world.StartPosition, objective.Position)
+    then
+        return false
+    end
+    return true
 end
 
 local function ShouldBuildNuke(aiBrain)

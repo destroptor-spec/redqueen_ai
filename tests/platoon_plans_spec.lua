@@ -42,6 +42,30 @@ end
 brain.RedQueenModules.Strategy.PrimaryObjective = { Type = "Raid" }
 assert(not plans.DirectionTarget(brain), "an objective without a position is no destination")
 
+-- Reachable, or it is not a destination.
+--
+-- The old dispatcher gated every order on CanPath and the first version of this
+-- plan did not, so on a water map it took the land units native was using and
+-- aimed them across an ocean. Three naval cells flipped to defeat on a
+-- land-only builder.
+brain.RedQueenModules.Strategy.PrimaryObjective = { Type = "Raid", Position = { 900, 0, 800 } }
+local reachable = true
+brain.RedQueenModules.World = {
+    StartPosition = { 0, 0, 0 },
+    CanPath = function(_, layer, origin, destination)
+        assert(layer and origin and destination, "the route test needs all three")
+        return reachable
+    end,
+}
+assert(plans.DirectionTarget(brain, { 0, 0, 0 }, "Land"),
+    "a reachable objective is still a destination")
+reachable = false
+assert(not plans.DirectionTarget(brain, { 0, 0, 0 }, "Land"),
+    "an objective the platoon cannot walk to is not a destination")
+assert(plans.DirectionTarget(brain),
+    "without a platoon position there is no route to test, and the objective stands")
+brain.RedQueenModules.World = nil
+
 -- A target that drifts slightly is the same target. Re-issuing orders every
 -- cycle would clear commands mid-fight, which is what a formation must not do.
 assert(plans.DirectionKey({ 900, 0, 800 }) == plans.DirectionKey({ 903, 0, 802 }),

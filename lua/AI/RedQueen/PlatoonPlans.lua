@@ -11,7 +11,7 @@ local Constants = import("/mods/TheRedQueen/lua/AI/RedQueen/Constants.lua")
 --
 -- Read off the brain rather than passed in, because a platoon outlives the pass
 -- that formed it and the objective will change underneath it.
-function DirectionTarget(brain)
+function DirectionTarget(brain, origin, layer)
     local modules = brain and brain.RedQueenModules
     local strategy = modules and modules.Strategy
     if not strategy then
@@ -25,6 +25,18 @@ function DirectionTarget(brain)
         return nil
     end
     if objective.Type == "Stage" or objective.Type == "Recover" then
+        return nil
+    end
+    -- Reachable, or it is not a destination.
+    --
+    -- The old dispatcher gated every order on CanPath and this plan did not,
+    -- so on a water map it took the land units native was using sensibly and
+    -- aimed them at an objective across an ocean. Three naval cells flipped to
+    -- defeat on a land-only builder, which is how that showed up at all.
+    local world = modules.World
+    if origin and world and world.CanPath
+        and not world:CanPath(layer or "Land", origin, objective.Position)
+    then
         return nil
     end
     return objective.Position, objective.Type
@@ -57,7 +69,7 @@ function ObjectiveAttack(self)
     brain.RedQueenDirectedPlatoons = (brain.RedQueenDirectedPlatoons or 0) + 1
     local pursuing = nil
     while brain:PlatoonExists(self) do
-        local position, kind = DirectionTarget(brain)
+        local position, kind = DirectionTarget(brain, self:GetPlatoonPosition(), "Land")
         local key = DirectionKey(position)
         if key and key ~= pursuing then
             pursuing = key
