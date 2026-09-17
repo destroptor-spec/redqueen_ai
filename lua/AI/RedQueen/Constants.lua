@@ -108,6 +108,9 @@ Policy = {
     -- The rally hold is short so a gathering wave is re-examined often; the
     -- committed hold is the ordinary order lifetime, because a wave in motion
     -- is left alone.
+    -- How often a directed platoon re-reads the objective. Matched to the
+    -- cadence FAF's own HuntAI uses, which re-targets every seventeen seconds.
+    PlatoonDirectionSeconds = 15,
     WaveRallyHoldTicks = 50,
     -- A wave that has lost this share of its strength has done its work or
     -- failed, and is dissolved so the survivors can join the next one.

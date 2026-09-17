@@ -508,6 +508,18 @@ ProductionManager = ClassSimple {
                 end
 
                 handles = manager.BuilderHandles or handles
+                if manager.PlatoonFormManager
+                    and not handles.RedQueenDirectedBuilders
+                then
+                    AIAddBuilderTable.AddGlobalBuilderGroup(
+                        self.Brain,
+                        locationType,
+                        "RedQueenDirectedBuilders"
+                    )
+                    manager.PlatoonFormManager:SortBuilderList("Any")
+                end
+
+                handles = manager.BuilderHandles or handles
                 if manager.EngineerManager
                     and not handles.RedQueenEndgameBuilders
                 then

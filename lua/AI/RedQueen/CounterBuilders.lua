@@ -656,6 +656,17 @@ local function EngineerPriority(self, aiBrain)
     return math.min(ceiling, base + shortfall * 20)
 end
 
+-- A directed platoon is only worth forming when there is somewhere to send it.
+-- Without this the plan forms platoons that gather and then stand still, which
+-- is worse than leaving the units to native.
+local function HasDirectionTarget(aiBrain)
+    local modules = aiBrain.RedQueenModules
+    local strategy = modules and modules.Strategy
+    local objective = strategy and strategy.PrimaryObjective
+    return (objective and objective.Position
+        and objective.Type ~= "Stage" and objective.Type ~= "Recover") and true or false
+end
+
 local function ShouldBuildNuke(aiBrain)
     local demand, economy = GetDemand(aiBrain)
     if not demand
@@ -1321,6 +1332,51 @@ BuilderGroup {
 -- single support commander with no plan, so it returns to the pool, is claimed
 -- by a base manager like any other engineer, and becomes available to forward
 -- base construction with the highest build power on the field.
+-- Land units formed into a platoon that Red Queen aims.
+--
+-- Deliberately the same shape as the native attack templates -- mobile land,
+-- no engineers, no experimentals -- so it competes for the same units on the
+-- same terms. What differs is the plan: native's LandAttack runs AttackForceAI
+-- or HuntAI, which pick their own targets, and this one runs a plan that reads
+-- the objective.
+PlatoonTemplate {
+    Name = "RedQueenDirectedLand",
+    GlobalSquads = {
+        {
+            categories.MOBILE * categories.LAND
+                - categories.EXPERIMENTAL
+                - categories.ENGINEER
+                - categories.COMMAND
+                - categories.SCOUT,
+            3, 40, "attack", "GrowthFormation",
+        },
+    },
+}
+
+BuilderGroup {
+    BuilderGroupName = "RedQueenDirectedBuilders",
+    BuildersType = "PlatoonFormBuilder",
+
+    Builder {
+        BuilderName = "Red Queen Directed Land Attack",
+        PlatoonTemplate = "RedQueenDirectedLand",
+        -- Above native's own land attack builders, so the units form here
+        -- rather than there. Additive: native keeps forming everything else,
+        -- and suppressing it outright cost four cells.
+        Priority = 700,
+        InstanceCount = 2,
+        FormRadius = 10000,
+        BuilderType = "Any",
+        PlatoonAIFunction = {
+            "/mods/TheRedQueen/lua/AI/RedQueen/PlatoonPlans.lua",
+            "ObjectiveAttack",
+        },
+        BuilderConditions = {
+            { HasDirectionTarget, {} },
+        },
+    },
+}
+
 PlatoonTemplate {
     Name = "RedQueenSupportCommander",
     FactionSquads = {

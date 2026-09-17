@@ -346,6 +346,18 @@ if held_samples:
         f"garrison mean {sum(garrison_held) / len(garrison_held):.1f} "
         f"peak {max(garrison_held)}"
     )
+DIRECTED = re.compile(r"directed=(\d+)/(\d+)")
+directed_samples = [m for m in (DIRECTED.search(l) for l in states) if m]
+if directed_samples:
+    platoons = max(int(m.group(1)) for m in directed_samples)
+    aims = max(int(m.group(2)) for m in directed_samples)
+    print(f"Directed platoons: {platoons} formed under a Red Queen plan, {aims} aims issued")
+directed_lines = [l for l in red_queen if "platoon directed" in l]
+if directed_lines:
+    targets = Counter(
+        m.group(1) for m in (re.search(r"platoon directed objective=(\w+)", l)
+                             for l in directed_lines) if m)
+    print(f"  aims by objective: {dict(targets)}")
 print(f"Objective changes: {len(objective_changes)}")
 for description, count in change_kinds.most_common(12):
     print(f"  {count:5d}  {description}")
