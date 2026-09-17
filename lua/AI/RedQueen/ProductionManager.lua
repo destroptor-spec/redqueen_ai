@@ -2500,11 +2500,25 @@ ProductionManager = ClassSimple {
                 upgrading = extractor
                 break
             end
-            if not candidate then
-                local blueprint = extractor.GetBlueprint and extractor:GetBlueprint() or {}
-                local upgradesTo = blueprint.General and blueprint.General.UpgradesTo
-                if upgradesTo and upgradesTo ~= "" then
-                    candidate = { Unit = extractor, BlueprintId = upgradesTo }
+            -- Lowest tier first, always.
+            --
+            -- The list is ordered by entity id, so taking the first upgradable
+            -- extractor took whichever happened to be oldest -- and a Tech 2
+            -- extractor is upgradable too. Observed in a live match: a Tech 3
+            -- upgrade started while other core extractors were still Tech 1.
+            --
+            -- Tech 1 to Tech 2 roughly doubles a point's yield for about nine
+            -- hundred mass; Tech 2 to Tech 3 costs several times that for a
+            -- smaller relative gain. Finishing the cheap tier across every
+            -- point we hold beats deepening one of them, which is the same
+            -- breadth-before-depth rule that governs whether to upgrade at all.
+            local blueprint = extractor.GetBlueprint and extractor:GetBlueprint() or {}
+            local upgradesTo = blueprint.General and blueprint.General.UpgradesTo
+            if upgradesTo and upgradesTo ~= "" then
+                local hash = blueprint.CategoriesHash or {}
+                local tier = (hash.TECH3 and 3) or (hash.TECH2 and 2) or 1
+                if not candidate or tier < candidate.Tier then
+                    candidate = { Unit = extractor, BlueprintId = upgradesTo, Tier = tier }
                 end
             end
         end

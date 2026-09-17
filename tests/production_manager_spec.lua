@@ -2399,16 +2399,17 @@ print("Red Queen forward-base tier contracts passed")
 -- because an extractor produces nothing while it upgrades and starting all four
 -- removes the whole core economy at the moment it is paying for them.
 local coreHome = { 0, 0, 0 }
-local function CoreExtractor(id, x, upgrading, upgradesTo)
+local function CoreExtractor(id, x, upgrading, upgradesTo, tier)
     return {
         EntityId = id,
         GetPosition = function() return { x, 0, 0 } end,
         IsUnitState = function(_, state) return upgrading and state == "Upgrading" end,
         GetBlueprint = function()
-            return {
-                CategoriesHash = { STRUCTURE = true, MASSEXTRACTION = true },
-                General = { UpgradesTo = upgradesTo },
-            }
+            local hash = { STRUCTURE = true, MASSEXTRACTION = true }
+            if tier == 2 then hash.TECH2 = true
+            elseif tier == 3 then hash.TECH3 = true
+            else hash.TECH1 = true end
+            return { CategoriesHash = hash, General = { UpgradesTo = upgradesTo } }
         end,
     }
 end
@@ -2631,6 +2632,43 @@ assert(coreVerdict == "assist-core-extractor",
         .. tostring(coreVerdict))
 assert(table.getn(coreOrders) == 1 and coreOrders[1].Target.EntityId == 77,
     "the commander must be put on the extractor that is upgrading")
+
+-- Lowest tier first.
+--
+-- The list is ordered by entity id, so taking the first upgradable extractor
+-- took whichever happened to be oldest -- and a Tech 2 extractor is upgradable
+-- too. Observed in a live match: a Tech 3 upgrade started while other core
+-- extractors were still Tech 1. Tech 1 to Tech 2 roughly doubles a point's
+-- yield for about nine hundred mass; Tech 2 to Tech 3 costs several times that
+-- for a smaller gain.
+do
+    coreExtractors = {
+        -- The oldest is already Tech 2, so entity order would deepen it.
+        CoreExtractor(10, 10, false, "ueb1302", 2),
+        CoreExtractor(11, 20, false, "ueb1202", 1),
+        CoreExtractor(12, 30, false, "ueb1202", 1),
+    }
+    coreEngineers = { CoreEngineer(80), CoreEngineer(81) }
+    upgrades = {}
+    assert(coreManager:MaintainCoreExtractorUpgrades() == "started",
+        "there is still an upgrade to start")
+    assert(upgrades[1].Units[1].EntityId == 11,
+        "the Tech 1 extractor must be upgraded before the Tech 2 one, got "
+            .. tostring(upgrades[1].Units[1].EntityId))
+    assert(upgrades[1].BlueprintId == "ueb1202",
+        "and to Tech 2, not to Tech 3")
+
+    -- Once every point is Tech 2, deepening is what is left.
+    coreExtractors = {
+        CoreExtractor(20, 10, false, "ueb1302", 2),
+        CoreExtractor(21, 20, false, "ueb1302", 2),
+    }
+    upgrades = {}
+    assert(coreManager:MaintainCoreExtractorUpgrades() == "started",
+        "a fully Tech 2 core still has depth left")
+    assert(upgrades[1].BlueprintId == "ueb1302",
+        "and takes it, got " .. tostring(upgrades[1].BlueprintId))
+end
 
 print("Red Queen core extractor upgrade contracts passed")
 
