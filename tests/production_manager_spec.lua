@@ -2286,10 +2286,22 @@ assert(table.getn(recallPolls) == 1,
 verdict = commanderRun({ 20, 0, 20 }, false, false, { { 40, 0, 40 } })
 assert(verdict == "busy", "a working commander must not be interrupted, got " .. tostring(verdict))
 
--- Defence outranks both: a commander alert drives its own response.
-verdict = commanderRun({ 600, 0, 600 }, true, true, { { 40, 0, 40 } })
+-- Defence owns a commander that is home, and the leash owns one that is not.
+--
+-- This used to assert the alert owned the commander wherever it stood, which
+-- meant a commander beyond the leash was never recalled while an alert was
+-- active -- and an alert is active for most of a contested match. Observed in a
+-- live match: two Red Queen commanders wandered off, one attacking and one
+-- defending, both died, and the recall logged zero times all game. Recall and
+-- defence want the same thing anyway: the commander at home.
+verdict = commanderRun({ 20, 0, 20 }, true, true, { { 40, 0, 40 } })
 assert(verdict == "defense",
-    "an active alert must own the commander, got " .. tostring(verdict))
+    "an alert owns a commander that is already home, got " .. tostring(verdict))
+
+verdict = commanderRun({ 600, 0, 600 }, true, true, { { 40, 0, 40 } })
+assert(verdict == "recalled",
+    "a commander beyond the leash is recalled even under an alert, got "
+        .. tostring(verdict))
 
 -- Nothing to assist is not an error.
 verdict = commanderRun({ 20, 0, 20 }, true, false, {})

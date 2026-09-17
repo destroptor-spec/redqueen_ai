@@ -2322,11 +2322,16 @@ ProductionManager = ClassSimple {
         if not commander or not commander.GetPosition then
             return nil
         end
-        local alert = self.Strategy.ProductionDemand.DefenseAlert
-        if alert and alert.Active then
-            return "defense"
-        end
-
+        -- The leash is tested before anything else, including the alert.
+        --
+        -- It used to come second, so an active defence alert returned early and
+        -- the commander was never checked at all -- and an alert is active for
+        -- most of a contested match. Observed in a live match: two Red Queen
+        -- commanders wandered off, one to attack and one to defend, both died,
+        -- and the recall logged zero times in the whole game.
+        --
+        -- Losing the commander ends the match in Assassination. Nothing
+        -- outranks noticing that it has left.
         local home = self.World and self.World.StartPosition
         local position = commander:GetPosition()
         local leash = Constants.Policy.CommanderLeashRadius
@@ -2336,6 +2341,11 @@ ProductionManager = ClassSimple {
             ReleaseEngineer(commander, home)
             Logger.Info(self.Brain, "commander recalled beyond leash")
             return "recalled"
+        end
+
+        local alert = self.Strategy.ProductionDemand.DefenseAlert
+        if alert and alert.Active then
+            return "defense"
         end
 
         -- The opening belongs to the commander's own build order.
