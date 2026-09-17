@@ -18,6 +18,8 @@ luajit tests/combat_manager_spec.lua
 luajit tests/counter_builders_spec.lua
 luajit tests/diagnostics_spec.lua
 luajit tests/economy_manager_spec.lua
+luajit tests/assistance_spec.lua
+luajit tests/extractor_upgrades_spec.lua
 luajit tests/engineer_survival_spec.lua
 luajit tests/factory_tier_spec.lua
 luajit tests/fortification_builders_spec.lua

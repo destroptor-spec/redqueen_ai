@@ -299,6 +299,25 @@ print(f"Brains started: {len(starts)}")
 print(f"Income contracts: {len(contracts)}")
 print(f"State samples: {len(states)}")
 print(f"Defense alerts raised: {len(defense_started)}")
+# These are cumulative counters per army; repeated samples must not multiply
+# the assignment/release or blocked-start totals.
+assist_totals = {}
+upgrade_gates = Counter()
+for line in states:
+    sample = re.search(r'assist=(\d+)/(\d+)/(\d+) acuassist=(\d+) mexgate=([^/\s]+)/(\d+)', line)
+    army = re.search(r'\[army=(\d+)\]', line)
+    if not sample or not army:
+        continue
+    active, assigned, released, commander, gate, blocked = sample.groups()
+    values = [int(active), int(assigned), int(released), int(commander), int(blocked)]
+    previous = assist_totals.get(army[1], [0] * 5)
+    assist_totals[army[1]] = [max(a, b) for a, b in zip(previous, values)]
+    upgrade_gates[gate] += 1
+if assist_totals:
+    totals = [sum(row[i] for row in assist_totals.values()) for i in range(5)]
+    print(f"Assistance: {totals[1]} helper assignments, {totals[2]} releases, "
+          f"{totals[3]} commander assignments; summed per-army peak helpers={totals[0]}")
+    print(f"Extractor upgrades: {totals[4]} native start attempts blocked; gate samples={dict(upgrade_gates)}")
 if pressure_samples:
     held = len(pressure_samples) - len(pressure_yielded) - len(pressure_idle)
     contested = len(pressure_samples) - len(pressure_idle)

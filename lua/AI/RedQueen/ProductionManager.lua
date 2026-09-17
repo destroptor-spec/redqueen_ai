@@ -5,6 +5,8 @@ local BuildingTemplates = import("/lua/buildingtemplates.lua")
 local Constants = import("/mods/TheRedQueen/lua/AI/RedQueen/Constants.lua")
 local Narrator = import("/mods/TheRedQueen/lua/AI/RedQueen/Narrator.lua")
 local EngineerSurvival = import("/mods/TheRedQueen/lua/AI/RedQueen/EngineerSurvival.lua")
+local Assistance = import("/mods/TheRedQueen/lua/AI/RedQueen/Assistance.lua")
+local ExtractorUpgrades = import("/mods/TheRedQueen/lua/AI/RedQueen/ExtractorUpgrades.lua")
 local Logger = import("/mods/TheRedQueen/lua/AI/RedQueen/Logger.lua")
 
 local CounterBuilders = import("/mods/TheRedQueen/lua/AI/RedQueen/CounterBuilders.lua")
@@ -404,6 +406,8 @@ ProductionManager = ClassSimple {
         self.Strategy = strategy
         self.LastFactoryRequestTick = -100000
         self.FactoryAssistants = {}
+        self.IdleAssistants = {}
+        self.AssistSummary = { Active = 0, Assigned = 0, Released = 0, Commander = 0 }
         self.LastEmergencyDefenseTick = -100000
         self.LastShoreArtilleryTick = -100000
         self.LastShoreTorpedoTick = -100000
@@ -2307,222 +2311,211 @@ ProductionManager = ClassSimple {
         return verdict
     end,
 
+    AssistObjectiveKey = function(self)
+        local objective = self.Strategy.CurrentObjective or {}
+        local position = objective.Position or {}
+        return tostring(objective.Type) .. ":" .. tostring(objective.Kind)
+            .. ":" .. math.floor((position[1] or 0) / 32)
+            .. ":" .. math.floor((position[3] or 0) / 32)
+    end,
+
+    IsSafeAssistTarget = function(self, engineer, target)
+        if not IsAlive(target) or target == engineer or not target.GetPosition
+            or not engineer.GetPosition or not target.IsUnitState
+            or not (target:IsUnitState("Building") or target:IsUnitState("Upgrading"))
+        then return false end
+        if target.GetArmy and self.Brain.GetArmyIndex
+            and target:GetArmy() ~= self.Brain:GetArmyIndex() then return false end
+        if target.GetFractionComplete and target:GetFractionComplete() < 1 then return false end
+        local origin, destination = engineer:GetPosition(), target:GetPosition()
+        if not origin or not destination then return false end
+        local radius = Constants.Policy.IdleEngineerAssistRadius
+        if DistanceSquared(origin, destination) > radius * radius then return false end
+        local hash = target.GetBlueprint and target:GetBlueprint().CategoriesHash or {}
+        if hash.COMMAND then
+            local home = self.World.StartPosition
+            local homeRadius = Constants.Policy.EngineerSurvivalHomeRadius
+            if not home or DistanceSquared(destination, home) > homeRadius * homeRadius then return false end
+        end
+        local layer = UnitTravelLayer(engineer)
+        if self.World.CanPath and not self.World:CanPath(layer, origin, destination) then return false end
+        if self.World.GetObservedRouteThreat then
+            local threat = self.World:GetObservedRouteThreat(origin, destination, self.Intel,
+                Constants.Policy.ForwardBaseSiteRadius, layer)
+            if not threat or threat > Constants.Policy.EngineerSurvivalThreatFloor then return false end
+        end
+        return true
+    end,
+
+    FindAssistTarget = function(self, engineer, allowCommander)
+        local targets = {}
+        local category = categories.STRUCTURE * categories.FACTORY
+        if allowCommander then category = category + categories.COMMAND end
+        local units = self.Brain:GetListOfUnits(category, false) or {}
+        for _, unit in pairs(units) do
+            if self:IsSafeAssistTarget(engineer, unit) then table.insert(targets, unit) end
+        end
+        local origin = engineer:GetPosition()
+        table.sort(targets, function(a, b)
+            local aHash = a.GetBlueprint and a:GetBlueprint().CategoriesHash or {}
+            local bHash = b.GetBlueprint and b:GetBlueprint().CategoriesHash or {}
+            if (aHash.COMMAND or false) ~= (bHash.COMMAND or false) then return aHash.COMMAND or false end
+            local da, db = DistanceSquared(origin, a:GetPosition()), DistanceSquared(origin, b:GetPosition())
+            if da ~= db then return da < db end
+            return a.EntityId < b.EntityId
+        end)
+        return targets[1]
+    end,
+
     DecideCommanderTasking = function(self)
-        if not self.Brain.GetListOfUnits then
-            return nil
-        end
+        if not self.Brain.GetListOfUnits then return nil end
         local commanders = self.Brain:GetListOfUnits(categories.COMMAND, false)
-        local commander = nil
+        local commander
         for _, unit in pairs(commanders or {}) do
-            if IsAlive(unit) then
-                commander = unit
-                break
-            end
+            if IsAlive(unit) then commander = unit; break end
         end
-        if not commander or not commander.GetPosition then
-            return nil
-        end
-        -- The leash is tested before anything else, including the alert.
-        --
-        -- It used to come second, so an active defence alert returned early and
-        -- the commander was never checked at all -- and an alert is active for
-        -- most of a contested match. Observed in a live match: two Red Queen
-        -- commanders wandered off, one to attack and one to defend, both died,
-        -- and the recall logged zero times in the whole game.
-        --
-        -- Losing the commander ends the match in Assassination. Nothing
-        -- outranks noticing that it has left.
+        if not commander or not commander.GetPosition then return nil end
+        local tick = GetGameTick()
+        local record = commander.RedQueenAssist
         local home = self.World and self.World.StartPosition
-        local position = commander:GetPosition()
         local leash = Constants.Policy.CommanderLeashRadius
-        if home and DistanceSquared(position, home) > leash * leash then
-            -- Ownership first: the build queue and the callbacks that would
-            -- re-issue the order have to go, or it turns straight around.
+        if home and DistanceSquared(commander:GetPosition(), home) > leash * leash then
+            Assistance.Release(commander, record, false)
+            commander.RedQueenHandbackTick = nil
             ReleaseEngineer(commander, home)
             Logger.Info(self.Brain, "commander recalled beyond leash")
             return "recalled"
         end
-
+        if EngineerSurvival.IsRetreating(commander) then return "returning" end
         local alert = self.Strategy.ProductionDemand.DefenseAlert
+        local economy = self.Economy.State or {}
+        local buildInstead = economy.Mode == "Opening" and "opening-build"
+            or ((economy.StallRisk or (economy.EnergyStoredRatio or 1)
+                < Constants.Policy.CommanderAssistEnergyFloor) and "economy-build")
         if alert and alert.Active then
+            Assistance.Release(commander, record, true)
+            commander.RedQueenHandbackTick = nil
             return "defense"
         end
-
-        -- The opening belongs to the commander's own build order.
-        --
-        -- Observed in a live match: the ACU assisted a factory from the first
-        -- minutes and the army was starved for power, because an idle moment
-        -- between build orders is not idleness -- it is the gap before the next
-        -- structure. Assisting held it for CommanderAssistSeconds each time, so
-        -- native never got it back to lay down generators.
-        --
-        -- The same applies whenever energy is short later: doubling a factory's
-        -- output is worth less than the generator that lets it run at all.
-        local tick = GetGameTick()
-        local economy = self.Economy and self.Economy.State or {}
-        local buildInstead = economy.Mode == "Opening" and "opening-build"
-            or ((economy.StallRisk
-                or (economy.EnergyStoredRatio or 1) < Constants.Policy.CommanderAssistEnergyFloor)
-                and "economy-build")
-        -- Handed back once, and then reclaimed if nothing took it.
-        --
-        -- Declining to use the commander is not the same as having something
-        -- better for it to do. Measured in a live match: this gate fired 42
-        -- times while factories built unassisted and the commander stood still.
-        -- If native has not tasked it within the handback window, assisting
-        -- beats idling.
-        if buildInstead and commander.RedQueenHandbackTick
-            and tick - commander.RedQueenHandbackTick >= Constants.Policy.CommanderHandbackSeconds * 10
-            and commander.IsIdleState and commander:IsIdleState()
-        then
-            buildInstead = nil
+        if record then
+            local valid = record.Until > tick and Assistance.Owns(commander, record)
+                and record.Objective == self:AssistObjectiveKey()
+                and self:IsSafeAssistTarget(commander, record.Target)
+            -- A fallback was chosen only after native had its opportunity.
+            -- Persistent low resources do not cancel it on the very next pass.
+            if valid and (not buildInstead or record.Fallback == buildInstead) then return "assisting" end
+            local released = Assistance.Release(commander, record, true)
+            if released then
+                commander.RedQueenHandbackTick = tick
+                return buildInstead or "handed-back"
+            end
+        end
+        if commander.IsIdleState and not commander:IsIdleState() then
+            commander.RedQueenHandbackTick = nil
+            return buildInstead or "busy"
+        end
+        if table.getn(commander.EngineerBuildQueue or {}) > 0 or commander.ProcessBuild then
+            commander.RedQueenHandbackTick = nil
+            return buildInstead or "busy"
         end
         if buildInstead then
-            commander.RedQueenHandbackTick = commander.RedQueenHandbackTick or tick
-            -- Hand it back, rather than merely declining to task it.
-            --
-            -- Returning here without clearing an assist Red Queen had already
-            -- issued left the commander guarding a factory for the whole
-            -- window: the verdict said "build" and the unit went on assisting,
-            -- which is the behaviour this gate was added to stop. Only a claim
-            -- Red Queen made is cleared -- a native build order is native's and
-            -- cancelling it would strand whatever it was part-way through.
-            if commander.RedQueenAssistUntil then
-                commander.RedQueenAssistUntil = nil
-                ReleaseEngineer(commander, nil, false)
+            if not commander.RedQueenHandbackTick then
+                commander.RedQueenHandbackTick = tick
+                if not commander.ForkedEngineerTask then Assistance.Resume(commander) end
             end
-            return buildInstead
+            if tick - commander.RedQueenHandbackTick < Constants.Policy.CommanderHandbackSeconds * 10 then
+                return buildInstead
+            end
+        elseif commander.RedQueenAssistRetryTick and commander.RedQueenAssistRetryTick > tick then
+            return "handed-back"
         end
-
-        -- Idle at home is the case worth fixing: the commander is build power
-        -- standing still. Assisting is deliberately conditional on being idle,
-        -- so a commander that native has usefully tasked is left alone.
-        if commander.RedQueenAssistUntil and commander.RedQueenAssistUntil > tick then
-            return "assisting"
+        local target
+        local extractors = self:CoreExtractors()
+        for _, extractor in ipairs(extractors) do
+            if extractor.IsUnitState and extractor:IsUnitState("Upgrading")
+                and self:IsSafeAssistTarget(commander, extractor) then target = extractor; break end
         end
+        local core = target ~= nil
+        target = target or self:FindAssistTarget(commander, false)
+        if not target then return "no-factory" end
+        if not ReleaseEngineer(commander, nil, false) then return "release-failed" end
+        Assistance.Start(commander, target, Constants.Policy.CommanderAssistSeconds,
+            "Commander", self:AssistObjectiveKey(), buildInstead)
         commander.RedQueenHandbackTick = nil
-        if commander.IsIdleState and not commander:IsIdleState() then
-            return "busy"
-        end
-        -- A core extractor part-way through an upgrade outranks a factory. The
-        -- commander is the largest build power on the field and the upgrade is
-        -- the one piece of economy that needs no ground taken to pay off, so
-        -- the ACU shortens exactly the wait that matters.
-        local target = nil
-        for _, extractor in ipairs(self:CoreExtractors()) do
-            if extractor.IsUnitState and extractor:IsUnitState("Upgrading") then
-                target = extractor
-                break
-            end
-        end
-        if target then
-            ReleaseEngineer(commander, nil, false)
-            if IssueGuard then IssueGuard({ commander }, target) end
-            commander.RedQueenAssistUntil = tick
-                + Constants.Policy.CommanderAssistSeconds * 10
-            self.CommanderAssists = (self.CommanderAssists or 0) + 1
-            return "assist-core-extractor"
-        end
-
-        local factories = self.Brain:GetListOfUnits(
-            categories.STRUCTURE * categories.FACTORY, false)
-        local bestDistance = nil
-        for _, factory in pairs(factories or {}) do
-            if IsAlive(factory) and factory.GetPosition then
-                local distance = DistanceSquared(position, factory:GetPosition())
-                if distance and (not bestDistance or distance < bestDistance
-                    or (distance == bestDistance
-                        and (factory.EntityId or 0) < (target.EntityId or 0)))
-                then
-                    target, bestDistance = factory, distance
-                end
-            end
-        end
-        if not target then
-            return "no-factory"
-        end
-        -- Release native ownership before ordering the assist. Clearing engine
-        -- orders while a build queue and its callbacks survive leaves them to
-        -- re-issue the order, which is how the commander walked off again.
-        -- No native re-poll: this caller issues its own order immediately and
-        -- holds the commander for CommanderAssistSeconds. Scheduling the poll
-        -- re-tasked the ACU about five seconds later -- AssignEngineerTask
-        -- re-platoons it, and a bare IssueGuard does not set UnitBeingAssist,
-        -- which is the only thing that would have made native leave it alone.
-        -- RedQueenAssistUntil then reported it as assisting for the remaining
-        -- forty, so the state line claimed a commander that had walked off.
-        -- It is not retreating either, so the EngineerManager hook's deferral
-        -- never applied: that defers on RedQueenRetreatPosition, which only a
-        -- caller passing `home` sets.
-        ReleaseEngineer(commander, nil, false)
-        if IssueGuard then IssueGuard({ commander }, target) end
-        commander.RedQueenAssistUntil = tick
-            + Constants.Policy.CommanderAssistSeconds * 10
         self.CommanderAssists = (self.CommanderAssists or 0) + 1
-        return "assist"
+        self.AssistSummary.Commander = self.CommanderAssists
+        return core and "assist-core-extractor" or "assist"
     end,
 
-    -- Idle engineers are build power standing still.
-    --
-    -- Factory assistance is sized by mass income -- min(6, income) -- so a
-    -- starved economy holding eighteen engineers gives most of them nothing to
-    -- do. Observed in a live match at five minutes: engineers idle in the base
-    -- while the commander worked.
-    --
-    -- They are put on the commander if it is building, because that is the
-    -- largest build power on the field and the thing worth finishing sooner,
-    -- and on the nearest factory otherwise. The hold is short and is not part
-    -- of `Held`, so a defence, a forward base or a core upgrade can still take
-    -- them the moment it needs one -- which is what reassessing on a change of
-    -- objective amounts to.
-    AssignIdleEngineers = function(self, unassigned)
+    MaintainIdleAssistants = function(self)
         local tick = GetGameTick()
-        local target = nil
-        if self.Brain.GetListOfUnits and categories then
-            for _, unit in pairs(self.Brain:GetListOfUnits(categories.COMMAND, false) or {}) do
-                if IsAlive(unit) and unit.IsIdleState and not unit:IsIdleState() then
-                    target = unit
-                    break
-                end
-            end
-            if not target then
-                local factories = self.Brain:GetListOfUnits(
-                    categories.STRUCTURE * categories.FACTORY, false) or {}
-                for _, factory in pairs(factories) do
-                    if IsAlive(factory) then
-                        target = factory
-                        break
-                    end
-                end
-            end
-        end
-        if not target then
-            self.IdleAssists = 0
-            return 0
-        end
-
-        local assigned = 0
-        for _, engineer in ipairs(unassigned or {}) do
-            local busy = (engineer.RedQueenEmergencyDefenseUntil
-                    and engineer.RedQueenEmergencyDefenseUntil > tick)
-                or (engineer.RedQueenProductionBuildUntil
-                    and engineer.RedQueenProductionBuildUntil > tick)
-                or (engineer.RedQueenCoreUpgradeUntil
-                    and engineer.RedQueenCoreUpgradeUntil > tick)
-                or (engineer.RedQueenIdleAssistUntil
-                    and engineer.RedQueenIdleAssistUntil > tick)
-            if not busy
-                and not EngineerSurvival.IsRetreating(engineer)
-                and engineer.IsIdleState and engineer:IsIdleState()
+        local alert = self.Strategy.ProductionDemand.DefenseAlert
+        local release = self.Economy.State.StallRisk or (alert and alert.Active)
+        local key = self:AssistObjectiveKey()
+        local active = 0
+        for id, record in pairs(self.IdleAssistants) do
+            local engineer = record.Unit
+            if not release and record.Until > tick and record.Objective == key
+                and Assistance.Owns(engineer, record)
+                and self:IsSafeAssistTarget(engineer, record.Target)
             then
-                ReleaseEngineer(engineer, nil, false)
-                if IssueGuard then IssueGuard({ engineer }, target) end
-                engineer.RedQueenIdleAssistUntil = tick
-                    + Constants.Policy.IdleEngineerAssistSeconds * 10
-                assigned = assigned + 1
+                active = active + 1
+            else
+                if Assistance.Release(engineer, record, true) or record.Released then
+                    self.AssistSummary.Released = self.AssistSummary.Released + 1
+                end
+                self.IdleAssistants[id] = nil
             end
         end
-        self.IdleAssists = assigned
+        self.AssistSummary.Active = active
+    end,
+
+    AssignIdleEngineers = function(self, unassigned)
+        self:MaintainIdleAssistants()
+        local tick = GetGameTick()
+        local alert = self.Strategy.ProductionDemand.DefenseAlert
+        if self.Economy.State.StallRisk or (alert and alert.Active) then return 0 end
+        -- Include idle native-manager engineers; ArmyPool alone misses most of
+        -- the base roster. Pending construction and current custom jobs win.
+        local candidates, seen = {}, {}
+        local function Consider(engineer)
+            if IsAlive(engineer) and not seen[engineer.EntityId] then
+                seen[engineer.EntityId] = true
+                table.insert(candidates, engineer)
+            end
+        end
+        for _, engineer in pairs(unassigned or {}) do Consider(engineer) end
+        for _, manager in pairs(self.Brain.BuilderManagers or {}) do
+            local native = manager.EngineerManager
+            if native and native.GetUnits then
+                local units = native:GetUnits("Engineers", categories.ENGINEER - categories.COMMAND) or {}
+                for _, engineer in pairs(units) do Consider(engineer) end
+            end
+        end
+        table.sort(candidates, function(a, b) return a.EntityId < b.EntityId end)
+        local assigned = 0
+        for _, engineer in ipairs(candidates) do
+            local held = engineer.RedQueenAssist
+                or (engineer.RedQueenEmergencyDefenseUntil and engineer.RedQueenEmergencyDefenseUntil > tick)
+                or (engineer.RedQueenProductionBuildUntil and engineer.RedQueenProductionBuildUntil > tick)
+                or (engineer.RedQueenCoreUpgradeUntil and engineer.RedQueenCoreUpgradeUntil > tick)
+                or (engineer.RedQueenFactoryAssistUntil and engineer.RedQueenFactoryAssistUntil > tick)
+                or (engineer.RedQueenAssistRetryTick and engineer.RedQueenAssistRetryTick > tick)
+            if not held and not EngineerSurvival.IsRetreating(engineer)
+                and engineer.IsIdleState and engineer:IsIdleState()
+                and table.getn(engineer.EngineerBuildQueue or {}) == 0 and not engineer.ProcessBuild
+                and not EntityCategoryContains(categories.COMMAND, engineer)
+            then
+                local target = self:FindAssistTarget(engineer, true)
+                if target and ReleaseEngineer(engineer, nil, false) then
+                    self.IdleAssistants[engineer.EntityId] = Assistance.Start(engineer, target,
+                        Constants.Policy.IdleEngineerAssistSeconds, "Idle", self:AssistObjectiveKey())
+                    assigned = assigned + 1
+                end
+            end
+        end
+        self.AssistSummary.Assigned = self.AssistSummary.Assigned + assigned
+        self.AssistSummary.Active = self.AssistSummary.Active + assigned
         return assigned
     end,
 
@@ -2562,25 +2555,10 @@ ProductionManager = ClassSimple {
     -- engineers, puts them on one, and waits.
     MaintainCoreExtractorUpgrades = function(self)
         local state = self.Economy.State or {}
-        -- A stall means the upgrade would not finish and the income is gone
-        -- meanwhile. Nothing here is urgent enough to risk that.
-        if state.StallRisk then
-            self.CoreUpgrade = { State = "stall-risk" }
-            return "stall-risk"
-        end
-
-        -- Not while the base is under attack.
-        --
-        -- An extractor produces nothing while it upgrades, so starting one
-        -- during a raid removes income exactly when it is needed. Observed in a
-        -- live match: Red Queen upgraded toward Tech 3 while starved of mass and
-        -- under swarms of Tech 1 units, with the commander assisting it thirty
-        -- times. An upgrade already running is left alone -- abandoning it
-        -- wastes everything spent.
-        local alert = self.Strategy.ProductionDemand.DefenseAlert
-        if alert and alert.Active then
-            self.CoreUpgrade = { State = "under-attack" }
-            return "under-attack"
+        local reason = ExtractorUpgrades.BlockReason(state, self.Strategy.ProductionDemand.DefenseAlert)
+        if reason then
+            self.CoreUpgrade = { State = reason }
+            return reason
         end
 
         -- Breadth before depth, until breadth stops being on offer.
@@ -3165,6 +3143,7 @@ ProductionManager = ClassSimple {
         if Constants.Policy.FormationOwnership then
             self:ApplyFormationPolicy()
         end
+        self:MaintainIdleAssistants()
         self:TryExpandFactoryCapacity(counts, targets)
         -- One ArmyPool walk per pass, shared by both engineer consumers.
         local unassigned, unassignedByEntityId = self:GetUnassignedEngineers()

@@ -7,6 +7,11 @@ function import(path)
         return { Policy = { EngineerSurvivalHomeRadius = 80 } }
     end
     if path == "/mods/TheRedQueen/lua/AI/RedQueen/EngineerSurvival.lua" then return survival end
+    if path == "/mods/TheRedQueen/lua/AI/RedQueen/Assistance.lua" then
+        local assistance = setmetatable({}, { __index = _G })
+        setfenv(assert(loadfile("lua/AI/RedQueen/Assistance.lua")), assistance)()
+        return assistance
+    end
     return {}
 end
 survival = setmetatable({}, { __index = _G })

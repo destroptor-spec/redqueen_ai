@@ -257,9 +257,15 @@ local brain = {
 
 logged = {}
 local reporter = Create(brain, modules)
+modules.Production.AssistSummary = { Active = 2, Assigned = 7, Released = 5 }
+modules.Production.CommanderAssists = 3
+modules.Production.CoreUpgrade = { State = "under-attack" }
+brain.RedQueenExtractorBlocks = 4
 reporter:Update()
 local state = logged[table.getn(logged)]
 assert(state, "Update must log a state line")
+assert(string.find(state, "assist=2/7/5 acuassist=3 mexgate=under-attack/4", 1, true),
+    "normal diagnostics must expose assist activity and blocked native extractor starts")
 assert(string.find(state, "exp=Assault:ual0401/1/3", 1, true),
     "the state line must name the classified choice, owned count and fleet target: " .. state)
 

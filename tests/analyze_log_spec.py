@@ -174,6 +174,13 @@ class AnalyzeLogSpec(unittest.TestCase):
         result = self.analyze("warning: desync at beat 50")
         self.assert_totals(result, 1, 1, 0, 0)
 
+    def test_assist_counters_are_cumulative_per_army(self):
+        sample = "info: [RedQueen][INFO][army=2] state objective=Pressure assist=2/7/5 acuassist=3 mexgate=under-attack/4"
+        result = self.analyze(sample, sample,
+            "info: [RedQueen][INFO][army=3] state objective=Pressure assist=1/3/2 acuassist=1 mexgate=started/2")
+        self.assertIn("10 helper assignments, 7 releases, 4 commander assignments", result.stdout)
+        self.assertIn("6 native start attempts blocked", result.stdout)
+
     def test_unattributed_lua_desync_still_fails(self):
         result = self.analyze(FOREIGN + " desync")
         self.assert_totals(result, 1, 1, 0, 1)

@@ -13,3 +13,10 @@ Platoon.ForkThread = function(self, fn, ...)
     end
     return thread
 end
+
+local RedQueenExtractorUpgrades = import("/mods/TheRedQueen/lua/AI/RedQueen/ExtractorUpgrades.lua")
+local NativeUnitUpgradeAI = Platoon.UnitUpgradeAI
+Platoon.UnitUpgradeAI = function(self)
+    if RedQueenExtractorUpgrades.FilterNative(self, self:GetBrain()) then return end
+    return NativeUnitUpgradeAI(self)
+end

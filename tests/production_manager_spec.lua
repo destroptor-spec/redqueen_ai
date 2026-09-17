@@ -137,6 +137,7 @@ local constants = {
         CommanderAssistEnergyFloor = 0.25,
         CommanderHandbackSeconds = 20,
         IdleEngineerAssistSeconds = 20,
+        IdleEngineerAssistRadius = 60,
         CoreExtractorUpgradeMinimumMassIncome = 10,
         CoreExtractorDeclineFraction = 0.75,
         FormationOwnership = true,
@@ -203,6 +204,13 @@ function import(path)
         end
         return experimentalModule
     end
+    if path == "/mods/TheRedQueen/lua/AI/RedQueen/Assistance.lua"
+        or path == "/mods/TheRedQueen/lua/AI/RedQueen/ExtractorUpgrades.lua" then
+        local loaded = setmetatable({}, { __index = _G })
+        local filename = string.gsub(path, "/mods/TheRedQueen/", "")
+        setfenv(assert(loadfile(filename)), loaded)()
+        return loaded
+    end
     error("unexpected import: " .. tostring(path))
 end
 
@@ -214,6 +222,10 @@ local guarded = {}
 local cleared = {}
 function IssueGuard(units, target)
     table.insert(guarded, { Units = units, Target = target })
+    for _, unit in ipairs(units) do
+        unit.GuardTarget = target
+        unit.GetGuardedUnit = function(self) return self.GuardTarget end
+    end
 end
 function IssueClearCommands(units)
     table.insert(cleared, units)
@@ -2186,8 +2198,9 @@ local function commanderRun(position, idle, alertActive, factoryPositions, nativ
         Categories = { COMMAND = true, MOBILE = true, ENGINEER = true },
         GetPosition = function() return position end,
         IsIdleState = function() return idle end,
-        EngineerBuildQueue = { { "T1Resource", 1, 1 } },
-        ProcessBuild = "thread-handle",
+        EngineerBuildQueue = idle and {} or { { "T1Resource", 1, 1 } },
+        GetBlueprint = function() return { CategoriesHash = { COMMAND = true, ENGINEER = true } } end,
+        GetGuardedUnit = function(self) return self.GuardTarget end,
     }
     -- The real ACU is a member of an EngineerManager -- StrategyDirector reads
     -- its BuilderManagerData.LocationType -- so a case that cares whether
@@ -2202,8 +2215,15 @@ local function commanderRun(position, idle, alertActive, factoryPositions, nativ
             EntityId = index,
             Dead = false,
             Categories = { STRUCTURE = true, FACTORY = true },
+            IsUnitState = function(_, state) return state == "Building" end,
+            GetBlueprint = function() return { CategoriesHash = { STRUCTURE = true, FACTORY = true } } end,
             GetPosition = function() return factoryPosition end,
         })
+    end
+    if assistUntil and factories[1] then
+        acu.GuardTarget = factories[1]
+        acu.RedQueenAssist = { Unit = acu, Target = factories[1], Until = assistUntil,
+            Tick = 0, Objective = "nil:nil:0:0", Kind = "Commander" }
     end
     local guardsBefore = table.getn(guarded)
     local manager = Create({
@@ -2262,11 +2282,7 @@ assert(assisted.RedQueenAssistUntil, "the assignment must be held for a period")
 assert(table.getn(assisted.EngineerBuildQueue) == 0 and assisted.ProcessBuild == nil,
     "the commander's native build ownership must be released before assisting")
 
--- The assist issues its own order and holds the commander for 45 seconds, so it
--- must not also schedule the native re-poll. That poll lands about five seconds
--- later, AssignEngineerTask re-platoons the ACU, and a bare IssueGuard does not
--- set UnitBeingAssist -- the one thing that would have made native leave it
--- alone. RedQueenAssistUntil then reports it as assisting for the other forty.
+-- Native polls now honor the explicit assist lease and restore work at expiry.
 local assistPolls = {}
 verdict = commanderRun({ 20, 0, 20 }, true, false, { { 40, 0, 40 } }, {
     DelayAssign = function(_, unit, delay)
@@ -2274,8 +2290,8 @@ verdict = commanderRun({ 20, 0, 20 }, true, false, { { 40, 0, 40 } }, {
     end,
 })
 assert(verdict == "assist", "the assist case must still assist, got " .. tostring(verdict))
-assert(table.getn(assistPolls) == 0,
-    "assisting must not schedule the native re-poll that would replace its own guard")
+assert(table.getn(assistPolls) == 1,
+    "assisting must schedule the native poll protected by its explicit lease")
 
 -- The recall still hands the engineer back: the hook defers that poll until the
 -- commander is home, and native work resumes from there.
@@ -2816,10 +2832,15 @@ local function IdleEngineerContracts()
     local workingAcu = {
         EntityId = 700, Dead = false, IsCommander = true,
         Categories = { COMMAND = true },
+        GetBlueprint = function() return { CategoriesHash = { COMMAND = true } } end,
+        IsUnitState = function(_, state) return state == "Building" end,
         IsIdleState = function() return false end,
         GetPosition = function() return { 0, 0, 0 } end,
     }
-    local factory = { EntityId = 701, Dead = false, GetPosition = function() return { 10, 0, 10 } end }
+    local factory = { EntityId = 701, Dead = false,
+        IsUnitState = function(_, state) return state == "Building" end,
+        GetBlueprint = function() return { CategoriesHash = { STRUCTURE = true, FACTORY = true } } end,
+        GetPosition = function() return { 10, 0, 10 } end }
     local function Idle(id, idle)
         return {
             EntityId = id,
@@ -2834,10 +2855,11 @@ local function IdleEngineerContracts()
     local manager = Create(
         {
             GetListOfUnits = function(_, category)
-                if category and category.Matches and category.Matches({ COMMAND = true }) then
-                    return { workingAcu }
+                local units = {}
+                for _, unit in ipairs({ workingAcu, factory }) do
+                    if category.Matches(unit:GetBlueprint().CategoriesHash) then table.insert(units, unit) end
                 end
-                return { factory }
+                return units
             end,
         },
         { FactionIndex = 1 }, { StartPosition = { 0, 0, 0 } }, { State = {} }, {},
@@ -2862,6 +2884,7 @@ local function IdleEngineerContracts()
 
     -- A busy commander is preferred, but an idle one is not worth guarding.
     workingAcu.IsIdleState = function() return true end
+    workingAcu.IsUnitState = function() return false end
     guarded = {}
     engineers = { Idle(720, true) }
     manager:AssignIdleEngineers(engineers)

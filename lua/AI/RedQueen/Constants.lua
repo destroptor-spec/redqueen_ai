@@ -452,6 +452,7 @@ Policy = {
     -- scales with mass income, so a starved economy holding eighteen engineers
     -- gives most of them nothing to do.
     IdleEngineerAssistSeconds = 20,
+    IdleEngineerAssistRadius = 60,
     -- Where engineer replacement stops outranking the army.
     --
     -- Below the Tech 2 mainline at 930 and the Tech 2 factory tech builder at
