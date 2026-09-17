@@ -1,5 +1,6 @@
 local Logger = import("/mods/TheRedQueen/lua/AI/RedQueen/Logger.lua")
 local Constants = import("/mods/TheRedQueen/lua/AI/RedQueen/Constants.lua")
+local Narrator = import("/mods/TheRedQueen/lua/AI/RedQueen/Narrator.lua")
 
 -- Where Red Queen wants this platoon to go.
 --
@@ -76,6 +77,9 @@ function ObjectiveAttack(self)
             self:Stop()
             self:AggressiveMoveToLocation(position)
             brain.RedQueenPlatoonAims = (brain.RedQueenPlatoonAims or 0) + 1
+            Narrator.Announce(brain, "platoon", string.format(
+                "Sending %d units to %s",
+                table.getn(self:GetPlatoonUnits()), tostring(kind)))
             Logger.Info(brain, string.format(
                 "platoon directed objective=%s position=%.0f,%.0f units=%d",
                 tostring(kind), position[1], position[3],

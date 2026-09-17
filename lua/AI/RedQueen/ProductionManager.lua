@@ -3,6 +3,7 @@ local AIAddBuilderTable = import("/lua/AI/AIAddBuilderTable.lua")
 local BaseTemplates = import("/lua/basetemplates.lua")
 local BuildingTemplates = import("/lua/buildingtemplates.lua")
 local Constants = import("/mods/TheRedQueen/lua/AI/RedQueen/Constants.lua")
+local Narrator = import("/mods/TheRedQueen/lua/AI/RedQueen/Narrator.lua")
 local EngineerSurvival = import("/mods/TheRedQueen/lua/AI/RedQueen/EngineerSurvival.lua")
 local Logger = import("/mods/TheRedQueen/lua/AI/RedQueen/Logger.lua")
 
@@ -2473,6 +2474,8 @@ ProductionManager = ClassSimple {
                 IssueUpgrade({ candidate.Unit }, candidate.BlueprintId)
             end
             target = candidate.Unit
+            Narrator.Announce(self.Brain, "economy",
+                "Upgrading a spawn extractor -- no ground left worth taking")
             Logger.Info(self.Brain, string.format(
                 "core extractor upgrade started to=%s", tostring(candidate.BlueprintId)))
         end

@@ -34,6 +34,7 @@ luajit tests/production_trace_spec.lua
 luajit tests/strategy_director_spec.lua
 luajit tests/world_model_spec.lua
 luajit tests/platoon_plans_spec.lua
+luajit tests/narrator_spec.lua
 python3 tests/analyze_log_spec.py
 python3 -B tests/production_trace_log_spec.py
 python3 -B tests/prepare_runtime_spec.py

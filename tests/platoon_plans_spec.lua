@@ -2,6 +2,8 @@ local logged = {}
 function import(path)
     if path == "/mods/TheRedQueen/lua/AI/RedQueen/Logger.lua" then
         return { Info = function(_, message) table.insert(logged, message) end }
+    elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/Narrator.lua" then
+        return { Announce = function() return false end }
     elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/Constants.lua" then
         return { Policy = { PlatoonDirectionSeconds = 15 } }
     end

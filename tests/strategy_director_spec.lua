@@ -163,6 +163,8 @@ local engineerSurvival = {
 function import(path)
     if path == "/mods/TheRedQueen/lua/AI/RedQueen/Constants.lua" then
         return constants
+    elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/Narrator.lua" then
+        return { Announce = function() return false end }
     elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/Logger.lua" then
         return logger
     elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/EngineerSurvival.lua" then

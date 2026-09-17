@@ -110,6 +110,11 @@ Policy = {
     -- is left alone.
     -- How often a directed platoon re-reads the objective. Matched to the
     -- cadence FAF's own HuntAI uses, which re-targets every seventeen seconds.
+    -- Narration to in-game chat, so a spectator can see what Red Queen is
+    -- doing without reading a log afterwards. SyncAIChat only appends to the
+    -- Sync table the UI drains: no simulation state and no random draw.
+    NarrateToChat = true,
+    NarrationIntervalSeconds = 8,
     PlatoonDirectionSeconds = 15,
     WaveRallyHoldTicks = 50,
     -- A wave that has lost this share of its strength has done its work or

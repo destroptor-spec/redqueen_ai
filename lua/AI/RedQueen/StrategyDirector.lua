@@ -1,5 +1,6 @@
 local Logger = import("/mods/TheRedQueen/lua/AI/RedQueen/Logger.lua")
 local Constants = import("/mods/TheRedQueen/lua/AI/RedQueen/Constants.lua")
+local Narrator = import("/mods/TheRedQueen/lua/AI/RedQueen/Narrator.lua")
 local EngineerSurvival = import("/mods/TheRedQueen/lua/AI/RedQueen/EngineerSurvival.lua")
 
 local function Clamp(value, minimum, maximum)
@@ -1131,6 +1132,13 @@ StrategyDirector = ClassSimple {
 
         self.DefenseAlert = alert
         self.ProductionDemand.DefenseAlert = alert
+        if alert.Active then
+            Narrator.Announce(self.Brain, "defence", string.format(
+                "Under attack at %s (%s), severity %.0f",
+                tostring(alert.AnchorKind or "base"),
+                tostring(alert.QualifiedArm or alert.PrimaryLayer or "surface"),
+                alert.Severity or 0))
+        end
         return alert
     end,
 
@@ -1187,6 +1195,12 @@ StrategyDirector = ClassSimple {
             or previous.Type ~= objective.Type
             or previous.Kind ~= objective.Kind)
         then
+            Narrator.Announce(self.Brain, "objective", string.format(
+                "%s: %s at %d,%d",
+                objective.Slot == "Secondary" and "Protecting" or "Attacking",
+                tostring(objective.Type),
+                objective.Position and objective.Position[1] or 0,
+                objective.Position and objective.Position[3] or 0))
             Logger.Info(self.Brain, string.format(
                 "strategy objective=%s kind=%s slot=%s priority=%d layer=%s from=%s/%s",
                 objective.Type,
