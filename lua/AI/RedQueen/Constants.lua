@@ -442,6 +442,16 @@ Policy = {
     -- assisting doubles a factory's output while building a generator is what
     -- the economy is actually short of.
     CommanderAssistEnergyFloor = 0.25,
+    -- How long the commander is left to native after being handed back before
+    -- Red Queen concludes native is not going to task it. Observed in a live
+    -- match: economy-build fired 42 times and the commander stood idle while
+    -- factories built unassisted -- declining to use build power is not the
+    -- same as having something better for it to do.
+    CommanderHandbackSeconds = 20,
+    -- Idle engineers are build power standing still. The factory assist quota
+    -- scales with mass income, so a starved economy holding eighteen engineers
+    -- gives most of them nothing to do.
+    IdleEngineerAssistSeconds = 20,
     -- Where engineer replacement stops outranking the army.
     --
     -- Below the Tech 2 mainline at 930 and the Tech 2 factory tech builder at

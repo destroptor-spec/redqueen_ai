@@ -135,6 +135,8 @@ local constants = {
         CommanderLeashRadius = 120,
         CommanderAssistSeconds = 45,
         CommanderAssistEnergyFloor = 0.25,
+        CommanderHandbackSeconds = 20,
+        IdleEngineerAssistSeconds = 20,
         CoreExtractorUpgradeMinimumMassIncome = 10,
         CoreExtractorDeclineFraction = 0.75,
         FormationOwnership = true,
@@ -2170,12 +2172,14 @@ end
 -- observed as an idle ACU through the early and mid game, and as an Aeon
 -- commander wandering alone to the centre of the map.
 local commanderHome = { 0, 0, 0 }
-local function commanderRun(position, idle, alertActive, factoryPositions, nativeManager, coreUpgrade, assistUntil)
+local function commanderRun(position, idle, alertActive, factoryPositions, nativeManager, coreUpgrade, assistUntil, handbackTick)
     local acu = {
         EntityId = 900,
         -- An assist Red Queen issued on an earlier pass, so a case can test
         -- what happens to it rather than only what verdict is returned.
         RedQueenAssistUntil = assistUntil,
+        -- When Red Queen last handed this commander back to native.
+        RedQueenHandbackTick = handbackTick,
         Dead = false,
         IsCommander = true,
         IsEngineer = true,
@@ -2498,6 +2502,17 @@ assert(table.getn(upgrades) == 0,
     "a second core upgrade must not start while one is running, got " .. tostring(table.getn(upgrades)))
 assert(table.getn(guarded) > 0, "the upgrade in progress must keep its engineers")
 
+-- Nor while the base is under attack. An extractor produces nothing while it
+-- upgrades, so starting one during a raid removes income exactly when it is
+-- needed. Observed live: Red Queen upgraded toward Tech 3 while starved of mass
+-- and under swarms of Tech 1 units, with the commander assisting it 30 times.
+coreManager.Strategy.ProductionDemand.DefenseAlert = { Active = true }
+upgrades = {}
+assert(coreManager:MaintainCoreExtractorUpgrades() == "under-attack",
+    "a base under attack must not start an extractor upgrade")
+assert(table.getn(upgrades) == 0, "and must issue none")
+coreManager.Strategy.ProductionDemand.DefenseAlert = nil
+
 -- A stall risk stops it: the upgrade would not finish and the income is gone
 -- meanwhile.
 coreManager.Economy.State.StallRisk = true
@@ -2610,6 +2625,16 @@ local function CommanderOpeningContracts()
         { 20, 0, 20 }, true, false, { { 40, 0, 40 } }, nil, nil, 999999)
     assert(not carriedAcu.RedQueenAssistUntil,
         "an outstanding Red Queen assist must be cleared when the economy needs the commander")
+
+    -- Handed back once, and reclaimed if nothing took it. Declining to use the
+    -- commander is not the same as having something better for it to do:
+    -- measured live, this gate fired 42 times while factories built unassisted.
+    local handbackTick = GetGameTick() - constants.Policy.CommanderHandbackSeconds * 10 - 1
+    local reclaimed = commanderRun(
+        { 20, 0, 20 }, true, false, { { 40, 0, 40 } }, nil, nil, nil, handbackTick)
+    assert(reclaimed == "assist",
+        "a commander native never tasked must assist rather than idle, got "
+            .. tostring(reclaimed))
 
     -- And whenever energy is short later: doubling a factory's output is worth less
     -- than the generator that lets it run at all.
@@ -2781,3 +2806,68 @@ local function FormationPolicyContracts()
     print("Red Queen formation policy contracts passed")
 end
 FormationPolicyContracts()
+
+-- Idle engineers are build power standing still.
+--
+-- Factory assistance is sized by mass income, so a starved economy holding
+-- eighteen engineers gives most of them nothing to do. Observed in a live match
+-- at five minutes: engineers idle in the base while the commander worked.
+local function IdleEngineerContracts()
+    local workingAcu = {
+        EntityId = 700, Dead = false, IsCommander = true,
+        Categories = { COMMAND = true },
+        IsIdleState = function() return false end,
+        GetPosition = function() return { 0, 0, 0 } end,
+    }
+    local factory = { EntityId = 701, Dead = false, GetPosition = function() return { 10, 0, 10 } end }
+    local function Idle(id, idle)
+        return {
+            EntityId = id,
+            IsEngineer = true,
+            IsIdleState = function() return idle end,
+            GetPosition = function() return { 5, 0, 5 } end,
+            GetBlueprint = function()
+                return { CategoriesHash = { ENGINEER = true, MOBILE = true } }
+            end,
+        }
+    end
+    local manager = Create(
+        {
+            GetListOfUnits = function(_, category)
+                if category and category.Matches and category.Matches({ COMMAND = true }) then
+                    return { workingAcu }
+                end
+                return { factory }
+            end,
+        },
+        { FactionIndex = 1 }, { StartPosition = { 0, 0, 0 } }, { State = {} }, {},
+        { ProductionDemand = {} }
+    )
+
+    guarded = {}
+    local engineers = { Idle(710, true), Idle(711, true), Idle(712, false) }
+    local assigned = manager:AssignIdleEngineers(engineers)
+    assert(assigned == 2, "every idle engineer must be put to work, got " .. tostring(assigned))
+    assert(engineers[3].RedQueenIdleAssistUntil == nil,
+        "an engineer already working must be left alone")
+    for _, order in ipairs(guarded) do
+        assert(order.Target.EntityId == 700,
+            "a working commander is the largest build power and takes the help first")
+    end
+
+    -- Already helping: not re-ordered every pass.
+    guarded = {}
+    assert(manager:AssignIdleEngineers(engineers) == 0,
+        "an engineer already assisting must not be re-ordered")
+
+    -- A busy commander is preferred, but an idle one is not worth guarding.
+    workingAcu.IsIdleState = function() return true end
+    guarded = {}
+    engineers = { Idle(720, true) }
+    manager:AssignIdleEngineers(engineers)
+    assert(guarded[1] and guarded[1].Target.EntityId == 701,
+        "with the commander idle the help goes to a factory instead")
+
+    print("Red Queen idle engineer contracts passed")
+end
+IdleEngineerContracts()

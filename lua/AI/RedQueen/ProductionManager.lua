@@ -2358,12 +2358,27 @@ ProductionManager = ClassSimple {
         --
         -- The same applies whenever energy is short later: doubling a factory's
         -- output is worth less than the generator that lets it run at all.
+        local tick = GetGameTick()
         local economy = self.Economy and self.Economy.State or {}
         local buildInstead = economy.Mode == "Opening" and "opening-build"
             or ((economy.StallRisk
                 or (economy.EnergyStoredRatio or 1) < Constants.Policy.CommanderAssistEnergyFloor)
                 and "economy-build")
+        -- Handed back once, and then reclaimed if nothing took it.
+        --
+        -- Declining to use the commander is not the same as having something
+        -- better for it to do. Measured in a live match: this gate fired 42
+        -- times while factories built unassisted and the commander stood still.
+        -- If native has not tasked it within the handback window, assisting
+        -- beats idling.
+        if buildInstead and commander.RedQueenHandbackTick
+            and tick - commander.RedQueenHandbackTick >= Constants.Policy.CommanderHandbackSeconds * 10
+            and commander.IsIdleState and commander:IsIdleState()
+        then
+            buildInstead = nil
+        end
         if buildInstead then
+            commander.RedQueenHandbackTick = commander.RedQueenHandbackTick or tick
             -- Hand it back, rather than merely declining to task it.
             --
             -- Returning here without clearing an assist Red Queen had already
@@ -2382,10 +2397,10 @@ ProductionManager = ClassSimple {
         -- Idle at home is the case worth fixing: the commander is build power
         -- standing still. Assisting is deliberately conditional on being idle,
         -- so a commander that native has usefully tasked is left alone.
-        local tick = GetGameTick()
         if commander.RedQueenAssistUntil and commander.RedQueenAssistUntil > tick then
             return "assisting"
         end
+        commander.RedQueenHandbackTick = nil
         if commander.IsIdleState and not commander:IsIdleState() then
             return "busy"
         end
@@ -2447,6 +2462,70 @@ ProductionManager = ClassSimple {
         return "assist"
     end,
 
+    -- Idle engineers are build power standing still.
+    --
+    -- Factory assistance is sized by mass income -- min(6, income) -- so a
+    -- starved economy holding eighteen engineers gives most of them nothing to
+    -- do. Observed in a live match at five minutes: engineers idle in the base
+    -- while the commander worked.
+    --
+    -- They are put on the commander if it is building, because that is the
+    -- largest build power on the field and the thing worth finishing sooner,
+    -- and on the nearest factory otherwise. The hold is short and is not part
+    -- of `Held`, so a defence, a forward base or a core upgrade can still take
+    -- them the moment it needs one -- which is what reassessing on a change of
+    -- objective amounts to.
+    AssignIdleEngineers = function(self, unassigned)
+        local tick = GetGameTick()
+        local target = nil
+        if self.Brain.GetListOfUnits and categories then
+            for _, unit in pairs(self.Brain:GetListOfUnits(categories.COMMAND, false) or {}) do
+                if IsAlive(unit) and unit.IsIdleState and not unit:IsIdleState() then
+                    target = unit
+                    break
+                end
+            end
+            if not target then
+                local factories = self.Brain:GetListOfUnits(
+                    categories.STRUCTURE * categories.FACTORY, false) or {}
+                for _, factory in pairs(factories) do
+                    if IsAlive(factory) then
+                        target = factory
+                        break
+                    end
+                end
+            end
+        end
+        if not target then
+            self.IdleAssists = 0
+            return 0
+        end
+
+        local assigned = 0
+        for _, engineer in ipairs(unassigned or {}) do
+            local busy = (engineer.RedQueenEmergencyDefenseUntil
+                    and engineer.RedQueenEmergencyDefenseUntil > tick)
+                or (engineer.RedQueenProductionBuildUntil
+                    and engineer.RedQueenProductionBuildUntil > tick)
+                or (engineer.RedQueenCoreUpgradeUntil
+                    and engineer.RedQueenCoreUpgradeUntil > tick)
+                or (engineer.RedQueenIdleAssistUntil
+                    and engineer.RedQueenIdleAssistUntil > tick)
+            if not busy
+                and not EngineerSurvival.IsRetreating(engineer)
+                and engineer.IsIdleState and engineer:IsIdleState()
+            then
+                ReleaseEngineer(engineer, nil, false)
+                if IssueGuard then IssueGuard({ engineer }, target) end
+                engineer.RedQueenIdleAssistUntil = tick
+                    + Constants.Policy.IdleEngineerAssistSeconds * 10
+                assigned = assigned + 1
+            end
+        end
+        self.IdleAssists = assigned
+        return assigned
+    end,
+
     -- The extractors at the spawn, which are the ones worth upgrading first.
     --
     -- Ground we already hold: no new territory to defend, no escort to spare,
@@ -2488,6 +2567,20 @@ ProductionManager = ClassSimple {
         if state.StallRisk then
             self.CoreUpgrade = { State = "stall-risk" }
             return "stall-risk"
+        end
+
+        -- Not while the base is under attack.
+        --
+        -- An extractor produces nothing while it upgrades, so starting one
+        -- during a raid removes income exactly when it is needed. Observed in a
+        -- live match: Red Queen upgraded toward Tech 3 while starved of mass and
+        -- under swarms of Tech 1 units, with the commander assisting it thirty
+        -- times. An upgrade already running is left alone -- abandoning it
+        -- wastes everything spent.
+        local alert = self.Strategy.ProductionDemand.DefenseAlert
+        if alert and alert.Active then
+            self.CoreUpgrade = { State = "under-attack" }
+            return "under-attack"
         end
 
         -- Breadth before depth, until breadth stops being on offer.
@@ -3084,6 +3177,8 @@ ProductionManager = ClassSimple {
         -- that does not need any.
         self:MaintainCoreExtractorUpgrades()
         self:UpdateForwardBases()
+        -- Last, so anything with a real task has already claimed what it needs.
+        self:AssignIdleEngineers(self:GetUnassignedEngineers())
         self:UpdateEngineerRetreat()
         self:UpdateCommanderTasking()
         self.Counts = counts
