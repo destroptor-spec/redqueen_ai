@@ -133,6 +133,7 @@ local constants = {
         EngineerSurvivalThreatFloor = 8,
         CommanderLeashRadius = 120,
         CommanderAssistSeconds = 45,
+        CommanderAssistEnergyFloor = 0.25,
         CoreExtractorUpgradeMinimumMassIncome = 10,
         CoreExtractorDeclineFraction = 0.75,
         FormationOwnership = true,
@@ -2543,6 +2544,51 @@ upgrades = {}
 assert(gateManager:MaintainCoreExtractorUpgrades() == "expanding",
     "holding the peak is not losing ground")
 assert(table.getn(upgrades) == 0, "so nothing is upgraded")
+
+-- Wrapped in a function: this chunk is near Lua's 200-local limit and a
+-- function body gets its own budget.
+local function CommanderOpeningContracts()
+    -- The opening belongs to the commander's own build order.
+    --
+    -- Observed in a live match: the ACU assisted a factory from the first minutes
+    -- and the army was starved for power. An idle moment between build orders is
+    -- not idleness -- it is the gap before the next structure -- and assisting held
+    -- the commander for forty-five seconds each time, so native never got it back
+    -- to lay down generators.
+    local previousMode = routeEconomy.State.Mode
+    local previousStall = routeEconomy.State.StallRisk
+    local previousStored = routeEconomy.State.EnergyStoredRatio
+
+    routeEconomy.State.Mode = "Opening"
+    routeEconomy.State.EnergyStoredRatio = 1
+    local openingVerdict = commanderRun({ 20, 0, 20 }, true, false, { { 40, 0, 40 } })
+    assert(openingVerdict == "opening-build",
+        "an idle commander in the opening must be left to its own build order, got "
+            .. tostring(openingVerdict))
+
+    -- And whenever energy is short later: doubling a factory's output is worth less
+    -- than the generator that lets it run at all.
+    routeEconomy.State.Mode = "Balanced"
+    routeEconomy.State.EnergyStoredRatio = 0.05
+    local starvedVerdict = commanderRun({ 20, 0, 20 }, true, false, { { 40, 0, 40 } })
+    assert(starvedVerdict == "economy-build",
+        "a commander must build rather than assist while energy is short, got "
+            .. tostring(starvedVerdict))
+
+    routeEconomy.State.StallRisk = true
+    routeEconomy.State.EnergyStoredRatio = 1
+    assert(commanderRun({ 20, 0, 20 }, true, false, { { 40, 0, 40 } }) == "economy-build",
+        "a stalling economy is the commander's problem to build out of")
+
+    -- With the economy healthy it assists as before.
+    routeEconomy.State.Mode = previousMode
+    routeEconomy.State.StallRisk = previousStall
+    routeEconomy.State.EnergyStoredRatio = 1
+    assert(commanderRun({ 20, 0, 20 }, true, false, { { 40, 0, 40 } }) == "assist",
+        "a healthy economy still puts idle build power on a factory")
+    routeEconomy.State.EnergyStoredRatio = previousStored
+end
+CommanderOpeningContracts()
 
 -- The commander is the largest build power on the field, so a core extractor
 -- part-way through an upgrade outranks a factory for its attention. It is the

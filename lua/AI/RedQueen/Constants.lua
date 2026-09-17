@@ -416,6 +416,12 @@ Policy = {
     CommanderLeashRadius = 120,
     -- How long the commander holds an assist order before it is reconsidered.
     CommanderAssistSeconds = 45,
+    -- Below this share of energy storage the commander builds rather than
+    -- assists. Observed in a live match: the ACU assisted a factory through the
+    -- opening and the army was starved for power in the first minutes, because
+    -- assisting doubles a factory's output while building a generator is what
+    -- the economy is actually short of.
+    CommanderAssistEnergyFloor = 0.25,
     -- Where engineer replacement stops outranking the army.
     --
     -- Below the Tech 2 mainline at 930 and the Tech 2 factory tech builder at

@@ -2317,6 +2317,26 @@ ProductionManager = ClassSimple {
             return "recalled"
         end
 
+        -- The opening belongs to the commander's own build order.
+        --
+        -- Observed in a live match: the ACU assisted a factory from the first
+        -- minutes and the army was starved for power, because an idle moment
+        -- between build orders is not idleness -- it is the gap before the next
+        -- structure. Assisting held it for CommanderAssistSeconds each time, so
+        -- native never got it back to lay down generators.
+        --
+        -- The same applies whenever energy is short later: doubling a factory's
+        -- output is worth less than the generator that lets it run at all.
+        local economy = self.Economy and self.Economy.State or {}
+        if economy.Mode == "Opening" then
+            return "opening-build"
+        end
+        if economy.StallRisk
+            or (economy.EnergyStoredRatio or 1) < Constants.Policy.CommanderAssistEnergyFloor
+        then
+            return "economy-build"
+        end
+
         -- Idle at home is the case worth fixing: the commander is build power
         -- standing still. Assisting is deliberately conditional on being idle,
         -- so a commander that native has usefully tasked is left alone.
