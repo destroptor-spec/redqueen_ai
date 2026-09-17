@@ -440,3 +440,43 @@ Forward bases went the other way: 4 of 15 established to 3 of 21, with
 rate, and that is the clearest single lead for the LandLarge profile.
 
 With `FormationOwnership` on, the same tree scores **3W/9L**. It is off.
+
+
+## 2026-09-18: the instrument is deterministic, and the audited fixes cost one cell
+
+Two full matrices run back to back on an identical tree, twelve cells each,
+zero scheduler failures in all twenty-four.
+
+**Run A and run B agree on every cell.** The harness reproduces exactly: it
+kills instances on a timer, terminates processes mid-write and runs under
+varying memory pressure, and none of that changes a result. A single-cell
+difference between two trees is therefore signal, not noise, and cell-level
+attribution from this matrix is sound.
+
+That was worth establishing. Most of the previous session steered by single-cell
+flips without ever checking that the instrument could resolve them.
+
+| cell | baseline | run A | run B |
+| --- | --- | --- | --- |
+| Sludge 2071971 Aeon | victory | victory | victory |
+| Sludge 2071971 Cybran | victory | victory | victory |
+| Sludge 2071971 Seraphim | victory | victory | victory |
+| Sludge 8675309 Seraphim | victory | **defeat** | defeat |
+| Sludge 31337 Seraphim | victory | victory | victory |
+| Sentry Point 2071971 Aeon | victory | **defeat** | defeat |
+| Sentry Point 31337 Aeon | victory | victory | victory |
+| Sentry Point 2071971 UEF | defeat | **victory** | victory |
+| Fields of Isis 8675309 | defeat | defeat | defeat |
+| Fields of Isis 31337 | defeat | defeat | defeat |
+| Syrtis Major 8675309 | defeat | defeat | defeat |
+| Syrtis Major 31337 | defeat | defeat | defeat |
+| **record** | **7W/5L** | **6W/6L** | **6W/6L** |
+
+Two cells lost, one gained: net one cell down on the baseline.
+
+For scale, the same fixes written to fight native rather than coordinate with
+them scored **3W/9L**, and the directed-platoon work alone scored 5W/7L. The
+audit recovered most of that ground without reaching parity.
+
+The three LandLarge cells have now lost under every tree measured across two
+days, including the session anchor. Nothing attempted has moved them.
