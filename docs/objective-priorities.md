@@ -709,3 +709,51 @@ It is untested in isolation because it only engages on units Red Queen owns.
 
 The census stays and is the finding: it is what showed that dispatch runs two or
 three times a match, which no win rate or K/L figure could have said.
+
+
+## Spike: can native platoons be directed?
+
+Three questions, answered from FAF's own source rather than by experiment.
+
+**Do platoon AI functions run continuously, or fire once?** Continuously.
+`HuntAI` loops `while aiBrain:PlatoonExists(self)`, re-selecting a target every
+seventeen seconds; `AttackForceAI` loops on platoon position and re-picks its
+enemy as the game moves. These are live behaviours, not one-shot orders, which
+is why native out-fights a dispatcher that issues aggressive-moves twice a
+match.
+
+**Do they take a destination from `PlatoonData`?** No. `HuntAI` ignores the data
+entirely and attacks `FindClosestUnit('Attack', 'Enemy', ...)`. `AttackForceAI`
+reads `PlatoonData` only for `MaxPlatoonSize` and `UseFormation`, and takes its
+enemy from `aiBrain:GetCurrentEnemy()`. So `SetPlatoonData` cannot steer them,
+and the obvious approach does not work.
+
+**Is there another seam?** Yes, and it is the right one. A builder definition
+may carry `PlatoonAIFunction` or `PlatoonAIPlan`, and `PlatoonFormManager` forks
+whatever the builder names when it forms the platoon. Red Queen already
+registers builders into that manager -- `RedQueenTechUpgradeBuilders` lives
+there.
+
+### The shape this implies
+
+Red Queen registers its own combat platoon-form builders whose
+`PlatoonAIFunction` is a Red Queen plan. Native still forms the platoon: its
+composition, its gather radius, its instance counts. The plan then runs the
+continuous loop, and that loop reads the current objective.
+
+Native keeps the fighting it is good at. Red Queen supplies the intent it has
+been computing and discarding.
+
+This also explains why suppressing native's combat builders was the wrong
+instrument. The problem was never that native formed platoons; it was that
+nothing told them where to go. Adding directed builders is additive, where
+suppression was subtractive, and the measured cost of subtracting was four
+cells.
+
+### What is not yet known
+
+Whether a Red Queen plan can reuse native's helpers (`GatherUnits`,
+`AggressiveMoveToLocation`, the retreat and stuck-detection logic) from a mod
+file, and how an objective change reaches a platoon already running its loop --
+by the loop re-reading the brain's objective each pass, most likely, since the
+objective already lives on the brain's modules.
