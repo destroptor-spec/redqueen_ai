@@ -517,6 +517,8 @@ ProductionManager = ClassSimple {
                         "RedQueenDirectedBuilders"
                     )
                     manager.PlatoonFormManager:SortBuilderList("Any")
+                    Logger.Info(self.Brain, string.format(
+                        "directed builders registered location=%s", tostring(locationType)))
                 end
 
                 handles = manager.BuilderHandles or handles

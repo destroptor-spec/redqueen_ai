@@ -1341,6 +1341,12 @@ BuilderGroup {
 -- the objective.
 PlatoonTemplate {
     Name = "RedQueenDirectedLand",
+    -- PlatoonFormManager builds { Name, Plan, unpack(GlobalSquads) } and hands
+    -- that to CanFormPlatoon, so a template without a Plan produces one whose
+    -- second element is nil and forms nothing -- silently, with no warning.
+    -- The plan named here is started and then stopped immediately, because
+    -- PlatoonAIFunction calls StopAI before forking ours; it only has to exist.
+    Plan = "AttackForceAI",
     GlobalSquads = {
         {
             categories.MOBILE * categories.LAND
