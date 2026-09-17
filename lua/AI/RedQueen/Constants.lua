@@ -340,6 +340,13 @@ Policy = {
     -- engineers and spread them across the map. Red Queen peaked at 18 of 44
     -- points and never reached more.
     EngineersExpansionFloor = 12,
+    -- Engineer losses in the window above which the opening floor stops
+    -- applying. Observed in a live match: at five minutes Red Queen held 13
+    -- engineers on 2.3 mass income and 9 of 52 points, with ten lost in the
+    -- window and the target driven from 12 to its 18 cap by loss replacement.
+    -- More engineers into a map that is eating them is the piecemeal failure in
+    -- economic clothes -- the mass belongs in units that stop the raiding.
+    EngineerLossFloorCeiling = 4,
     -- While fewer than this share of the map's points are held, there is still
     -- breadth worth claiming and the floor applies.
     ExpansionClaimedShare = 0.5,

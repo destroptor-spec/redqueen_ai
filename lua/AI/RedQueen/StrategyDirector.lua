@@ -526,7 +526,15 @@ StrategyDirector = ClassSimple {
         local expanding = plan.Active and 1 or 0
         local expansion = expanding * Constants.Policy.EngineersPerForwardBase
 
-        local replacements = pressure.Count
+        -- Replacement is capped, because past a point losses stop meaning
+        -- "we are short of engineers" and start meaning "the map is eating
+        -- them". Observed live: ten losses in the window drove the target from
+        -- twelve to its eighteen cap while mass income sat at 2.3 and nine of
+        -- fifty-two points were held. Every one of those engineers was mass not
+        -- spent on the units that would have stopped the raiding, and each
+        -- death bought another. This is the same spiral that once produced 101
+        -- engineers, reached through the target instead of the priority.
+        local replacements = math.min(pressure.Count, Constants.Policy.EngineerLossFloorCeiling)
             * Constants.Policy.EngineerLossReplacementFactor
 
         -- The opening floor. `ShouldBuildEngineer` stops at the target, so this
@@ -547,9 +555,19 @@ StrategyDirector = ClassSimple {
         -- `feeding`, not the built count, for the same reason the structural
         -- base uses it: the opening should be asking for the engineers before
         -- the factory finishes, not a pass later.
+        -- And only while the engineers sent out are surviving.
+        --
+        -- The floor exists to claim ground, and claiming needs engineers that
+        -- live long enough to build. Measured in a live match: ten losses in
+        -- the window, the target driven from twelve to its cap by replacement,
+        -- 2.3 mass income and 9 of 52 points held -- the mass went into
+        -- engineers, the engineers went into a raided map, and the losses
+        -- bought more engineers. Below the ceiling this is an opening; above
+        -- it, it is feeding.
         local claiming = feeding >= 1
             and points > 0
             and extractors < points * Constants.Policy.ExpansionClaimedShare
+            and pressure.Count <= Constants.Policy.EngineerLossFloorCeiling
         local floor = claiming
             and Constants.Policy.EngineersExpansionFloor
             or Constants.Policy.EngineersMinimum

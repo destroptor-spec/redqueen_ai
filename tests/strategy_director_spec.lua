@@ -97,6 +97,7 @@ local constants = {
         EngineersPerFactory = 0.75,
         EngineersMinimum = 2,
         EngineersExpansionFloor = 12,
+        EngineerLossFloorCeiling = 4,
         ExpansionClaimedShare = 0.5,
         EngineersMaximum = 18,
         EngineersPerForwardBase = 2,
@@ -489,6 +490,28 @@ assert(openingEngineers >= constants.Policy.EngineersExpansionFloor,
     "an opening with points left to claim must ask for the engineers to claim them, got "
         .. tostring(openingEngineers))
 
+-- The floor is for claiming ground, and claiming needs engineers that live long
+-- enough to build. Measured in a live match: ten losses in the window, the
+-- target driven from twelve to its cap by replacement, 2.3 mass income and 9 of
+-- 52 points held. Below the ceiling this is an opening; above it, feeding.
+director.RecentEngineerLosses = {}
+for index = 1, constants.Policy.EngineerLossFloorCeiling do
+    table.insert(director.RecentEngineerLosses, { Tick = currentTick, Mass = 50 })
+end
+local atCeiling = engineerTarget()
+assert(atCeiling >= constants.Policy.EngineersExpansionFloor,
+    "losses inside the ceiling are ordinary attrition and the opening stands")
+for index = 1, 12 do
+    table.insert(director.RecentEngineerLosses, { Tick = currentTick, Mass = 50 })
+end
+local bleeding = engineerTarget()
+assert(bleeding < atCeiling,
+    "a map eating engineers must be answered with fewer, not more: got "
+        .. tostring(bleeding) .. " against " .. tostring(atCeiling))
+assert(bleeding < constants.Policy.EngineersMaximum,
+    "and replacement alone must never reach the cap, got " .. tostring(bleeding))
+director.RecentEngineerLosses = {}
+
 -- Once the map is mostly held, the floor lifts and the structural need governs.
 claimedExtractors = 40
 local settledEngineers = engineerTarget()
@@ -546,11 +569,20 @@ currentTick = lossTick
 
 -- The target stays bounded, so a sustained bleed cannot spend the whole economy
 -- on builders.
+--
+-- This used to assert the target reached EngineersMaximum, which is bounded but
+-- is the wrong bound: measured in a live match, ten losses in the window drove
+-- it to that cap while mass income sat at 2.3 and nine of fifty-two points were
+-- held. Sixty losses is not a shortage of engineers, it is a map eating them,
+-- and the answer is fewer builders and more of what stops the eating.
 for _ = 1, 60 do
     table.insert(director.RecentEngineerLosses, { Tick = lossTick, Mass = 52 })
 end
-assert(engineerTarget() == constants.Policy.EngineersMaximum,
-    "the engineer target must stay bounded under sustained losses")
+local bled = engineerTarget()
+assert(bled < constants.Policy.EngineersMaximum,
+    "a sustained bleed must not drive the target to its cap, got " .. tostring(bled))
+assert(bled >= constants.Policy.EngineersMinimum,
+    "but the establishment still stands, got " .. tostring(bled))
 director.RecentEngineerLosses = {}
 economy.State.DesiredFactories = 4
 
