@@ -98,7 +98,21 @@ Policy = {
     --
     -- Off until there is something to form waves with. The census it feeds
     -- stays on regardless -- that is pure observation and cost nothing.
-    FormationOwnership = false,
+    -- A wave gathers before it commits, and commits as one.
+    --
+    -- Measured: with 250 units owned and a 30-second order hold, each pass saw
+    -- only the four to thirteen units whose holds had just expired and sent
+    -- them at the objective alone, so 231 units were strung along the path
+    -- arriving in small groups into a defended position.
+    --
+    -- The rally hold is short so a gathering wave is re-examined often; the
+    -- committed hold is the ordinary order lifetime, because a wave in motion
+    -- is left alone.
+    WaveRallyHoldTicks = 50,
+    -- A wave that has lost this share of its strength has done its work or
+    -- failed, and is dissolved so the survivors can join the next one.
+    WaveSpentFraction = 0.34,
+    FormationOwnership = true,
     CoreExtractorRadius = 45,
     CoreExtractorUpgradeEngineers = 4,
     CoreExtractorAssistSeconds = 30,

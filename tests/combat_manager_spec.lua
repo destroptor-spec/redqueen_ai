@@ -96,6 +96,8 @@ end
 local constants = {
     Policy = {
         MinimumAttackUnits = 3,
+        WaveRallyHoldTicks = 50,
+        WaveSpentFraction = 0.34,
         MaximumTaskForceUnits = 60,
         AttackReserveFraction = 0.10,
         UnitOrderLifetimeTicks = 50,
@@ -270,19 +272,32 @@ assert(aggressiveOrders[beforeDispatch + 1].Units[1].EntityId == 100, "only the 
 
 defense.Land = 0
 defense.Air = 100
-for _, unit in ipairs(dispatchUnits) do unit.RedQueenOrderUntil = nil end
+for _, unit in ipairs(dispatchUnits) do
+    unit.RedQueenOrderUntil = nil
+    unit.RedQueenWaveUntil = nil
+end
+-- A committed wave is deliberately not re-decided -- that is the thrash the
+-- formation exists to remove -- so this clears them to test the decision a
+-- fresh wave makes, which is what the contract below is about.
+layerManager.Waves = nil
 beforeDispatch = table.getn(aggressiveOrders)
 layerManager:Update()
 assert(table.getn(aggressiveOrders) == beforeDispatch + 2, "land and amphibious waves must ignore AA-only threat")
 assert(not dispatchUnits[1].RedQueenOrderUntil, "bombers must wait against sufficient anti-air")
-for _, unit in ipairs(dispatchUnits) do unit.RedQueenOrderUntil = nil end
+for _, unit in ipairs(dispatchUnits) do
+    unit.RedQueenOrderUntil = nil
+    unit.RedQueenWaveUntil = nil
+end
 target.Layer = "Water"
 beforeDispatch = table.getn(aggressiveOrders)
 layerManager:Update()
 assert(table.getn(aggressiveOrders) == beforeDispatch + 2, "water and amphibious waves must ignore AA-only threat")
 assert(dispatchUnits[7].RedQueenOrderUntil, "water dispatch must pass its wave layer into commitment")
 assert(not dispatchUnits[4].RedQueenOrderUntil, "ordinary land units cannot join water dispatch")
-for _, unit in ipairs(dispatchUnits) do unit.RedQueenOrderUntil = nil end
+for _, unit in ipairs(dispatchUnits) do
+    unit.RedQueenOrderUntil = nil
+    unit.RedQueenWaveUntil = nil
+end
 target.DefenseLayers = { Land = true, Water = true, Amphibious = true }
 target.LayerPositions = { Land = target.Position, Water = target.Position, Amphibious = target.Position }
 beforeDispatch = table.getn(aggressiveOrders)
@@ -292,7 +307,10 @@ assert(table.getn(aggressiveOrders) == beforeDispatch + 3, "layer-specific desti
 -- one of the land dispatch layers and a ship cannot sail to a land coordinate.
 -- On a Mixed map the land layer always resolves first, so this was every ship
 -- built, idle in the pool for the whole match while naval production ran on.
-for _, unit in ipairs(dispatchUnits) do unit.RedQueenOrderUntil = nil end
+for _, unit in ipairs(dispatchUnits) do
+    unit.RedQueenOrderUntil = nil
+    unit.RedQueenWaveUntil = nil
+end
 target.DefenseLayers = nil
 target.LayerPositions = nil
 target.Layer = "Land"
@@ -303,7 +321,10 @@ assert(not dispatchUnits[7].RedQueenOrderUntil,
     "a land objective on its own must leave the fleet unordered")
 
 -- Given a water destination of its own, the fleet sails.
-for _, unit in ipairs(dispatchUnits) do unit.RedQueenOrderUntil = nil end
+for _, unit in ipairs(dispatchUnits) do
+    unit.RedQueenOrderUntil = nil
+    unit.RedQueenWaveUntil = nil
+end
 target.LayerPositions = { Water = { 400, 0, 400 } }
 beforeDispatch = table.getn(aggressiveOrders)
 layerManager:Update()
@@ -332,7 +353,10 @@ layerManager.World.CanPath = function(_, layer, origin, destination)
 end
 target.Type = "JointAttack"
 target.LaunchTick = currentTick + 1
-for _, unit in ipairs(dispatchUnits) do unit.RedQueenOrderUntil = nil end
+for _, unit in ipairs(dispatchUnits) do
+    unit.RedQueenOrderUntil = nil
+    unit.RedQueenWaveUntil = nil
+end
 beforeDispatch = table.getn(aggressiveOrders)
 layerManager:Update()
 assert(table.getn(aggressiveOrders) == beforeDispatch,
@@ -340,7 +364,10 @@ assert(table.getn(aggressiveOrders) == beforeDispatch,
 target.LaunchTick = currentTick
 for _, layer in ipairs({ "Land", "Air" }) do
     target.Layer = layer
-    for _, unit in ipairs(dispatchUnits) do unit.RedQueenOrderUntil = nil end
+    for _, unit in ipairs(dispatchUnits) do
+    unit.RedQueenOrderUntil = nil
+    unit.RedQueenWaveUntil = nil
+end
     beforeDispatch = table.getn(aggressiveOrders)
     layerManager:Update()
     assert(table.getn(aggressiveOrders) == beforeDispatch + 1,
@@ -352,7 +379,10 @@ end
 for _, reason in ipairs({ "threat", "path" }) do
     waterDefense.Naval = reason == "threat" and 500 or 0
     waterReachable = reason ~= "path"
-    for _, unit in ipairs(dispatchUnits) do unit.RedQueenOrderUntil = nil end
+    for _, unit in ipairs(dispatchUnits) do
+    unit.RedQueenOrderUntil = nil
+    unit.RedQueenWaveUntil = nil
+end
     beforeDispatch = table.getn(aggressiveOrders)
     layerManager:Update()
     assert(table.getn(aggressiveOrders) == beforeDispatch and not dispatchUnits[7].RedQueenOrderUntil,
@@ -369,7 +399,10 @@ target.LayerPositions = nil
 -- dispatches nothing must report nothing, rather than leaving the previous
 -- pass's counts standing as though they were current -- the defect the cover
 -- and scout summaries both carried, and the reason this figure exists at all.
-for _, unit in ipairs(dispatchUnits) do unit.RedQueenOrderUntil = nil end
+for _, unit in ipairs(dispatchUnits) do
+    unit.RedQueenOrderUntil = nil
+    unit.RedQueenWaveUntil = nil
+end
 target.Layer = "Land"
 target.LayerPositions = { Water = { 400, 0, 400 } }
 layerManager:Update()
@@ -1554,3 +1587,95 @@ assert(census.GarrisonHeld == 1, "a garrison hold must be counted separately, go
     .. tostring(census.GarrisonHeld))
 
 print("Red Queen army census contracts passed")
+
+-- A wave gathers before it commits, and commits as one.
+--
+-- Dispatch used to order whatever happened to be free this pass. With 250 units
+-- owned and a 30-second order hold that is a trickle: four to thirteen sent at
+-- a time, each group arriving separately into whatever was waiting, K/L 0.32.
+local function WaveContracts()
+    local waveUnits = {}
+    local waveThreat = 0
+    local waveManager = Create(
+        {
+            GetPlatoonUniquelyNamed = function()
+                return { GetPlatoonUnits = function() return waveUnits end }
+            end,
+            GetCurrentUnits = function() return table.getn(waveUnits) end,
+        },
+        { CanPath = function() return true end, StartPosition = { 0, 0, 0 } },
+        {},
+        {
+            Intel = { GetThreatNear = function() return waveThreat end },
+            ProductionDemand = {},
+            PrimaryObjective = { Type = "Raid", Layer = "Land", Position = { 900, 0, 900 } },
+            CurrentObjective = { Type = "Raid", Layer = "Land", Position = { 900, 0, 900 } },
+        }
+    )
+    local function WaveUnit(id)
+        return {
+            EntityId = id,
+            IsCombat = true,
+            GetPosition = function() return { 0, 0, 0 } end,
+            GetBlueprint = function()
+                return { CategoriesHash = { LAND = true, MOBILE = true, DIRECTFIRE = true },
+                         Defense = { SurfaceThreatLevel = 10 } }
+            end,
+        }
+    end
+
+    -- Too weak for what is waiting: the wave holds rather than feeding in.
+    waveUnits = { WaveUnit(901), WaveUnit(902), WaveUnit(903) }
+    waveThreat = 500
+    local before = table.getn(aggressiveOrders)
+    waveManager:Update()
+    assert(table.getn(aggressiveOrders) == before,
+        "a wave too weak for its objective must not be sent")
+    assert(waveUnits[1].RedQueenWaveUntil,
+        "a gathering unit must be spoken for by the wave")
+    assert(not waveUnits[1].RedQueenOrderUntil,
+        "gathering is not dispatch: the order hold must stay clear")
+
+    -- It keeps gathering across passes rather than starting over.
+    waveManager:Update()
+    assert(waveManager.Waves.Land and table.getn(waveManager.Waves.Land.Units) == 3,
+        "the formation must persist across passes, got "
+            .. tostring(waveManager.Waves.Land and table.getn(waveManager.Waves.Land.Units)))
+
+    -- Once it can beat what is there, the whole wave commits at once.
+    waveThreat = 5
+    before = table.getn(aggressiveOrders)
+    for _, unit in ipairs(waveUnits) do unit.RedQueenWaveUntil = nil end
+    waveManager:Update()
+    assert(table.getn(aggressiveOrders) == before + 1,
+        "a wave strong enough must commit")
+    local committed = aggressiveOrders[table.getn(aggressiveOrders)]
+    assert(table.getn(committed.Units) == 3,
+        "the whole formation must be ordered at once, got " .. tostring(table.getn(committed.Units)))
+    assert(waveManager.Waves.Land.State == "committed", "and be recorded as committed")
+    for _, unit in ipairs(waveUnits) do
+        assert(unit.RedQueenOrderUntil, "every committed member carries the order hold")
+        assert(not unit.RedQueenWaveUntil, "and is no longer merely gathering")
+    end
+
+    -- A committed wave in motion is left alone.
+    before = table.getn(aggressiveOrders)
+    waveManager:Update()
+    assert(table.getn(aggressiveOrders) == before,
+        "a wave whose orders still stand must not be re-issued every pass")
+
+    -- When its orders lapse it is a decision point again, and the gate applies:
+    -- a formation that can no longer beat what it was sent at goes back to
+    -- gathering rather than being re-committed into it.
+    waveThreat = 5000
+    for _, unit in ipairs(waveUnits) do unit.RedQueenOrderUntil = nil end
+    before = table.getn(aggressiveOrders)
+    waveManager:Update()
+    assert(table.getn(aggressiveOrders) == before,
+        "a lapsed wave must be re-gated, not re-sent")
+    assert(waveManager.Waves.Land.State == "gathering",
+        "and must return to gathering")
+
+    print("Red Queen wave formation contracts passed")
+end
+WaveContracts()

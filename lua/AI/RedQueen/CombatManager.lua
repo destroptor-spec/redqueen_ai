@@ -89,10 +89,22 @@ local DefenseDispatchLayers = { "Water", "Land", "Amphibious", "Hover" }
 local WaterDispatchLayers = { "Water", "Amphibious", "Hover" }
 local LandDispatchLayers = { "Land", "Amphibious", "Hover" }
 
+-- Objectives worth forming up for. Everything else is answered as it arrives.
+local OffensiveWave = {
+    Pressure = true,
+    Raid = true,
+    JointAttack = true,
+    Assault = true,
+    Supremacy = true,
+    Attack = true,
+    AirRaid = true,
+}
+
 local function AvailableForOrder(unit, tick)
     return IsCombatUnit(unit)
         and (not unit.RedQueenOrderUntil or unit.RedQueenOrderUntil <= tick)
         and (not unit.RedQueenGarrisonUntil or unit.RedQueenGarrisonUntil <= tick)
+        and (not unit.RedQueenWaveUntil or unit.RedQueenWaveUntil <= tick)
 end
 
 -- Scouts need their own availability test: `IsCombatUnit` excludes
@@ -423,7 +435,7 @@ CombatManager = ClassSimple {
     -- slot, while the army ran 26 factories and lost 27 land units a minute,
     -- and SelectTaskForce reported three units available. A total alone cannot
     -- say which of those three numbers is the small one.
-    CensusArmy = function(self, groups, pooled, orderHeld, garrisonHeld)
+    CensusArmy = function(self, groups, pooled, orderHeld, garrisonHeld, waveHeld)
         local owned = 0
         if self.Brain.GetCurrentUnits and categories then
             owned = self.Brain:GetCurrentUnits(
@@ -445,6 +457,7 @@ CombatManager = ClassSimple {
             Available = available,
             OrderHeld = orderHeld or 0,
             GarrisonHeld = garrisonHeld or 0,
+            WaveHeld = waveHeld or 0,
         }
         return self.PoolCensus
     end,
@@ -453,13 +466,13 @@ CombatManager = ClassSimple {
         local pool = self.Brain:GetPlatoonUniquelyNamed("ArmyPool")
         if not pool then
             local empty = { Land = {}, Amphibious = {}, Hover = {}, Air = {}, Water = {} }
-            self:CensusArmy(empty, 0, 0, 0)
+            self:CensusArmy(empty, 0, 0, 0, 0)
             return empty
         end
 
         local tick = GetGameTick()
         local groups = { Land = {}, Amphibious = {}, Hover = {}, Air = {}, Water = {} }
-        local pooled, orderHeld, garrisonHeld = 0, 0, 0
+        local pooled, orderHeld, garrisonHeld, waveHeld = 0, 0, 0, 0
         for _, unit in pairs(pool:GetPlatoonUnits()) do
             if IsCombatUnit(unit) then
                 pooled = pooled + 1
@@ -469,12 +482,15 @@ CombatManager = ClassSimple {
                 if unit.RedQueenGarrisonUntil and unit.RedQueenGarrisonUntil > tick then
                     garrisonHeld = garrisonHeld + 1
                 end
+                if unit.RedQueenWaveUntil and unit.RedQueenWaveUntil > tick then
+                    waveHeld = waveHeld + 1
+                end
             end
             if AvailableForOrder(unit, tick) then
                 table.insert(groups[UnitLayer(unit)], unit)
             end
         end
-        self:CensusArmy(groups, pooled, orderHeld, garrisonHeld)
+        self:CensusArmy(groups, pooled, orderHeld, garrisonHeld, waveHeld)
         return groups
     end,
 
@@ -620,6 +636,7 @@ CombatManager = ClassSimple {
         local orderUntil = GetGameTick() + Constants.Policy.UnitOrderLifetimeTicks
         for _, unit in pairs(units) do
             unit.RedQueenOrderUntil = orderUntil
+            unit.RedQueenWaveUntil = nil
         end
         return true
     end,
@@ -842,6 +859,163 @@ CombatManager = ClassSimple {
         summary.Sent = sent
     end,
 
+    -- One layer's wave: gather from what is free, commit when ready.
+    DispatchWave = function(self, groups, layer, objective)
+        local available = groups[layer] or {}
+        local units, wave = self:AdvanceWave(layer, available, objective)
+        -- Whatever the wave took is no longer free for another layer or slot.
+        groups[layer] = {}
+        if not units then
+            self.WaveSummary = self.WaveSummary or {}
+            self.WaveSummary[layer] = { State = wave and wave.State or "none",
+                Units = wave and table.getn(wave.Units) or 0 }
+            return 0
+        end
+        if not self:IssueObjective(units, objective, layer) then
+            -- The route failed, so the formation stays gathered rather than
+            -- dissolving into units that each retry on their own.
+            wave.State = "gathering"
+            return 0
+        end
+        self.WaveSummary = self.WaveSummary or {}
+        self.WaveSummary[layer] = { State = "committed", Units = table.getn(units) }
+        return table.getn(units)
+    end,
+
+    -- A wave is a formation, not a batch.
+    --
+    -- Dispatch used to order whatever units happened to be free this pass. With
+    -- a large army and a 30-second order hold that is a trickle: 250 units
+    -- owned, 42 free, and four to thirteen sent at a time, each group arriving
+    -- separately into whatever is waiting. Native platoon formation at least
+    -- fought as formations, which is why taking the army off it lost games.
+    --
+    -- The primary slot now gathers. Units join a wave and hold at the rally
+    -- until it is strong enough against what it is being sent at, then every
+    -- member is ordered at once and the wave is left alone until it is spent.
+    -- Defence is deliberately not gathered -- need is answered immediately,
+    -- commitment is not.
+    WaveFor = function(self, layer, objective)
+        self.Waves = self.Waves or {}
+        -- A wave belongs to one destination. A new objective dissolves it
+        -- rather than redirecting a formation mid-commitment.
+        -- Keyed on the objective's leading layer as well as its own: a
+        -- naval-led attack is a different plan from a land-led one, and a
+        -- formation gathered for the first should not inherit the second.
+        local key = tostring(objective.Type) .. ":" .. tostring(layer)
+            .. ":" .. tostring(objective.Layer) .. ":"
+            .. tostring(objective.Position and math.floor(objective.Position[1]))
+            .. "," .. tostring(objective.Position and math.floor(objective.Position[3]))
+        local wave = self.Waves[layer]
+        if not wave or wave.Key ~= key then
+            wave = { Key = key, Units = {}, State = "gathering", Peak = 0 }
+            self.Waves[layer] = wave
+        end
+
+        -- Membership is rebuilt with the prune, because a unit whose rally
+        -- hold has lapsed becomes available again and would otherwise be
+        -- gathered into the same wave a second time -- a three-unit formation
+        -- reported six.
+        local alive = {}
+        local members = {}
+        for _, unit in ipairs(wave.Units) do
+            if IsCombatUnit(unit) and not members[unit] then
+                members[unit] = true
+                table.insert(alive, unit)
+            end
+        end
+        wave.Units = alive
+        wave.Members = members
+        return wave
+    end,
+
+    -- Gather, then commit. Returns the units to order, or nil while gathering.
+    AdvanceWave = function(self, layer, available, objective)
+        local wave = self:WaveFor(layer, objective)
+        local tick = GetGameTick()
+        local held = table.getn(wave.Units)
+
+        if wave.State == "committed" then
+            -- Still a formation's worth of strength: it keeps its orders.
+            -- Survivors of a spent wave rejoin the next one rather than
+            -- pressing on alone, which is the trickle in another form.
+            if held >= math.max(Constants.Policy.MinimumAttackUnits,
+                math.floor(wave.Peak * Constants.Policy.WaveSpentFraction))
+            then
+                -- Re-ordered on the same cadence a single unit used to be, but
+                -- for the whole wave at once. Re-issuing every pass would clear
+                -- commands mid-fight; never re-issuing would strand a formation
+                -- whose orders have lapsed.
+                local lapsed = false
+                for _, unit in ipairs(wave.Units) do
+                    if not unit.RedQueenOrderUntil or unit.RedQueenOrderUntil <= tick then
+                        lapsed = true
+                        break
+                    end
+                end
+                if not lapsed then
+                    return nil, wave
+                end
+                -- Orders have lapsed, so this is a decision point again and the
+                -- gate below applies to it. A formation that can no longer beat
+                -- what it was sent at goes back to gathering rather than being
+                -- re-committed into it, which is the piecemeal failure wearing a
+                -- formation's clothes.
+                wave.State = "gathering"
+            else
+                wave.State = "gathering"
+                wave.Peak = 0
+            end
+        end
+
+        for _, unit in ipairs(available) do
+            if table.getn(wave.Units) >= Constants.Policy.MaximumTaskForceUnits then
+                break
+            end
+            if not wave.Members[unit] then
+                wave.Members[unit] = true
+                table.insert(wave.Units, unit)
+            end
+        end
+        held = table.getn(wave.Units)
+        if held < Constants.Policy.MinimumAttackUnits then
+            return nil, wave
+        end
+
+        local threat = 0
+        for _, unit in ipairs(wave.Units) do
+            threat = threat + UnitThreat(unit)
+        end
+        local required = self:GetObjectiveThreat(objective, layer)
+            * Constants.Policy.CommitmentThreatRatio
+        local full = held >= Constants.Policy.MaximumTaskForceUnits
+
+        if threat >= required or full then
+            wave.State = "committed"
+            wave.Peak = held
+            self:TraceDecision(objective, layer, "passed",
+                full and "wave-full" or "wave-strength", held, threat, required)
+            return wave.Units, wave
+        end
+
+        -- Not yet. Hold the formation at the rally rather than sending it.
+        local rally = self.World and self.World.StartPosition
+        if rally and IssueClearCommands and IssueMove then
+            IssueClearCommands(wave.Units)
+            IssueMove(wave.Units, rally)
+        end
+        -- Its own flag, not the order hold: a unit at the rally is spoken for
+        -- by a wave, not dispatched at anything. Conflating them would report a
+        -- gathering formation as an attack in progress, and would make "this
+        -- unit was sent" untestable.
+        for _, unit in ipairs(wave.Units) do
+            unit.RedQueenWaveUntil = tick + Constants.Policy.WaveRallyHoldTicks
+        end
+        self:TraceDecision(objective, layer, "held", "wave-gathering", held, threat, required)
+        self:LogCommitmentHeld(objective, held, threat, required)
+        return nil, wave
+    end,
+
     -- Units the secondary slot may take, removed from `groups` in place.
     --
     -- Highest threat first, so the requirement is met by diverting the fewest
@@ -907,11 +1081,14 @@ CombatManager = ClassSimple {
                 self.SlotDispatch.Secondary = self:DispatchObjective(claimed, secondary)
             end
         end
+        -- Gathered, unlike the secondary above: a defence is answered as it
+        -- arrives, an attack is formed before it leaves.
         self.SlotDispatch.Primary = self:DispatchObjective(
-            primaryGroups, self.Strategy.PrimaryObjective or self.Strategy.CurrentObjective)
+            primaryGroups, self.Strategy.PrimaryObjective or self.Strategy.CurrentObjective,
+            true)
     end,
 
-    DispatchObjective = function(self, groups, objective)
+    DispatchObjective = function(self, groups, objective, gather)
         if not objective or objective.Type == "Recover" or objective.Type == "Stage" then
             self:TraceDecision(objective, "all", "held", "staging")
             return 0
@@ -920,6 +1097,10 @@ CombatManager = ClassSimple {
             self:TraceDecision(objective, "all", "held", "launch-coordination")
             return 0
         end
+        -- Only an attack is gathered. A defensive objective that has reached
+        -- the primary slot -- a fallback, or a stub with no slots set -- is
+        -- still a defence, and a defence is answered as it arrives.
+        local gathering = gather and OffensiveWave[objective.Type] or false
         local defensive = objective.Type == "Defend"
             or objective.Type == "Support"
             or objective.Type == "Reinforce"
@@ -932,14 +1113,25 @@ CombatManager = ClassSimple {
             and ObjectiveAt(objective, airPosition)
             or objective
         if objective.AirPosition then airObjective.Type = "AirRaid" end
-        local air = self:SelectTaskForce(groups.Air, defensive, airObjective, "Air")
-        if self:IssueObjective(air, airObjective, "Air") then
-            ordered = ordered + table.getn(air)
-            self.DispatchSummary.Air = self.DispatchSummary.Air + table.getn(air)
+        if gathering then
+            local count = self:DispatchWave(groups, "Air", airObjective)
+            ordered = ordered + count
+            self.DispatchSummary.Air = self.DispatchSummary.Air + count
+        else
+            local air = self:SelectTaskForce(groups.Air, defensive, airObjective, "Air")
+            if self:IssueObjective(air, airObjective, "Air") then
+                ordered = ordered + table.getn(air)
+                self.DispatchSummary.Air = self.DispatchSummary.Air + table.getn(air)
+            end
         end
 
         local function Dispatch(layer, layerObjective)
-            local count = self:DispatchLayer(groups, layer, layerObjective, defensive)
+            local count
+            if gathering then
+                count = self:DispatchWave(groups, layer, layerObjective)
+            else
+                count = self:DispatchLayer(groups, layer, layerObjective, defensive)
+            end
             self.DispatchSummary[layer] = (self.DispatchSummary[layer] or 0) + count
             return count
         end
