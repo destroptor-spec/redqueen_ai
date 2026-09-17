@@ -53,49 +53,52 @@ local function NeedsDefense(aiBrain, locationType, role, category)
     return aiBrain:GetNumUnitsAroundPoint(category, position, math.max(40, radius), "Ally") < target
 end
 
+-- What counts toward a tier's ground-defence need.
+--
+-- Not "any point defence": observed in a live match, four Tech 1 point
+-- defences satisfied a Ground target of four, so the Tech 2 point defence
+-- builder's condition went false while the base was under pressure and the
+-- next passing builder -- a tactical missile launcher at priority 980 -- became
+-- the first Tech 2 structure built. Four Tech 1 point defences are not four
+-- Tech 2 point defences against a Tech 2 enemy.
+--
+-- A tier's need is therefore measured in structures of that tier or better.
+-- Tech 1 still counts everything, because it is the floor and anything at all
+-- satisfies it.
+local function GroundDefenseCategory(tier)
+    local ground = categories.STRUCTURE * categories.DEFENSE * categories.DIRECTFIRE
+    if tier >= 3 then
+        return ground * categories.TECH3
+    end
+    if tier >= 2 then
+        return ground * (categories.TECH2 + categories.TECH3)
+    end
+    return ground
+end
+
 local function NeedsT2GroundWithT3(aiBrain, locationType)
     return aiBrain:GetFactionIndex() ~= 1
         and HasEngineer(aiBrain, locationType, 3)
-        and NeedsDefense(
-            aiBrain,
-            locationType,
-            "Ground",
-            categories.STRUCTURE * categories.DEFENSE * categories.DIRECTFIRE
-        )
+        and NeedsDefense(aiBrain, locationType, "Ground", GroundDefenseCategory(2))
 end
 
 local function NeedsT3Ground(aiBrain, locationType)
     return aiBrain:GetFactionIndex() == 1
         and HasEngineer(aiBrain, locationType, 3)
-        and NeedsDefense(
-            aiBrain,
-            locationType,
-            "Ground",
-            categories.STRUCTURE * categories.DEFENSE * categories.DIRECTFIRE
-        )
+        and NeedsDefense(aiBrain, locationType, "Ground", GroundDefenseCategory(3))
 end
 
 local function NeedsT2Ground(aiBrain, locationType)
     return not HasEngineer(aiBrain, locationType, 3)
         and HasEngineer(aiBrain, locationType, 2)
-        and NeedsDefense(
-            aiBrain,
-            locationType,
-            "Ground",
-            categories.STRUCTURE * categories.DEFENSE * categories.DIRECTFIRE
-        )
+        and NeedsDefense(aiBrain, locationType, "Ground", GroundDefenseCategory(2))
 end
 
 local function NeedsT1Ground(aiBrain, locationType)
     return not HasEngineer(aiBrain, locationType, 3)
         and not HasEngineer(aiBrain, locationType, 2)
         and HasEngineer(aiBrain, locationType, 1)
-        and NeedsDefense(
-            aiBrain,
-            locationType,
-            "Ground",
-            categories.STRUCTURE * categories.DEFENSE * categories.DIRECTFIRE
-        )
+        and NeedsDefense(aiBrain, locationType, "Ground", GroundDefenseCategory(1))
 end
 
 local function NeedsTacticalMissileWithT3(aiBrain, locationType)

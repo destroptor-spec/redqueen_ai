@@ -2286,7 +2286,23 @@ ProductionManager = ClassSimple {
     -- Two jobs, in order: bring it back if it has strayed, then assist a
     -- factory if it is idle at home. Defence keeps priority -- a commander
     -- alert already drives its own response and must not be overridden here.
+    -- Every pass records what was decided about the commander and why.
+    --
+    -- Observed in a live match: the ACU was seen issuing attack moves and
+    -- assisting one factory, and the log could not say whether Red Queen or
+    -- native ordered either -- the assist path logged nothing at all. A
+    -- behaviour nobody can attribute cannot be fixed by anyone.
     UpdateCommanderTasking = function(self)
+        local verdict = self:DecideCommanderTasking()
+        if verdict ~= self.CommanderVerdict then
+            Logger.Info(self.Brain, string.format(
+                "commander tasking %s", tostring(verdict)))
+            self.CommanderVerdict = verdict
+        end
+        return verdict
+    end,
+
+    DecideCommanderTasking = function(self)
         if not self.Brain.GetListOfUnits then
             return nil
         end

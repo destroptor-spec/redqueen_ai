@@ -129,4 +129,37 @@ assert(t1Ground.BuilderData.Construction.BuildStructures[1] == "T1GroundDefense"
 brain.RedQueenModules.Strategy.ProductionDemand.DefenseAlert.Active = false
 assert(not t2Ground.BuilderConditions[1][1](brain, "EXPANSION"), "fortification builders must stop when the alert clears")
 
+-- A tier's need is measured in structures of that tier or better.
+--
+-- Observed in a live match: four Tech 1 point defences satisfied a Ground
+-- target of four, so the Tech 2 point defence builder's condition went false
+-- while the base was under pressure, and the first Tech 2 structure built was a
+-- tactical missile launcher -- the next builder down at priority 980. Four Tech
+-- 1 point defences are not four Tech 2 point defences against a Tech 2 enemy.
+brain.RedQueenModules.Strategy.ProductionDemand.DefenseAlert.Active = true
+-- An earlier case cleared the Tech 2 engineer at this location; this need is
+-- about what is standing, not about who can build it.
+engineerCounts.EXPANSION[2] = 1
+engineerCounts.EXPANSION[3] = 0
+local counted = {}
+brain.GetNumUnitsAroundPoint = function(_, category)
+    -- This spec's categories carry a Keys set rather than a name.
+    local keys = (category and category.Keys) or {}
+    table.insert(counted, keys)
+    -- Four Tech 1 point defences standing, and nothing above Tech 1.
+    if keys.TECH2 or keys.TECH3 then
+        return 0
+    end
+    return 4
+end
+assert(t2Ground.BuilderConditions[1][1](brain, "EXPANSION"),
+    "four Tech 1 point defences must not satisfy the Tech 2 point defence need")
+local askedForTier = false
+for _, keys in ipairs(counted) do
+    if keys.TECH2 then askedForTier = true end
+end
+assert(askedForTier, "the Tech 2 need must be counted in Tech 2 structures")
+
+brain.GetNumUnitsAroundPoint = function() return 0 end
+
 print("Red Queen fortification builder contracts passed")
