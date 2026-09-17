@@ -135,6 +135,7 @@ local constants = {
         CommanderAssistSeconds = 45,
         CoreExtractorUpgradeMinimumMassIncome = 10,
         CoreExtractorDeclineFraction = 0.75,
+        FormationOwnership = true,
         CoreExtractorRadius = 45,
         CoreExtractorUpgradeEngineers = 4,
         CoreExtractorAssistSeconds = 30,

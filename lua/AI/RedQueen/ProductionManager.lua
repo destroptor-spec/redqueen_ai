@@ -2976,7 +2976,9 @@ ProductionManager = ClassSimple {
         self:UpdateTierPolicy(factories)
         self:ApplyTierPolicy()
         self:ApplyEngineerPolicy(counts)
-        self:ApplyFormationPolicy()
+        if Constants.Policy.FormationOwnership then
+            self:ApplyFormationPolicy()
+        end
         self:TryExpandFactoryCapacity(counts, targets)
         -- One ArmyPool walk per pass, shared by both engineer consumers.
         local unassigned, unassignedByEntityId = self:GetUnassignedEngineers()

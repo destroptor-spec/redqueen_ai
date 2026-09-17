@@ -83,6 +83,22 @@ Policy = {
     -- offer.
     CoreExtractorUpgradeMinimumMassIncome = 10,
     CoreExtractorDeclineFraction = 0.75,
+    -- Whether Red Queen takes combat units off native platoon formation.
+    --
+    -- It does command the army once this is on -- owned minus pooled falls to
+    -- zero and dispatch rises sharply -- and it still loses, because removing
+    -- native's formations removed the only thing organising the army and put
+    -- nothing in its place. On land maps Red Queen then accumulates 150 to 250
+    -- units and feeds them in as individual aggressive-moves: 250 owned, 42
+    -- commandable, 231 under stale orders, K/L 0.32.
+    --
+    -- Measured directly. Five cells run with this on and off, everything else
+    -- identical: Sentry Point seed 31337 and Sludge seed 2071971 are victories
+    -- with it off and defeats with it on; the other three lose either way.
+    --
+    -- Off until there is something to form waves with. The census it feeds
+    -- stays on regardless -- that is pure observation and cost nothing.
+    FormationOwnership = false,
     CoreExtractorRadius = 45,
     CoreExtractorUpgradeEngineers = 4,
     CoreExtractorAssistSeconds = 30,

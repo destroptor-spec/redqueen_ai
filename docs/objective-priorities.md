@@ -605,3 +605,57 @@ two holds is the only reason that is answerable.
 **Still lost.** The opponent out-built 293k to 203k and won on economy while
 losing the exchange. Winning the fight and losing the match is a different
 problem from the one this step fixed, and it is the one C and D exist for.
+
+
+## The full matrix, and what it says
+
+Twelve cells, the recorded variety matrix, zero scheduler failures.
+
+**3W/9L against a 7W/5L baseline.** Naval held at 3W/2L; every land profile
+collapsed — LandSmall 2W/1L to 0W/3L, LandLarge 2W/2L to 0W/4L.
+
+### Attribution
+
+Five cells flipped from victory to defeat. The five were re-run with formation
+ownership disabled and nothing else changed:
+
+| cell | ownership on | ownership off |
+| --- | --- | --- |
+| Sentry Point 31337 Aeon | defeat | **victory** |
+| Sludge 2071971 Aeon | defeat | **victory** |
+| Sentry Point 2071971 UEF | defeat | defeat |
+| Fields of Isis 8675309 | defeat | defeat |
+| Syrtis Major 8675309 | defeat | defeat |
+
+So taking ownership of production costs two cells, and the other three were
+already lost by earlier work in this session. The honest split is roughly
+7W/5L → 5W/7L from everything before ownership, and 5W/7L → 3W/9L from
+ownership itself.
+
+### Why ownership loses
+
+It does what it claimed: owned minus pooled falls to zero, dispatch rises from
+3 samples in 36 to 18 in 33, and in one cell the exchange rate inverted. What it
+also did was remove the only thing organising the army.
+
+| cell | owned | commandable | order-held | K/L | result |
+| --- | --- | --- | --- | --- | --- |
+| Sentry Point 2071971 | 250 | 42 | mean 87, peak 231 | 0.32 | defeat |
+| Syrtis Major 8675309 | 163 | 30 | mean 47, peak 135 | 0.39 | defeat |
+| Sludge 31337 (won) | 21 | 17 | mean 0.8 | 3.66 | victory |
+
+On land Red Queen accumulates 150 to 250 units and issues them individual
+aggressive-moves in whatever batches clear the commitment gate, so they arrive
+strung out and die without trading. Native platoons fought as formations.
+Naval is untouched because those armies stay at about twenty units.
+
+`Constants.Policy.FormationOwnership` is therefore **off**. The code and its
+census stay: the census is pure observation, and the premise — that Red Queen
+commands eight to twelve per cent of its own army — is still true and still the
+thing to fix. It needs C first. A and C are one change, not two.
+
+### The other three regressions are unattributed
+
+Sentry Point 2071971 UEF, Fields of Isis 8675309 and Syrtis Major 8675309 lose
+with ownership off as well, so something landed earlier in this session that
+cost them. That has not been bisected.
