@@ -2170,9 +2170,12 @@ end
 -- observed as an idle ACU through the early and mid game, and as an Aeon
 -- commander wandering alone to the centre of the map.
 local commanderHome = { 0, 0, 0 }
-local function commanderRun(position, idle, alertActive, factoryPositions, nativeManager, coreUpgrade)
+local function commanderRun(position, idle, alertActive, factoryPositions, nativeManager, coreUpgrade, assistUntil)
     local acu = {
         EntityId = 900,
+        -- An assist Red Queen issued on an earlier pass, so a case can test
+        -- what happens to it rather than only what verdict is returned.
+        RedQueenAssistUntil = assistUntil,
         Dead = false,
         IsCommander = true,
         IsEngineer = true,
@@ -2603,12 +2606,9 @@ local function CommanderOpeningContracts()
     -- factory when the economy dips went on assisting for the whole window
     -- while the verdict said it was building, which is the behaviour this gate
     -- exists to stop.
-    openingAcu.RedQueenAssistUntil = 999999
-    commanderRun({ 20, 0, 20 }, true, false, { { 40, 0, 40 } })
-    local heldVerdict, heldAcu = commanderRun({ 20, 0, 20 }, true, false, { { 40, 0, 40 } })
-    heldAcu.RedQueenAssistUntil = 999999
-    local _, clearedAcu = commanderRun({ 20, 0, 20 }, true, false, { { 40, 0, 40 } })
-    assert(not clearedAcu.RedQueenAssistUntil,
+    local _, carriedAcu = commanderRun(
+        { 20, 0, 20 }, true, false, { { 40, 0, 40 } }, nil, nil, 999999)
+    assert(not carriedAcu.RedQueenAssistUntil,
         "an outstanding Red Queen assist must be cleared when the economy needs the commander")
 
     -- And whenever energy is short later: doubling a factory's output is worth less
