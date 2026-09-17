@@ -392,3 +392,51 @@ tax on every profile to win one LandLarge cell.
 
 These are single samples per cell, so individual flips are not conclusive. The
 K/L direction across eleven of twelve is.
+
+
+## 2026-09-17: the session measured against its own starting point
+
+The table above is from an older tree. Measured today, `0a9c707` — the commit
+this session began from — also scores 7W/5L but **not on the same cells**: it
+loses Sentry Point UEF, Fields of Isis 8675309 and Syrtis Major 8675309, and
+wins Sludge 8675309 and Sentry Point 2071971 Aeon. Comparing against the
+recorded table therefore invented three regressions that were never real. A
+baseline has to be measured on the tree being changed, not read from a document.
+
+Both matrices below were run the same morning, same harness, same seeds,
+opponent Cybran, zero scheduler failures in all 24 cells. Runs are
+deterministic, so one run per cell is exact rather than a sample.
+
+| cell | anchor `0a9c707` | HEAD, ownership off |
+| --- | --- | --- |
+| Sludge 2071971 Aeon | victory | victory |
+| Sludge 2071971 Cybran | victory | victory |
+| Sludge 2071971 Seraphim | defeat | **victory** |
+| Sludge 8675309 Seraphim | victory | victory |
+| Sludge 31337 Seraphim | victory | victory |
+| Sentry Point 2071971 Aeon | victory | victory |
+| Sentry Point 31337 Aeon | victory | victory |
+| Sentry Point 2071971 UEF | defeat | defeat |
+| Fields of Isis 8675309 | defeat | defeat |
+| Fields of Isis 31337 | defeat | defeat |
+| Syrtis Major 8675309 | defeat | defeat |
+| Syrtis Major 31337 | victory | **defeat** |
+| **record** | **7W/5L** | **7W/5L** |
+
+Net neutral on record: one cell gained, one lost.
+
+| profile | anchor | now |
+| --- | --- | --- |
+| Naval | 4W/1L | **5W/0L** |
+| LandSmall | 2W/1L | 2W/1L |
+| LandLarge | 1W/3L | **0W/4L** |
+
+The economy moved and the record did not. Peak capture rose from 44% to 49% of
+map points and extractors built from 230 to 272, which is the opening engineer
+floor doing what it was built to do across twelve cells rather than one.
+
+Forward bases went the other way: 4 of 15 established to 3 of 21, with
+`route-unsafe` rejections doubling from 5 to 10. More attempts, a worse hit
+rate, and that is the clearest single lead for the LandLarge profile.
+
+With `FormationOwnership` on, the same tree scores **3W/9L**. It is off.
