@@ -700,3 +700,55 @@ Income is no longer the blocker. The `alert.Active` veto in `ShouldTechToT2` and
 consumers still keyed on it. That is the next change, and `FortificationBuilders`
 already shows the shape: ask for `"LocationType"` in the builder condition,
 resolve the manager position, and test it against the anchor.
+
+## Scoping the tech ladder the same way: reverted
+
+`techgate` named the alert veto in `ShouldTechToT2`/`ShouldTechToT3` as the next
+blocker, so it was scoped to the base under attack, using the base's own radius
+-- the same question `FortificationBuilders.NeedsDefense` asks. Native
+`lua/sim/Builder.lua:234-248` was read to confirm `"LocationType"` really is
+substituted into a builder condition's arguments. Contracts covered both
+directions, the radius boundary and the no-location fallback; five mutations
+killed, one of which turned out to be equivalent (`managers[nil]` reads as nil
+and reaches the same `return true`) and was replaced.
+
+It is a regression, and the matrix was stopped at eight of twelve cells because
+the result was already decisive.
+
+| cell | extractor scope only | + tech scope |
+| --- | --- | --- |
+| Fields of Isis 8675309 | defeat, best 1.27 | defeat, best 0.90 |
+| Fields of Isis 31337 | defeat, best 1.57 | defeat, **best 2.23** |
+| Syrtis Major 8675309 | defeat, best 0.96 | defeat, best 0.53 |
+| Syrtis Major 31337 | defeat, best 0.98 | defeat, best 0.74 |
+| Sentry Point 2071971 Aeon | **victory** | **defeat** |
+| Sentry Point 31337 Aeon | **victory** | **defeat** |
+| Sludge 2071971 Aeon | **victory** | **defeat** |
+| Sludge 2071971 Cybran | **victory** | **defeat** |
+
+Four cells lost, none gained, on eight. The two Sludge cells are the clearest
+evidence: they were byte-identical across the previous two trees, and this
+change alone turned both into defeats -- Sludge 2071971 Cybran fell from nine
+peak Tech 2 engineers to zero and ended at sample 14 instead of 24.
+
+It does not even buy tech. Syrtis Major 8675309 *lost* air Tech 3 (L3,A3 to
+L3,A2) and fell from 18/8 peak Tech 2/Tech 3 engineers to 12/7.
+
+**The principle the two results establish together.** An extractor upgrade does
+not compete with unit production; a factory upgrade does, because an upgrading
+factory builds nothing for the roughly 219 seconds it takes. The veto's original
+rationale is load-bearing, and it is load-bearing *army-wide*, because the army
+fights as one force even when the alert is local. Red Queen is right to stop
+teching while anything is under attack, and right to keep upgrading the
+extractor at home while it happens.
+
+So the remaining consumers of this flag must be judged one at a time against
+that test -- does this compete with unit production during the fight, or add to
+it -- and not scoped as a batch. `UpdateFactoryAssistance` is the next candidate
+by that test: an assistant added to a factory away from the fight increases unit
+output rather than suspending it, which is the extractor shape, not the upgrade
+shape.
+
+The alert latch itself is not the defect it looked like. It renews because
+hostiles really are near an anchor every pass in a losing match; the alert is
+reporting the truth. What varies is whether a given consumer should care.
