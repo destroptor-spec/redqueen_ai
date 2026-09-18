@@ -584,3 +584,48 @@ it had built none of that -- and lost exactly as it always has.
 The control also establishes that `Observer.lua` is inert. It is the only
 simulation difference between `549712a` and run A's tree, and all twelve cells
 agree.
+
+## The alert freeze: mechanism fixed, outcome unmoved
+
+`37bf144` scopes the defence-alert freeze on engineer work to engineers within
+`DefenseAlertWorkRadius` of the anchor. Measured against the control, twelve
+cells each.
+
+| | control | scoped |
+| --- | --- | --- |
+| mean idle engineers while alerted | 14.2 | **9.5** |
+| mean active assistants while alerted | **0.00** | **1.06** |
+| record | 6W/6L | 6W/6L |
+
+Cell for cell identical, and seven cells did not change behaviour at all -- their
+alerts sit on top of the engineers, so the scope makes no difference. The five
+that did change moved a long way: Fields of Isis 31337 went from 25.0 idle
+engineers while alerted to 13.3 and doubled its peak mass income, 5.9 to 12.4.
+
+So this is a real behavioural improvement at no measured cost, and it is kept on
+that basis. It is not a win, and the negative result is the useful part: idle
+engineers were not what was losing these games either, any more than the missing
+Tech 2 defences were.
+
+### What is actually losing them
+
+Peak army strength, weighted 1/3/9/40 by tier, on the scoped tree:
+
+| cell | result | peak own | peak enemy | best ratio | ratio at end |
+| --- | --- | --- | --- | --- | --- |
+| Fields of Isis 8675309 | defeat | 272 | 285 | 2.21 | 0.36 |
+| Fields of Isis 31337 | defeat | 123 | **771** | 0.58 | 0.04 |
+| Syrtis Major 8675309 | defeat | 75 | **544** | 0.86 | 0.02 |
+| Syrtis Major 31337 | defeat | 176 | 389 | 1.18 | 0.13 |
+| Sludge 2071971 Cybran | victory | 88 | 98 | 1.66 | 1.17 |
+| Sentry Point 31337 | victory | 58 | 54 | 1.76 | 1.76 |
+
+On the naval and small maps both sides top out near 50-100 and Red Queen wins.
+On the large maps the opponent reaches 285 to 771 while Red Queen tops out at 75
+to 272 -- and on two of the four cells Red Queen is *ahead at its peak* and then
+loses the army outright.
+
+The gap is army production capacity on large maps, not economy, not defences and
+not engineer scheduling. That matches the original spectating note, which said it
+first: "UEF managed to make a forward base early and therefore also starts to be
+able to scale production capacity and keeps some map control."
