@@ -672,17 +672,29 @@ local function EngineerPriority(self, aiBrain, tier)
     local engineers = aiBrain:GetCurrentUnits(roster)
     local inFlight = EngineersBuilding(aiBrain, roster, engineers)
     local shortfall = target - engineers - inFlight
-    if tier >= 2 then
-        local category = EngineerCategoryAtTier(tier)
-        local held = aiBrain:GetCurrentUnits(category)
-        shortfall = math.max(
-            shortfall,
-            Constants.Policy.UpperTierEngineerFloor
-                - held
-                - EngineersBuilding(aiBrain, category, held)
-        )
-    end
     if shortfall <= 0 then
+        -- No shortage, but possibly no capability either. A Tech 1 engineer
+        -- cannot build a Tech 2 structure, so a roster sitting at target with
+        -- nothing above Tech 1 cannot put up a Tech 2 point defence, anti-air
+        -- or shield at all -- four LandLarge cells finished exactly that way.
+        --
+        -- Priced as a capability and not as a shortage. Measured twice: giving
+        -- this claim the shortage ladder's priority put it at 910, which *ties*
+        -- Tech2Priority's mainline, and it took the factory from the army at the
+        -- moment the army was the binding constraint -- one Tech 2 engineer for
+        -- one combat unit, in a cell that then died ten minutes earlier than it
+        -- had. Combat priorities start at 700, so this sits below every one of
+        -- them: the tier is reached when a factory has nothing better to do,
+        -- and never instead of the army.
+        if tier >= 2 then
+            local category = EngineerCategoryAtTier(tier)
+            local held = aiBrain:GetCurrentUnits(category)
+            if held + EngineersBuilding(aiBrain, category, held)
+                < Constants.Policy.UpperTierEngineerFloor
+            then
+                return Constants.Policy.UpperTierEngineerFloorPriority
+            end
+        end
         return 0
     end
     -- OriginalPriority is what FAF's Builder:Create copies from the

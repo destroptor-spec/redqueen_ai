@@ -51,6 +51,7 @@ local constants = {
         EngineerReplacementPriorityCeiling = 910,
         EngineerRecoveryFloor = 3,
         UpperTierEngineerFloor = 3,
+        UpperTierEngineerFloorPriority = 690,
         StrategicFocusMinimumScore = 35,
         Tech2MinimumMassIncome = 4,
         Tech2MinimumEnergyIncome = 60,
@@ -680,8 +681,27 @@ assert(emptyUpperTier <= constants.Policy.EngineerReplacementPriorityCeiling,
 SetEngineers(25, 0, 0, 0)
 assert(engineerT1:PriorityFunction(engineerBrain) == 0,
     "a roster already past target must stop building Tech 1 engineers")
-assert(engineerT2:PriorityFunction(engineerBrain) > 0,
+local capability = engineerT2:PriorityFunction(engineerBrain)
+assert(capability > 0,
     "a wall of Tech 1 engineers must not switch off the Tech 2 ladder")
+-- And it is priced as a capability, not as a shortage. At the shortage ladder's
+-- own priority this reached 910 and tied Tech2Priority's mainline: measured, it
+-- took the factory from the army at the moment the army was the binding
+-- constraint, and Sludge 2071971 Cybran died ten minutes earlier than it had.
+assert(capability == constants.Policy.UpperTierEngineerFloorPriority,
+    "the floor must be priced below combat production, got " .. tostring(capability))
+assert(capability < 700,
+    "combat builders start at 700 and must outrank a capability the army has "
+        .. "not asked for, got " .. tostring(capability))
+
+-- Tech 1 is the baseline, not a capability: a satisfied roster that happens to
+-- be smaller than the floor must not restart Tech 1 production on that basis.
+demand.DesiredEngineers = 2
+SetEngineers(2, 0, 0, 0)
+assert(engineerT1:PriorityFunction(engineerBrain) == 0,
+    "Tech 1 must never claim the upper-tier capability, got "
+        .. tostring(engineerT1:PriorityFunction(engineerBrain)))
+demand.DesiredEngineers = 18
 
 -- The floor is satisfied by the engineers it asked for, and then stops: a
 -- roster already over target does not want eighteen of each tier on top of it.
@@ -702,8 +722,15 @@ assert(engineerT2:PriorityFunction(engineerBrain) == 0,
 -- defeat.
 demand.DesiredEngineers = 12
 SetEngineers(9, 0, constants.Policy.UpperTierEngineerFloor, 0)
-assert(engineerT2:PriorityFunction(engineerBrain) > 0,
-    "a shortfall the army actually has must still be built at the better tier")
+local shortage = engineerT2:PriorityFunction(engineerBrain)
+assert(shortage > constants.Policy.UpperTierEngineerFloorPriority,
+    "a shortfall the army actually has outranks a bare capability, got "
+        .. tostring(shortage))
+-- A real shortage is answered exactly as it was before any of this: the ladder
+-- reads the army's own count, so the healthy cells behave identically.
+SetEngineers(9, 0, 0, 0)
+assert(engineerT2:PriorityFunction(engineerBrain) == shortage,
+    "the shortage ladder must not depend on what the upper tier already holds")
 demand.DesiredEngineers = 18
 
 -- The tiers keep their intended order relative to each other, which the shared

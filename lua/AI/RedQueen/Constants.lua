@@ -470,6 +470,11 @@ Policy = {
     -- of Tech 1 engineers cannot leave the Tech 2 fortification builders with
     -- no platoon to form from.
     UpperTierEngineerFloor = 3,
+    -- And what that floor is worth. Below 700, where StrategicPriority's combat
+    -- builders start, because a capability the army does not need yet must
+    -- never be bought with the army. At the shortage ladder's own priority this
+    -- tied the Tech 2 mainline and cost measured games.
+    UpperTierEngineerFloorPriority = 690,
     -- When cover is given up rather than reinforced. Losses are counted in
     -- their own window so a site that killed an escort ten minutes ago is not
     -- held against the next attempt, and the fraction is of everything
