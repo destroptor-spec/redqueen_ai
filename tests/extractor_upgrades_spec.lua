@@ -1,15 +1,30 @@
-local upgrades = setmetatable({}, { __index = _G })
-setfenv(assert(loadfile('lua/AI/RedQueen/ExtractorUpgrades.lua')), upgrades)()
-function import() return upgrades end
+-- Environment-as-module, the way the engine's import behaves.
+local function LoadModule(path)
+    local environment = setmetatable({}, { __index = _G })
+    setfenv(assert(loadfile(path)), environment)()
+    return environment
+end
+local constants, alertScope, upgrades
+function import(path)
+    if path == '/mods/TheRedQueen/lua/AI/RedQueen/Constants.lua' then return constants end
+    if path == '/mods/TheRedQueen/lua/AI/RedQueen/AlertScope.lua' then return alertScope end
+    return upgrades
+end
+-- The real alert extent and the real radius: whether an alert reaches a given
+-- extractor is the behaviour under test, not something a stub should answer.
+constants = LoadModule('lua/AI/RedQueen/Constants.lua')
+alertScope = LoadModule('lua/AI/RedQueen/AlertScope.lua')
+upgrades = LoadModule('lua/AI/RedQueen/ExtractorUpgrades.lua')
 local nativeCalls = 0
 Platoon = { ForkThread = function() end, UnitUpgradeAI = function(self)
     nativeCalls = nativeCalls + 1
     for _, unit in ipairs(self.Units) do unit.Stopped = true; unit.NewUpgrade = true end
 end }
 setfenv(assert(loadfile('hook/lua/platoon.lua')), getfenv(1))()
-local function Unit(extractor, running)
+local function Unit(extractor, running, position)
     return { Running = running,
         GetBlueprint = function() return { CategoriesHash = { STRUCTURE = true, MASSEXTRACTION = extractor } } end,
+        GetPosition = position and function() return position end or nil,
         IsUnitState = function() return running end }
 end
 local function Run(units, redqueen, state, alert)
@@ -55,4 +70,59 @@ mex = Unit(true, false)
 Run({ mex }, nil, { StallRisk = true }, { Active = true })
 assert(mex.NewUpgrade, 'stock AI upgrade plans remain untouched')
 assert(upgrades.BlockReason({}, {}) == nil)
+
+-- An alert is a place, not an army-wide switch.
+--
+-- `mexgate=under-attack` was the dominant sample on every LandLarge cell of the
+-- control matrix -- 26 of 35 on Syrtis Major 8675309 -- because any alert
+-- anywhere withheld every extractor from upgrading, Red Queen's own and
+-- native's. Both directions are contracted: an alert on top of the extractor
+-- still stops it, one at an expansion does not.
+local radius = constants.Policy.DefenseAlertWorkRadius
+local far = { Active = true, AnchorPosition = { 500, 0, 500 } }
+local near = { Active = true, AnchorPosition = { 10, 0, 10 } }
+
+local home = Unit(true, false, { 10, 0, 10 })
+Run({ home }, 'redqueen', {}, far)
+assert(home.NewUpgrade, 'an alert at an expansion must not withhold the extractor at home')
+
+local attacked = Unit(true, false, { 10, 0, 10 })
+local brain2 = Run({ attacked }, 'redqueen', {}, near)
+assert(not attacked.NewUpgrade, 'an alert on top of the extractor still withholds it')
+assert(brain2.RedQueenExtractorBlocks == 1, 'a scoped block stays observable')
+
+-- The boundary itself, from both sides of the radius.
+local inside = Unit(true, false, { 10 + radius - 1, 0, 10 })
+Run({ inside }, 'redqueen', {}, near)
+assert(not inside.NewUpgrade, 'inside the radius is covered')
+local outside = Unit(true, false, { 10 + radius + 1, 0, 10 })
+Run({ outside }, 'redqueen', {}, near)
+assert(outside.NewUpgrade, 'outside the radius is not covered')
+
+-- Stall risk really is army-wide: there is no spare mass anywhere.
+local stalled = Unit(true, false, { 10, 0, 10 })
+Run({ stalled }, 'redqueen', { StallRisk = true }, far)
+assert(not stalled.NewUpgrade, 'stall risk withholds regardless of where the alert is')
+
+-- An alert with no anchor has no known extent and keeps the old answer.
+local unknown = Unit(true, false, { 10, 0, 10 })
+Run({ unknown }, 'redqueen', {}, { Active = true })
+assert(not unknown.NewUpgrade, 'an alert with no anchor still covers the army')
+
+-- BlockReason over a set: blocked only when the alert is on top of all of it.
+local function At(x) return { GetPosition = function() return { x, 0, 0 } end } end
+assert(upgrades.BlockReason({}, near, { At(10), At(1000) }) == nil,
+    'one extractor outside the alert is enough to keep upgrading')
+assert(upgrades.BlockReason({}, near, { At(10), At(20) }) == 'under-attack',
+    'an alert over the whole set blocks it')
+assert(upgrades.BlockReason({ StallRisk = true }, nil, { At(1000) }) == 'stall-risk',
+    'stall risk outranks the scope')
+assert(upgrades.BlockReason({}, near, nil) == 'under-attack',
+    'no set means no known extent, which is the old army-wide answer')
+assert(upgrades.BlockReason({}, near, {}) == 'under-attack',
+    'an empty set has nothing to exempt')
+assert(upgrades.BlockReason({}, { Active = false }, { At(10) }) == nil,
+    'an inactive alert blocks nothing')
+
 print('Red Queen native extractor start, recovery and in-progress preservation contracts passed')
+print('Red Queen extractor upgrade alert-scope contracts passed')

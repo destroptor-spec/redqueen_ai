@@ -234,7 +234,35 @@ demand.FocusWeights.Tech3 = 0
 assert(t3Condition(brain), "T3 access must keep upgrading remaining T2 land factories")
 demand.DefenseAlert.Active = true
 assert(not t3Condition(brain), "defense alerts must pause new factory tech work")
+
+-- Why the ladder refused, recorded where the decision is made.
+--
+-- The four refusals -- alert, focus, mass, energy -- are indistinguishable from
+-- the outcome: the tier simply does not rise, and land Tech 3 was reached in
+-- none of the twelve logged matches. Observation only; the boolean above is
+-- the same conjunction in the same order.
+assert(brain.RedQueenTechGate.Land3 == "alert",
+    "an alert refusal must be recorded: " .. tostring(brain.RedQueenTechGate.Land3))
 demand.DefenseAlert.Active = false
+economy.EnergyIncome = 249
+assert(not t3Condition(brain), "T3 must retain its energy floor")
+assert(brain.RedQueenTechGate.Land3 == "energy",
+    "energy must be distinguishable from the alert: " .. tostring(brain.RedQueenTechGate.Land3))
+economy.EnergyIncome = 250
+economy.MassIncome = 9
+assert(not t3Condition(brain))
+assert(brain.RedQueenTechGate.Land3 == "mass",
+    "mass must be distinguishable from energy: " .. tostring(brain.RedQueenTechGate.Land3))
+economy.MassIncome = 10
+demand.FocusWeights.Tech3 = 0
+demand.TierPolicy.Land.Highest = 1
+assert(not t3Condition(brain))
+assert(brain.RedQueenTechGate.Land3 == "focus",
+    "a focus refusal must be distinguishable: " .. tostring(brain.RedQueenTechGate.Land3))
+demand.TierPolicy.Land.Highest = 3
+assert(t3Condition(brain))
+assert(brain.RedQueenTechGate.Land3 == "ok", "a permitted ladder must record ok")
+
 demand.FocusWeights.Tech3 = 70
 
 economy.MassIncome = 30

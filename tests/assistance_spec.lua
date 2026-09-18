@@ -30,7 +30,7 @@ function IssueMove(units, position) units[1].Position = position end
 function KillThread() end
 function import(path)
     local names = { Constants = true, Assistance = true, ExtractorUpgrades = true,
-        ProductionManager = true, EngineerSurvival = true }
+        ProductionManager = true, EngineerSurvival = true, AlertScope = true }
     local name = string.match(path, "/([^/]+)%.lua$")
     if names[name] then
         if not cache[name] then

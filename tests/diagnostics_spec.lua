@@ -268,6 +268,23 @@ local state = logged[table.getn(logged)]
 assert(state, "Update must log a state line")
 assert(string.find(state, "assist=2/7/5 acuassist=3 mexgate=under-attack/4", 1, true),
     "normal diagnostics must expose assist activity and blocked native extractor starts")
+
+-- Which gate is holding each domain's tier ladder down.
+--
+-- Four different refusals -- alert, focus, mass, energy -- produce the same
+-- outcome of a tier that does not rise, and land Tech 3 was reached in none of
+-- the twelve logged matches with nothing in the log to say which one shut it.
+-- A domain no builder has evaluated yet reads "none" rather than going absent,
+-- so the field is greppable from the first sample.
+assert(string.find(state, "techgate=Lnone/none,Anone/none,Nnone/none", 1, true),
+    "the state line must report the tier-ladder refusal per domain: " .. state)
+brain.RedQueenTechGate = { Land2 = "ok", Land3 = "energy", Air3 = "alert" }
+logged = {}
+reporter:Update()
+state = logged[table.getn(logged)]
+assert(string.find(state, "techgate=Lok/energy,Anone/alert,Nnone/none", 1, true),
+    "each recorded refusal must reach the state line: " .. state)
+brain.RedQueenTechGate = nil
 assert(string.find(state, "exp=Assault:ual0401/1/3", 1, true),
     "the state line must name the classified choice, owned count and fleet target: " .. state)
 

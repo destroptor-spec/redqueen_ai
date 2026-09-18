@@ -629,3 +629,74 @@ The gap is army production capacity on large maps, not economy, not defences and
 not engineer scheduling. That matches the original spectating note, which said it
 first: "UEF managed to make a forward base early and therefore also starts to be
 able to scale production capacity and keeps some map control."
+
+## The alert is a place: scoping the extractor upgrade
+
+`ExtractorUpgrades.BlockReason` keyed on `alert.Active` army-wide, and so did
+`FilterNative`, which withholds every extractor from native `UnitUpgradeAI`.
+A defence alert anywhere therefore stopped every extractor upgrade everywhere,
+Red Queen's own and native's. `37bf144` had already scoped this flag for
+engineer leases; these two consumers were missed, along with three others.
+
+Scoped per extractor, against the same twelve-cell control.
+
+| | control | scoped |
+| --- | --- | --- |
+| record | 6W/6L | **7W/5L** |
+| cells changed | | 1 (Sentry Point 2071971 Aeon, defeat to victory) |
+| cells byte-identical | | 6 |
+
+The six unchanged cells are the control that matters: five Sludge cells and
+Sentry Point UEF all sit at two to nine `under-attack` samples with the alert on
+top of the base, so there is nothing to exempt and nothing changes. Every figure
+below is identical on those cells.
+
+Where the alert was somewhere else, the whole economic ladder moved:
+
+| cell | `under-attack` | peak mass/energy | tiers | peak T2/T3 engineers | peak army |
+| --- | --- | --- | --- | --- | --- |
+| Fields of Isis 8675309 | 24 -> 8 | 11/117 -> **34/1526** | L2,A2 -> **L3,A2** | 0/0 -> **19/5** | 120 -> 177 |
+| Fields of Isis 31337 | 30 -> 7 | 6/102 -> **28/848** | L2,A2 -> **L3,A3** | 0/0 -> **12/1** | 134 -> 216 |
+| Syrtis Major 8675309 | 25 -> 5 | 11/122 -> **33/1396** | L2,A2 -> **L3,A3** | 0/0 -> **18/8** | 119 -> 249 |
+| Syrtis Major 31337 | 27 -> 2 | 12/96 -> **30/1270** | L2,A2 -> **L3,A3** | 0/0 -> **11/11** | 73 -> 148 |
+| Sentry Point 2071971 Aeon | 2 -> 2 | 7/142 -> 7/172 | L2,A2 | 7/0 -> 6/0 | 41 -> 44 |
+| Sentry Point 31337 Aeon | 6 -> 3 | 6/77 -> **10/167** | L2,A2 | 0/0 -> **5/0** | 39 -> 72 |
+
+Land Tech 3 had been reached in **no logged match**. It is reached on all four
+LandLarge cells now, in air as well as land.
+
+Three results this settles:
+
+**The engineer ladder was never mis-priced.** Four matrices went 6W/6L to 3W/9L
+trying to make Tech 2 engineers appear by changing engineer priorities. They
+appear here, 0 to 11-19 peak, with no engineer priority touched at all. The
+ladder was starved of income, not switched off by a quota.
+
+**The energy ladder was never broken.** `EnergyBlocksTech` only fires once mass
+clears the same tier's gate, and mass held above the Tech 3 gate in 2-8% of
+samples. Given income it fired exactly as written, taking energy from ~110 to
+850-1526.
+
+**Outcome still does not follow on the large maps.** All four LandLarge cells
+lose with Tech 3, three times the income and twice the army. The best ratio
+roughly doubled -- 0.25 to 0.53 on Isis 8675309, 0.26 to 0.62 on Isis 31337 --
+and the enemy peak fell from 483-508 to 337-349, so this is a contested loss
+rather than the old collapse. It is not a win, and one flipped cell is one
+sample.
+
+### What the tech gate now says
+
+`techgate=L<t2>/<t3>,A…,N…` records which of the four refusals -- alert, focus,
+mass, energy -- shut each domain's ladder, at the condition that decides it.
+Land Tech 3 on the scoped tree:
+
+| cell | alert | focus | mass | energy |
+| --- | --- | --- | --- | --- |
+| Fields of Isis 8675309 | **22** | 9 | 0 | 1 |
+| Fields of Isis 31337 | **24** | 7 | 0 | 0 |
+
+Income is no longer the blocker. The `alert.Active` veto in `ShouldTechToT2` and
+`ShouldTechToT3` is, and it is the same unscoped flag in two of the five
+consumers still keyed on it. That is the next change, and `FortificationBuilders`
+already shows the shape: ask for `"LocationType"` in the builder condition,
+resolve the manager position, and test it against the anchor.

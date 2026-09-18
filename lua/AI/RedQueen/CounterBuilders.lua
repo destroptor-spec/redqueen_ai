@@ -235,44 +235,69 @@ local function DomainIsRelevant(aiBrain, domain)
     return mapType ~= "Land"
 end
 
+-- Why this domain may not tech right now, or nil when it may.
+--
+-- The tier ladder is refused for four different reasons and the outcome of all
+-- four is identical: the tier does not rise. Land Tech 3 is reached in none of
+-- the twelve logged matches, and nothing in the log said which gate was shut.
+-- So the reason is recorded here, at the condition that decides it, and
+-- reported in the periodic state line -- otherwise each of the four candidate
+-- repairs reads as "no outcome change" while the other three still hold the
+-- ladder down.
+--
+-- Observation only. The boolean is the same conjunction in the same order; the
+-- caller sees `reason == nil` and nothing else changed.
+local function TechRefusal(aiBrain, domain, tier, weight, minimumWeight, mass, energy)
+    local demand, economy = GetDemand(aiBrain)
+    if not demand then return "nodemand" end
+    if not DomainIsRelevant(aiBrain, domain) then return "domain" end
+    if demand.DefenseAlert and demand.DefenseAlert.Active then return "alert" end
+    if not demand.FocusWeights then return "nodemand" end
+    local held = demand.TierPolicy
+        and demand.TierPolicy[domain]
+        and demand.TierPolicy[domain].Highest
+    if not ((demand.FocusWeights[weight] or 0) >= minimumWeight or (held or 1) >= tier) then
+        return "focus"
+    end
+    if economy.StallRisk then return "stall" end
+    if economy.MassIncome < mass then return "mass" end
+    if economy.EnergyIncome < energy then return "energy" end
+    if not (economy.MassStoredRatio >= 0.10 or economy.MassTrend >= 0) then return "massstore" end
+    if not (economy.EnergyStoredRatio >= 0.15 or economy.EnergyTrend >= 0) then return "energystore" end
+    return nil
+end
+
+local function RecordTechRefusal(aiBrain, domain, tier, reason)
+    local record = aiBrain.RedQueenTechGate
+    if not record then
+        record = {}
+        aiBrain.RedQueenTechGate = record
+    end
+    record[domain .. tostring(tier)] = reason or "ok"
+end
+
 -- Shared with production suppression so fallback units remain buildable
 -- whenever this domain's upgrade is ineligible.
 function ShouldTechToT2(aiBrain, domain)
-    local demand, economy = GetDemand(aiBrain)
-    local tier = demand
-        and demand.TierPolicy
-        and demand.TierPolicy[domain]
-        and demand.TierPolicy[domain].Highest
-    return demand
-        and DomainIsRelevant(aiBrain, domain)
-        and not (demand.DefenseAlert and demand.DefenseAlert.Active)
-        and demand.FocusWeights
-        and (demand.FocusWeights.Tech2 >= Constants.Policy.StrategicFocusMinimumScore
-            or (tier or 1) >= 2)
-        and CanAffordTech(
-            economy,
-            Constants.Policy.Tech2MinimumMassIncome,
-            Constants.Policy.Tech2MinimumEnergyIncome
-        )
+    local reason = TechRefusal(
+        aiBrain, domain, 2, "Tech2",
+        Constants.Policy.StrategicFocusMinimumScore,
+        Constants.Policy.Tech2MinimumMassIncome,
+        Constants.Policy.Tech2MinimumEnergyIncome
+    )
+    RecordTechRefusal(aiBrain, domain, 2, reason)
+    return reason == nil
 end
 
 local function ShouldTechToT3(aiBrain, domain)
-    local demand, economy = GetDemand(aiBrain)
-    local tier = demand
-        and demand.TierPolicy
-        and demand.TierPolicy[domain]
-        and demand.TierPolicy[domain].Highest
-    return demand
-        and DomainIsRelevant(aiBrain, domain)
-        and not (demand.DefenseAlert and demand.DefenseAlert.Active)
-        and demand.FocusWeights
-        and (demand.FocusWeights.Tech3 >= Constants.Policy.StrategicFocusMinimumScore
-            or (tier or 1) >= 3)
-        and CanAffordTech(
-            economy,
-            Constants.Policy.Tech3MinimumMassIncome,
-            Constants.Policy.Tech3MinimumEnergyIncome
-        )
+    local reason = TechRefusal(
+        aiBrain, domain, 3, "Tech3",
+        Constants.Policy.StrategicFocusMinimumScore,
+        Constants.Policy.Tech3MinimumMassIncome,
+        Constants.Policy.Tech3MinimumEnergyIncome
+    )
+    RecordTechRefusal(aiBrain, domain, 3, reason)
+    return reason == nil
 end
 
 -- Energy is the one input Red Queen gates itself on but never produces.

@@ -7,6 +7,7 @@ local Narrator = import("/mods/TheRedQueen/lua/AI/RedQueen/Narrator.lua")
 local EngineerSurvival = import("/mods/TheRedQueen/lua/AI/RedQueen/EngineerSurvival.lua")
 local Assistance = import("/mods/TheRedQueen/lua/AI/RedQueen/Assistance.lua")
 local ExtractorUpgrades = import("/mods/TheRedQueen/lua/AI/RedQueen/ExtractorUpgrades.lua")
+local AlertScope = import("/mods/TheRedQueen/lua/AI/RedQueen/AlertScope.lua")
 local Logger = import("/mods/TheRedQueen/lua/AI/RedQueen/Logger.lua")
 
 local CounterBuilders = import("/mods/TheRedQueen/lua/AI/RedQueen/CounterBuilders.lua")
@@ -2464,21 +2465,10 @@ ProductionManager = ClassSimple {
     -- hand-back to native contracted in assistance_spec, and it is right --
     -- Red Queen should not be holding an engineer under its own guard order
     -- inside a fight.
+    -- The geometry now lives in AlertScope, so the extractor upgrades and the
+    -- tech ladder ask the same question this does.
     AlertCovers = function(self, alert, unit)
-        if not alert or not alert.Active then
-            return false
-        end
-        -- An alert with no anchor has no known extent, so it covers the army --
-        -- which is also exactly what every caller did before this was scoped.
-        if not alert.AnchorPosition or not unit or not unit.GetPosition then
-            return true
-        end
-        local position = unit:GetPosition()
-        if not position then
-            return true
-        end
-        local radius = Constants.Policy.DefenseAlertWorkRadius
-        return DistanceSquared(position, alert.AnchorPosition) <= radius * radius
+        return AlertScope.CoversUnit(alert, unit)
     end,
 
     MaintainIdleAssistants = function(self)
@@ -2591,7 +2581,14 @@ ProductionManager = ClassSimple {
     -- engineers, puts them on one, and waits.
     MaintainCoreExtractorUpgrades = function(self)
         local state = self.Economy.State or {}
-        local reason = ExtractorUpgrades.BlockReason(state, self.Strategy.ProductionDemand.DefenseAlert)
+        -- Scoped to the extractors this actually owns: an alert at an expansion
+        -- is no reason to leave the spawn extractors on Tech 1 for the rest of
+        -- the match, which is what it did.
+        local reason = ExtractorUpgrades.BlockReason(
+            state,
+            self.Strategy.ProductionDemand.DefenseAlert,
+            self:CoreExtractors()
+        )
         if reason then
             self.CoreUpgrade = { State = reason }
             return reason

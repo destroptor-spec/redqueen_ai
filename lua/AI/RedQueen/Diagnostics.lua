@@ -164,8 +164,17 @@ Diagnostics = ClassSimple {
             and self.Brain:GetCurrentUnits(categories.ENGINEER * categories.MOBILE)
             or 0
 
+        -- Defaults to "none" for a domain no builder has evaluated yet, so the
+        -- field is present from the first sample rather than appearing later.
+        local gate = self.Brain.RedQueenTechGate or {}
+        gate = {
+            Land2 = gate.Land2 or "none", Land3 = gate.Land3 or "none",
+            Air2 = gate.Air2 or "none", Air3 = gate.Air3 or "none",
+            Naval2 = gate.Naval2 or "none", Naval3 = gate.Naval3 or "none",
+        }
+
         Logger.Info(self.Brain, string.format(
-            "state objective=%s primary=%s/%d secondary=%s/%d pressure=%s claim=%.0f/%.0f%s eco=%s mass=%.1f energy=%.1f factories=%d/%d intel=%d doctrine=%s focus=%s weights=A=%d,T2=%d,T3=%d,X=%d,N=%d ready=%.2f slots=%d reason=%s landloss=%d/%.0f airloss=%d/%.0f airdrop=%s alert=%s/%.1f/%.2f/%s/%.0f/%.0f momentum=%.0f/%.0f/%s tiers=L%d,A%d,N%d forward=%d/%s/%s exp=%s/%d/%d eng=%d/%d/%d engtier=%d/%d/%d cover=%d/%d engpolicy=%d/%d mex=%d/%d scout=%d/%d/%d scoutorders=%d/%d scouts=%d scoutfraction=%.3f/%.3f dispatch=L%d,A%d,W%d,M%d,H%d army=%d/%d/%d held=%d/%d/%d directed=%d/%d assist=%d/%d/%d acuassist=%d mexgate=%s/%d",
+            "state objective=%s primary=%s/%d secondary=%s/%d pressure=%s claim=%.0f/%.0f%s eco=%s mass=%.1f energy=%.1f factories=%d/%d intel=%d doctrine=%s focus=%s weights=A=%d,T2=%d,T3=%d,X=%d,N=%d ready=%.2f slots=%d reason=%s landloss=%d/%.0f airloss=%d/%.0f airdrop=%s alert=%s/%.1f/%.2f/%s/%.0f/%.0f momentum=%.0f/%.0f/%s tiers=L%d,A%d,N%d forward=%d/%s/%s exp=%s/%d/%d eng=%d/%d/%d engtier=%d/%d/%d cover=%d/%d engpolicy=%d/%d mex=%d/%d scout=%d/%d/%d scoutorders=%d/%d scouts=%d scoutfraction=%.3f/%.3f dispatch=L%d,A%d,W%d,M%d,H%d army=%d/%d/%d held=%d/%d/%d directed=%d/%d assist=%d/%d/%d acuassist=%d mexgate=%s/%d techgate=L%s/%s,A%s/%s,N%s/%s",
             tostring(objective.Type or "none"),
             primary and tostring(primary.Type) or "none",
             slotDispatch.Primary or 0,
@@ -298,7 +307,17 @@ Diagnostics = ClassSimple {
             (modules.Production.AssistSummary or {}).Released or 0,
             modules.Production.CommanderAssists or 0,
             (modules.Production.CoreUpgrade or {}).State or "none",
-            self.Brain.RedQueenExtractorBlocks or 0))
+            self.Brain.RedQueenExtractorBlocks or 0,
+            -- Which gate is actually holding each domain's tier ladder down,
+            -- Tech 2 then Tech 3. Four different refusals -- alert, focus,
+            -- mass, energy -- produce the identical outcome of a tier that
+            -- does not rise, and land Tech 3 was reached in none of the twelve
+            -- logged matches with nothing in the log to say which one shut it.
+            -- Without this, each candidate repair reads as "no outcome change"
+            -- while the other three still hold the ladder down.
+            gate.Land2, gate.Land3,
+            gate.Air2, gate.Air3,
+            gate.Naval2, gate.Naval3))
     end,
 }
 

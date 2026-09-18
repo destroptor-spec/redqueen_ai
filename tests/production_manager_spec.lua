@@ -185,6 +185,15 @@ function import(path)
         return constants
     elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/EngineerSurvival.lua" then
         return engineerSurvival
+    elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/AlertScope.lua" then
+        -- The real module: alert extent is the behaviour under test here, not
+        -- something a stub may quietly answer differently.
+        -- A global, not a local: this chunk is at Lua's 200-local ceiling.
+        if not AlertScopeModule then
+            AlertScopeModule = setmetatable({}, { __index = _G })
+            setfenv(assert(loadfile("lua/AI/RedQueen/AlertScope.lua")), AlertScopeModule)()
+        end
+        return AlertScopeModule
     elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/Narrator.lua" then
         return { Announce = function() return false end }
     elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/Logger.lua" then
