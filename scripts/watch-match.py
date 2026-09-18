@@ -36,6 +36,7 @@ STATE = re.compile(
     r"secondary=(\S+)/(\d+) pressure=(\w+)"
 )
 TIERS = re.compile(r"tiers=L(\d+),A(\d+),N(\d+)")
+ENGINEER_TIERS = re.compile(r"engtier=(\d+)/(\d+)/(\d+)")
 MEX_POINTS = re.compile(r" mex=(\d+)/(\d+) ")
 ALERT = re.compile(r"alert=(\w+)/")
 ECONOMY = re.compile(r" mass=([\d.]+) energy=([\d.]+) ")
@@ -87,6 +88,20 @@ class Army:
         # Tech 2 with nothing built behind it. Three minutes of grace: a tier is
         # reached the moment a factory finishes upgrading, and a defence cannot
         # exist the same second.
+        # No Tech 2 engineer behind the tier. Every Tech 2 fortification
+        # builder declares T2EngineerBuilder, so this alarm is upstream of the
+        # missing defence below and says which of the two to go and look at.
+        if (
+            self.tech2_reached_at is not None
+            and sample["t"] - self.tech2_reached_at >= 180
+            and sample["eng_tiers"][1] + sample["eng_tiers"][2] == 0
+        ):
+            self.once(
+                "t2-no-engineer",
+                f"! {tag}{at} Tech 2 since {clock(self.tech2_reached_at)} and not one "
+                f"Tech 2 engineer ({sample['eng_tiers'][0]} at Tech 1)",
+                out,
+            )
         if (
             self.tech2_reached_at is not None
             and sample["t"] - self.tech2_reached_at >= 180
@@ -192,7 +207,8 @@ class Army:
             f"mass {sample.get('mass', 0):5.1f} "
             f"E{sample['energy_stored']:4.0%} "
             f"mex {sample['mex'][0]:2d}/{sample['mex'][1]:2d}/{sample['mex'][2]:2d} "
-            f"eng {sample['engineers']:3d}({sample['idle_engineers']:2d} idle) "
+            f"eng {sample['engineers']:3d}({sample['idle_engineers']:2d} idle"
+            f" {'/'.join(map(str, sample['eng_tiers']))}) "
             f"pd {sample['pd'][0]}/{sample['pd'][1]}/{sample['pd'][2]} "
             f"aa {sample['aa'][0]}/{sample['aa'][1]}/{sample['aa'][2]} "
             f"sh{sample['shields']} "
@@ -260,6 +276,7 @@ def main() -> int:
             return
         sample.setdefault("tier_land", 1)
         sample.setdefault("mass", 0.0)
+        sample.setdefault("eng_tiers", (sample["engineers"], 0, 0))
         armies[index].observe(sample, out, len(armies) > 1)
 
     def handle(line: str) -> None:
@@ -285,6 +302,11 @@ def main() -> int:
             sample["objective"] = objective
             tiers = TIERS.search(line)
             sample["tier_land"] = int(tiers.group(1)) if tiers else 1
+            engineers = ENGINEER_TIERS.search(line)
+            sample["eng_tiers"] = (
+                tuple(int(engineers.group(index)) for index in (1, 2, 3))
+                if engineers else (sample["engineers"], 0, 0)
+            )
             points = MEX_POINTS.search(line)
             sample["mass_points"] = int(points.group(2)) if points else 0
             economy = ECONOMY.search(line)

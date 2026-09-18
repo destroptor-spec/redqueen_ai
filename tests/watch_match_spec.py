@@ -30,12 +30,14 @@ def watch_line(t, **overrides):
     )
 
 
-def state_line(objective="Pressure", tier_land=1, pressure="held", mass=10.0):
+def state_line(objective="Pressure", tier_land=1, pressure="held", mass=10.0,
+               eng_tiers=(8, 2, 0)):
     return (
         f"info: [RedQueen][INFO][army=2] state objective={objective} "
         f"primary={objective}/4 secondary=none/0 pressure={pressure} claim=0/0 "
         f"eco=Balanced mass={mass:.1f} energy=100.0 factories=2/2 intel=0 "
         f"doctrine=Balanced focus=Army tiers=L{tier_land},A1,N1 mex=4/44 "
+        f"engtier={'/'.join(map(str, eng_tiers))} "
     )
 
 
@@ -66,6 +68,50 @@ class WatchMatchSpec(unittest.TestCase):
             lines.append(watch_line(minute * 60, pd=(2, 1, 0)))
             lines.append(state_line(tier_land=2 if minute >= 2 else 1))
         self.assertNotIn("point defence", self.watch(*lines))
+
+    def test_tech2_without_a_tech2_engineer_is_reported(self):
+        """Every Tech 2 fortification builder declares T2EngineerBuilder, so a
+        roster stuck at Tech 1 is upstream of the missing defence and says
+        which of the two to go and look at."""
+        lines = []
+        for minute in range(1, 8):
+            lines.append(watch_line(minute * 60, pd=(2, 1, 0)))
+            lines.append(state_line(tier_land=2 if minute >= 2 else 1,
+                                    eng_tiers=(20, 0, 0)))
+        output = self.watch(*lines)
+        self.assertIn("not one Tech 2 engineer (20 at Tech 1)", output)
+
+    def test_a_tech2_engineer_silences_it(self):
+        lines = []
+        for minute in range(1, 8):
+            lines.append(watch_line(minute * 60, pd=(2, 1, 0)))
+            lines.append(state_line(tier_land=2 if minute >= 2 else 1,
+                                    eng_tiers=(20, 2, 0)))
+        self.assertNotIn("Tech 2 engineer", self.watch(*lines))
+
+    def test_a_tech3_engineer_also_silences_it(self):
+        lines = []
+        for minute in range(1, 8):
+            lines.append(watch_line(minute * 60, pd=(2, 1, 0)))
+            lines.append(state_line(tier_land=3 if minute >= 2 else 1,
+                                    eng_tiers=(20, 0, 3)))
+        self.assertNotIn("Tech 2 engineer", self.watch(*lines))
+
+    def test_a_missing_engtier_field_is_read_as_all_tech_1(self):
+        """A state line that lost the field must not read as an upgraded
+        roster: silence would be indistinguishable from a healthy one, and
+        this alarm exists precisely because nothing else says it."""
+        bare = (
+            "info: [RedQueen][INFO][army=2] state objective=Raid primary=Raid/4 "
+            "secondary=none/0 pressure=held claim=0/0 eco=Balanced mass=10.0 "
+            "energy=100.0 factories=2/2 intel=0 doctrine=Balanced focus=Army "
+            "tiers=L2,A1,N1 mex=4/44 "
+        )
+        lines = []
+        for minute in range(1, 8):
+            lines.append(watch_line(minute * 60, pd=(2, 1, 0), eng=20))
+            lines.append(bare)
+        self.assertIn("not one Tech 2 engineer", self.watch(*lines))
 
     def test_tech3_point_defence_satisfies_the_tech2_alarm(self):
         """The alarm asks whether anything better than Tech 1 stands in the
