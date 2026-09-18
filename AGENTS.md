@@ -122,6 +122,37 @@ income contract allies=2 enemies=4 deficit=2 income=1.20   # a real 2v2v2
 `tests/team_layout_spec.lua` covers the assignment, including that an
 undersized map yields an incomplete layout.
 
+### Watching a match
+
+A matrix says which cells were lost. It cannot say why, and two rounds of
+spectating produced eight defects in an afternoon that twelve matches had not
+surfaced. The `watch` line exists so that view can be had from the log:
+`Observer.lua` writes one a game minute carrying the inventory and intent a
+spectator reads off the screen — what the commander is doing and how far from
+home it has gone, point defence and anti-air by tier, extractors by tier, idle
+engineers, and own versus enemy unit counts by tier.
+
+```bash
+# follow a running match; alarms as they fire, context every five game minutes
+python3 scripts/watch-match.py /tmp/rq-m-<label>.log --follow --timeout 180
+# after the fact, one row per game minute
+python3 scripts/watch-match.py /tmp/rq-m-<label>.log --timeline
+```
+
+The alarms are the observations from those rounds, turned into triggers that
+fire once each: a tier reached with no defence built behind it, a missile
+launcher before a point defence, a Tech 3 extractor while Tech 1 extractors
+remain, a commander past its leash or below half health, a brownout, idle
+engineers, being outgunned, and extractors falling three minutes running.
+
+Enemy counts in the `watch` line are read straight off the opposing brains.
+That is telemetry and nothing else: **no decision may read it**, or Red Queen
+is playing with knowledge it has not earned.
+
+Visual capture is not available on this machine. The game runs under rootless
+XWayland, so an X11 grab of its window returns black, and this build's
+ImageMagick `import` cannot reach the display at all. The log is the view.
+
 ### Reading the result
 
 ```bash

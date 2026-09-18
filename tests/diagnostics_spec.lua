@@ -74,6 +74,8 @@ function import(path)
         return logger
     elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/Experimentals.lua" then
         return experimentals
+    elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/Observer.lua" then
+        return { Report = function() end }
     end
     error("unexpected import: " .. tostring(path))
 end

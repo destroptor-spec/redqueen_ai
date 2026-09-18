@@ -1,6 +1,7 @@
 local Constants = import("/mods/TheRedQueen/lua/AI/RedQueen/Constants.lua")
 local Logger = import("/mods/TheRedQueen/lua/AI/RedQueen/Logger.lua")
 local Experimentals = import("/mods/TheRedQueen/lua/AI/RedQueen/Experimentals.lua")
+local Observer = import("/mods/TheRedQueen/lua/AI/RedQueen/Observer.lua")
 
 ---@class RedQueenDiagnostics
 -- Whether the attack actually received force.
@@ -97,6 +98,10 @@ Diagnostics = ClassSimple {
 
     Update = function(self)
         local modules = self.Modules
+        -- First, so a spectator's view of the match survives a failure in the
+        -- state line's formatting -- which carries fifty fields and has raised
+        -- before.
+        Observer.Report(self.Brain, modules)
         local objective = modules.Strategy.CurrentObjective or {}
         -- The two slots, and whether pressure survived whatever else happened.
         -- A win rate cannot tell a defence that cost nothing from one that
