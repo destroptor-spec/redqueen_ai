@@ -478,5 +478,66 @@ For scale, the same fixes written to fight native rather than coordinate with
 them scored **3W/9L**, and the directed-platoon work alone scored 5W/7L. The
 audit recovered most of that ground without reaching parity.
 
-The three LandLarge cells have now lost under every tree measured across two
+The four LandLarge cells have now lost under every tree measured across two
 days, including the session anchor. Nothing attempted has moved them.
+
+## No Tech 2 engineer ever exists on LandLarge
+
+Watching one of those cells with the new `watch` line found a mechanism.
+
+Every Red Queen fortification builder for a Tech 2 defence -- point defence,
+anti-air, shield, tactical missile -- declares `PlatoonTemplate =
+"T2EngineerBuilder"`. None of them can form without a Tech 2 engineer.
+
+`engtier` across run A, the audited tree, twelve cells:
+
+| Profile | Cell | Peak Tech 2 engineers | Result |
+| --- | --- | --- | --- |
+| LandLarge | Fields of Isis 8675309 | **0** | defeat |
+| LandLarge | Fields of Isis 31337 | **0** | defeat |
+| LandLarge | Syrtis Major 8675309 | **0** | defeat |
+| LandLarge | Syrtis Major 31337 | **0** | defeat |
+| Naval | Sludge 2071971 Cybran | 9 | victory |
+| Naval | Sludge 31337 Seraphim | 8 | victory |
+| Naval | Sludge 2071971 Seraphim | 7 | victory |
+| Naval | Sludge 8675309 Seraphim | 2 | defeat |
+| Naval | Sludge 2071971 Aeon | 0 | victory |
+| LandSmall | Sentry Point 2071971 Aeon | 7 | defeat |
+| LandSmall | Sentry Point 2071971 UEF | 3 | victory |
+| LandSmall | Sentry Point 31337 Aeon | 0 | victory |
+
+Every LandLarge cell reaches land Tech 2 and never builds a Tech 2 engineer, so
+on those four maps Red Queen cannot build a Tech 2 defence of any kind. Two
+further runs of Fields of Isis 8675309 today, one at `28c1f16` and one with the
+observer added, both reported zero for the whole match and confirmed the
+consequence directly: 31 Tech 1 point defences, 21 Tech 1 anti-air, no shield.
+
+The correlation does not extend past the profile and should not be read as one.
+Sludge 2071971 Aeon and Sentry Point 31337 Aeon also held zero and won; Sentry
+Point 2071971 Aeon held seven and lost. Zero Tech 2 engineers does not predict
+defeat on its own -- but it is a capability Red Queen does not have on exactly
+the profile it has never won.
+
+No cell in the matrix fielded a **Tech 3 engineer at all**, and land tier never
+exceeded 2 anywhere.
+
+### What the watched match actually did
+
+Fields of Isis 8675309, Aeon against Aeon, the whole match in one column of
+figures (`scripts/watch-match.py --timeline`):
+
+| Phase | What it looked like |
+| --- | --- |
+| 00:00-05:00 | clean opening: 17 extractors by 05:09, 13 engineers, none idle, unit parity |
+| 07:09 | land Tech 2 reached |
+| 08:09 | energy storage 4%, 6 of 25 engineers idle, outgunned 29 to 63 |
+| 10:09-14:09 | worst point, 0.29 of the enemy army, 16-18 of 25 engineers idle, extractors falling 20 to 12 |
+| 19:09-25:09 | recovery to **2.05x the enemy army** on 23 Tech 1 point defences |
+| 25:09-36:09 | mass income frozen at 9.8 for twelve minutes, extractors unchanged at 13/5/2, 14-18 of 22-24 engineers idle, commander idle |
+| 32:09-36:09 | enemy 214 to 361 while Red Queen falls 219 to 138; defeat |
+
+Red Queen wins the middle game on this map and then stops. It is not ground
+down from behind: it reaches twice the opponent's army, holds mass and
+engineers, spends neither, and is out-scaled from minute 25. That is a different
+defect from the one the matrix's win column suggests, and it is the one worth
+attacking next.
