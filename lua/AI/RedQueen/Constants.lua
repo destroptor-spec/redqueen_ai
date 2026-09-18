@@ -453,6 +453,11 @@ Policy = {
     -- gives most of them nothing to do.
     IdleEngineerAssistSeconds = 20,
     IdleEngineerAssistRadius = 60,
+    -- How far a defence alert reaches when deciding whether an engineer should
+    -- stop working. An engineer inside this of the anchor is in the fight and
+    -- its lease is handed back; one outside it carries on, because an alert at
+    -- an expansion used to idle the whole army for the rest of the match.
+    DefenseAlertWorkRadius = 60,
     -- Where engineer replacement stops outranking the army.
     --
     -- Below the Tech 2 mainline at 930 and the Tech 2 factory tech builder at

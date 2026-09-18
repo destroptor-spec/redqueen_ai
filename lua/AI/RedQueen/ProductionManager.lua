@@ -2447,15 +2447,50 @@ ProductionManager = ClassSimple {
         return core and "assist-core-extractor" or "assist"
     end,
 
+    -- Whether this engineer is *in* the alert, rather than merely in an army
+    -- that has one somewhere.
+    --
+    -- A defence alert used to release every lease and stop every assignment,
+    -- army-wide, for as long as it stood. Measured across the twelve-cell
+    -- control matrix: active assistants while an alert is up is exactly 0.0 in
+    -- all twelve cells; the cells that lose spend 63% of the match alerted
+    -- against 31% for the cells that win, with a latched final alert averaging
+    -- sixteen samples against two; and Fields of Isis 31337 holds 25 engineers
+    -- idle while alerted against 0.7 while calm. An alert at an expansion is no
+    -- reason for an engineer in the main base to stop working, and an alert
+    -- that never clears is no reason to stop for the rest of the match.
+    --
+    -- Releasing the lease of an engineer that *is* in it stays: that is the
+    -- hand-back to native contracted in assistance_spec, and it is right --
+    -- Red Queen should not be holding an engineer under its own guard order
+    -- inside a fight.
+    AlertCovers = function(self, alert, unit)
+        if not alert or not alert.Active then
+            return false
+        end
+        -- An alert with no anchor has no known extent, so it covers the army --
+        -- which is also exactly what every caller did before this was scoped.
+        if not alert.AnchorPosition or not unit or not unit.GetPosition then
+            return true
+        end
+        local position = unit:GetPosition()
+        if not position then
+            return true
+        end
+        local radius = Constants.Policy.DefenseAlertWorkRadius
+        return DistanceSquared(position, alert.AnchorPosition) <= radius * radius
+    end,
+
     MaintainIdleAssistants = function(self)
         local tick = GetGameTick()
         local alert = self.Strategy.ProductionDemand.DefenseAlert
-        local release = self.Economy.State.StallRisk or (alert and alert.Active)
+        local release = self.Economy.State.StallRisk
         local key = self:AssistObjectiveKey()
         local active = 0
         for id, record in pairs(self.IdleAssistants) do
             local engineer = record.Unit
-            if not release and record.Until > tick and record.Objective == key
+            if not release and not self:AlertCovers(alert, engineer)
+                and record.Until > tick and record.Objective == key
                 and Assistance.Owns(engineer, record)
                 and self:IsSafeAssistTarget(engineer, record.Target)
             then
@@ -2474,7 +2509,7 @@ ProductionManager = ClassSimple {
         self:MaintainIdleAssistants()
         local tick = GetGameTick()
         local alert = self.Strategy.ProductionDemand.DefenseAlert
-        if self.Economy.State.StallRisk or (alert and alert.Active) then return 0 end
+        if self.Economy.State.StallRisk then return 0 end
         -- Include idle native-manager engineers; ArmyPool alone misses most of
         -- the base roster. Pending construction and current custom jobs win.
         local candidates, seen = {}, {}
@@ -2502,6 +2537,7 @@ ProductionManager = ClassSimple {
                 or (engineer.RedQueenFactoryAssistUntil and engineer.RedQueenFactoryAssistUntil > tick)
                 or (engineer.RedQueenAssistRetryTick and engineer.RedQueenAssistRetryTick > tick)
             if not held and not EngineerSurvival.IsRetreating(engineer)
+                and not self:AlertCovers(alert, engineer)
                 and engineer.IsIdleState and engineer:IsIdleState()
                 and table.getn(engineer.EngineerBuildQueue or {}) == 0 and not engineer.ProcessBuild
                 and not EntityCategoryContains(categories.COMMAND, engineer)

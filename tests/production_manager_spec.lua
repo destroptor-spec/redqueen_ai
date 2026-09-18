@@ -138,6 +138,7 @@ local constants = {
         CommanderHandbackSeconds = 20,
         IdleEngineerAssistSeconds = 20,
         IdleEngineerAssistRadius = 60,
+        DefenseAlertWorkRadius = 60,
         CoreExtractorUpgradeMinimumMassIncome = 10,
         CoreExtractorDeclineFraction = 0.75,
         FormationOwnership = true,
@@ -2890,6 +2891,65 @@ local function IdleEngineerContracts()
     manager:AssignIdleEngineers(engineers)
     assert(guarded[1] and guarded[1].Target.EntityId == 701,
         "with the commander idle the help goes to a factory instead")
+
+    -- A defence alert must not idle the whole workforce.
+    --
+    -- Measured across the control matrix: active assistants while an alert is up
+    -- is 0.0 in every one of the twelve cells, the losing cells spend 63% of the
+    -- match alerted against 31% for the winning ones, and the alert that ends a
+    -- losing match never clears -- sixteen samples on average, thirty at worst.
+    -- Fields of Isis 31337 holds 25 engineers idle while alerted and 0.7 while
+    -- calm. The safety that gate was standing in for is per-engineer and already
+    -- runs: IsSafeAssistTarget refuses an unsafe route, IsRetreating excludes a
+    -- fleeing engineer.
+    workingAcu.IsIdleState = function() return false end
+    workingAcu.IsUnitState = function(_, state) return state == "Building" end
+    -- The engineers stand at {5, 0, 5}; this alert is a map away.
+    manager.Strategy.ProductionDemand.DefenseAlert =
+        { Active = true, AnchorPosition = { 500, 0, 500 } }
+    guarded = {}
+    engineers = { Idle(730, true), Idle(731, true) }
+    assert(manager:AssignIdleEngineers(engineers) == 2,
+        "an alert somewhere on the map must not stop an engineer working here")
+
+    -- And an alert must not release the engineers already working either.
+    local leased = manager.AssistSummary.Active
+    assert(leased >= 2, "the new leases must be counted, got " .. tostring(leased))
+    assert(manager:AssignIdleEngineers(engineers) == 0,
+        "an alert must not release a lease and re-order it every pass")
+    assert(manager.AssistSummary.Active == leased,
+        "the leases must survive the alert, got "
+            .. tostring(manager.AssistSummary.Active) .. " from " .. tostring(leased))
+
+    -- Stall risk is the one that really is army-wide: engineers cannot assist
+    -- with build power the economy cannot pay for.
+    manager.Economy.State.StallRisk = true
+    guarded = {}
+    assert(manager:AssignIdleEngineers({ Idle(740, true) }) == 0,
+        "a stalling economy must still stop assignment")
+    assert(manager.AssistSummary.Active == 0,
+        "a stalling economy must still release the leases it cannot pay for")
+    manager.Economy.State.StallRisk = false
+
+    -- An engineer that *is* in the alert stops and is handed back, which is the
+    -- behaviour assistance_spec contracts: Red Queen must not hold an engineer
+    -- under its own guard order inside a fight.
+    manager.Strategy.ProductionDemand.DefenseAlert =
+        { Active = true, AnchorPosition = { 5, 0, 5 } }
+    guarded = {}
+    assert(manager:AssignIdleEngineers({ Idle(750, true) }) == 0,
+        "an engineer standing in the alert must not be given assist work")
+    assert(manager.AssistSummary.Active == 0,
+        "and the leases inside the alert are handed back, got "
+            .. tostring(manager.AssistSummary.Active))
+
+    -- An alert with no anchor has no known extent and covers the army, which is
+    -- what every caller did before this was scoped.
+    manager.Strategy.ProductionDemand.DefenseAlert = { Active = true }
+    guarded = {}
+    assert(manager:AssignIdleEngineers({ Idle(760, true) }) == 0,
+        "an alert of unknown extent must still stop the army")
+    manager.Strategy.ProductionDemand.DefenseAlert = { Active = false }
 
     print("Red Queen idle engineer contracts passed")
 end
