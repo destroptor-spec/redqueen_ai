@@ -463,12 +463,13 @@ Policy = {
     -- Except in construction recovery: an army with almost no engineers cannot
     -- rebuild anything at all, so that case lifts the cap outright.
     EngineerRecoveryFloor = 3,
-    -- How many engineers each tier above the first is built toward, which is
-    -- deliberately not the army's engineer target: the upper tiers exist so the
-    -- Tech 2 fortification builders have a platoon to form from and so the Tech
-    -- 1 ladder's own stop can trip, not to field a second roster. Replacement
-    -- converts the rest as Tech 1 engineers die.
-    UpperTierEngineerQuota = 3,
+    -- How many engineers each tier above the first is kept even when the army
+    -- is already at its engineer target. A floor, not a cap: the tiers are
+    -- still built to the army's own shortfall whenever there is one, and
+    -- capping them here cost a won game. This exists only so that a roster full
+    -- of Tech 1 engineers cannot leave the Tech 2 fortification builders with
+    -- no platoon to form from.
+    UpperTierEngineerFloor = 3,
     -- When cover is given up rather than reinforced. Losses are counted in
     -- their own window so a site that killed an escort ten minutes ago is not
     -- held against the next attempt, and the fraction is of everything

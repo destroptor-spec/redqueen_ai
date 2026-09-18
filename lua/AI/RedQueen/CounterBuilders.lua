@@ -650,29 +650,38 @@ end
 --    form either, which is why four LandLarge cells reached Tech 2 and finished
 --    on Tech 1 point defence, Tech 1 anti-air and no shield at all.
 --
--- Above Tech 1 the quota is not the army's target. The upper tiers are not a
--- second army of engineers -- eighteen of them on top of the Tech 1 roster is
--- the doubling `ShouldBuildEngineer` exists to prevent. They are wanted for two
--- specific things: a Tech 2 engineer platoon for the fortification builders to
--- form from, and one Tech 2 engineer in existence so that the Tech 1 ladder's
--- own stop can trip. A handful serves both, after which replacement converts
--- the roster as Tech 1 engineers die. It also keeps the spike short: at zero
--- held the Tech 2 builder reaches the ceiling, and it is back to nothing by the
--- third engineer rather than contesting the factory for the whole match.
+-- The army's shortfall is what any tier may be built to fill: a missing
+-- engineer should arrive at the best tier that can produce one, which is what
+-- the tiers' own 850/860/870 ordering already expresses.
+--
+-- Above Tech 1 there is a second claim, and it is a floor rather than a cap.
+-- Capping the upper tiers at a small quota was measured and was wrong: cells
+-- that were building 7-9 Tech 2 engineers to fill a genuine shortfall dropped
+-- to 3 and one of them lost a game it had won. The floor only has to survive a
+-- roster that is already at target -- the case the whole fix is about, where a
+-- wall of Tech 1 engineers leaves nothing short and no Tech 2 engineer exists
+-- for the fortification builders to form a platoon from, or for the Tech 1
+-- ladder's own stop to trip against.
 local function EngineerPriority(self, aiBrain, tier)
     local demand = GetDemand(aiBrain)
     if not demand then
         return 0
     end
     local target = demand.DesiredEngineers or 0
-    local quota = target
+    local roster = EngineerCategoryAtTier(1)
+    local engineers = aiBrain:GetCurrentUnits(roster)
+    local inFlight = EngineersBuilding(aiBrain, roster, engineers)
+    local shortfall = target - engineers - inFlight
     if tier >= 2 then
-        quota = math.min(target, Constants.Policy.UpperTierEngineerQuota)
+        local category = EngineerCategoryAtTier(tier)
+        local held = aiBrain:GetCurrentUnits(category)
+        shortfall = math.max(
+            shortfall,
+            Constants.Policy.UpperTierEngineerFloor
+                - held
+                - EngineersBuilding(aiBrain, category, held)
+        )
     end
-    local category = EngineerCategoryAtTier(tier)
-    local held = aiBrain:GetCurrentUnits(category)
-    local building = EngineersBuilding(aiBrain, category, held)
-    local shortfall = quota - held - building
     if shortfall <= 0 then
         return 0
     end
@@ -686,11 +695,7 @@ local function EngineerPriority(self, aiBrain, tier)
     -- Read per tier it would be true of every upper tier the moment it is
     -- empty, which is always at first -- so a brain with twenty-five engineers
     -- would lift the Tech 2 builder to 1000 and outrank everything it owns.
-    local roster = categories.ENGINEER * categories.MOBILE
-    local engineers = aiBrain:GetCurrentUnits(roster)
-    if engineers + EngineersBuilding(aiBrain, roster, engineers)
-        < Constants.Policy.EngineerRecoveryFloor
-    then
+    if engineers + inFlight < Constants.Policy.EngineerRecoveryFloor then
         ceiling = 1000
     end
     return math.min(ceiling, base + shortfall * 20)

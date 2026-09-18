@@ -50,7 +50,7 @@ local constants = {
     Policy = {
         EngineerReplacementPriorityCeiling = 910,
         EngineerRecoveryFloor = 3,
-        UpperTierEngineerQuota = 3,
+        UpperTierEngineerFloor = 3,
         StrategicFocusMinimumScore = 35,
         Tech2MinimumMassIncome = 4,
         Tech2MinimumEnergyIncome = 60,
@@ -603,9 +603,9 @@ local function EngineerTierOf(category)
 end
 -- held is every mobile engineer the army holds, the way Tech 1 counts them;
 -- tech2 and tech3 are the engineers at those tiers, which are a subset of it.
-local function SetEngineers(held, building, tech2, tech3)
+local function SetEngineers(held, building, tech2, tech3, tech2Building)
     engineerCounts = { held, tech2 or 0, tech3 or 0 }
-    engineerInFlight = { building or 0, 0, 0 }
+    engineerInFlight = { building or 0, tech2Building or 0, 0 }
 end
 
 local engineerBrain = {
@@ -683,11 +683,28 @@ assert(engineerT1:PriorityFunction(engineerBrain) == 0,
 assert(engineerT2:PriorityFunction(engineerBrain) > 0,
     "a wall of Tech 1 engineers must not switch off the Tech 2 ladder")
 
--- But the upper tiers are not a second army: they are built to their own small
--- quota and stop, or eighteen of each is added to a roster already over target.
-SetEngineers(25, 0, constants.Policy.UpperTierEngineerQuota, 0)
+-- The floor is satisfied by the engineers it asked for, and then stops: a
+-- roster already over target does not want eighteen of each tier on top of it.
+SetEngineers(25, 0, constants.Policy.UpperTierEngineerFloor, 0)
 assert(engineerT2:PriorityFunction(engineerBrain) == 0,
-    "the upper tier quota is not the army's engineer target")
+    "a satisfied floor on a full roster must stop asking")
+
+-- In-flight engineers count at the upper tiers too, or every factory answers
+-- the same missing Tech 2 engineer and the floor is built several times over.
+SetEngineers(25, 0, 0, 0, constants.Policy.UpperTierEngineerFloor)
+assert(engineerT2:PriorityFunction(engineerBrain) == 0,
+    "Tech 2 engineers already being built must satisfy the floor")
+
+-- But it is a floor and not a cap. An army genuinely below its engineer target
+-- builds the missing engineers at the best tier it can, floor or no floor --
+-- capping that was measured and cost a won game: cells building 7-9 Tech 2
+-- engineers dropped to 3, and Sludge 31337 Seraphim turned from victory to
+-- defeat.
+demand.DesiredEngineers = 12
+SetEngineers(9, 0, constants.Policy.UpperTierEngineerFloor, 0)
+assert(engineerT2:PriorityFunction(engineerBrain) > 0,
+    "a shortfall the army actually has must still be built at the better tier")
+demand.DesiredEngineers = 18
 
 -- The tiers keep their intended order relative to each other, which the shared
 -- function previously flattened. Compared at equal shortfall and below the
