@@ -541,29 +541,16 @@ end
 -- however good the economy gets -- and a Tech 2 engineer carries several times
 -- the build power, which is the whole reason to reach the tier. Each tier
 -- therefore counts only engineers at that tier or above.
-local function EngineerCategoryAtTier(tier)
+local function EngineersAtTier(aiBrain, tier)
     local category = categories.ENGINEER * categories.MOBILE
     if tier >= 3 then
-        return category * categories.TECH3
+        return aiBrain:GetCurrentUnits(category * categories.TECH3)
     end
     if tier >= 2 then
-        return category * (categories.TECH2 + categories.TECH3)
+        return aiBrain:GetCurrentUnits(
+            category * (categories.TECH2 + categories.TECH3))
     end
-    return category
-end
-
-local function EngineersAtTier(aiBrain, tier)
-    return aiBrain:GetCurrentUnits(EngineerCategoryAtTier(tier))
-end
-
--- Completed units only come back from GetCurrentUnits, so ask for the list
--- including those still being built to see what is already on the way.
-local function EngineersBuilding(aiBrain, category, held)
-    if not aiBrain.GetListOfUnits then
-        return 0
-    end
-    local all = aiBrain:GetListOfUnits(category, false, false)
-    return math.max(0, table.getn(all or {}) - held)
+    return aiBrain:GetCurrentUnits(category)
 end
 
 local function ShouldBuildEngineer(aiBrain, tier)
@@ -638,63 +625,23 @@ end
 --
 -- The cap lifts only in construction recovery -- an army down to almost no
 -- engineers cannot rebuild anything, and that case has to win outright.
---  * The shortfall is the one belonging to the tier being built. FAF's
---    Builder:CalculatePriority *replaces* Priority with what this returns, so a
---    zero here is the same off switch the engineer, tier and formation policies
---    use deliberately -- and this function counted every tier at once. Twenty-
---    five Tech 1 engineers against a target of eighteen therefore switched off
---    the Tech 2 and Tech 3 ladders as well as their own, and `ShouldBuildEngineer`'s
---    tier rule -- which is correct, and counts only the tier or better -- never
---    ran to contradict it. Nothing could then build a Tech 2 engineer; every
---    Tech 2 fortification builder declares `T2EngineerBuilder` and so could not
---    form either, which is why four LandLarge cells reached Tech 2 and finished
---    on Tech 1 point defence, Tech 1 anti-air and no shield at all.
---
--- The army's shortfall is what any tier may be built to fill: a missing
--- engineer should arrive at the best tier that can produce one, which is what
--- the tiers' own 850/860/870 ordering already expresses.
---
--- Above Tech 1 there is a second claim, and it is a floor rather than a cap.
--- Capping the upper tiers at a small quota was measured and was wrong: cells
--- that were building 7-9 Tech 2 engineers to fill a genuine shortfall dropped
--- to 3 and one of them lost a game it had won. The floor only has to survive a
--- roster that is already at target -- the case the whole fix is about, where a
--- wall of Tech 1 engineers leaves nothing short and no Tech 2 engineer exists
--- for the fortification builders to form a platoon from, or for the Tech 1
--- ladder's own stop to trip against.
-local function EngineerPriority(self, aiBrain, tier)
+local function EngineerPriority(self, aiBrain)
     local demand = GetDemand(aiBrain)
     if not demand then
         return 0
     end
     local target = demand.DesiredEngineers or 0
-    local roster = EngineerCategoryAtTier(1)
-    local engineers = aiBrain:GetCurrentUnits(roster)
-    local inFlight = EngineersBuilding(aiBrain, roster, engineers)
-    local shortfall = target - engineers - inFlight
+    local engineerCategory = categories.ENGINEER * categories.MOBILE
+    local held = aiBrain:GetCurrentUnits(engineerCategory)
+    -- Completed units only come back from GetCurrentUnits, so ask for the list
+    -- including those still being built to see what is already on the way.
+    local building = 0
+    if aiBrain.GetListOfUnits then
+        local all = aiBrain:GetListOfUnits(engineerCategory, false, false)
+        building = math.max(0, table.getn(all or {}) - held)
+    end
+    local shortfall = target - held - building
     if shortfall <= 0 then
-        -- No shortage, but possibly no capability either. A Tech 1 engineer
-        -- cannot build a Tech 2 structure, so a roster sitting at target with
-        -- nothing above Tech 1 cannot put up a Tech 2 point defence, anti-air
-        -- or shield at all -- four LandLarge cells finished exactly that way.
-        --
-        -- Priced as a capability and not as a shortage. Measured twice: giving
-        -- this claim the shortage ladder's priority put it at 910, which *ties*
-        -- Tech2Priority's mainline, and it took the factory from the army at the
-        -- moment the army was the binding constraint -- one Tech 2 engineer for
-        -- one combat unit, in a cell that then died ten minutes earlier than it
-        -- had. Combat priorities start at 700, so this sits below every one of
-        -- them: the tier is reached when a factory has nothing better to do,
-        -- and never instead of the army.
-        if tier >= 2 then
-            local category = EngineerCategoryAtTier(tier)
-            local held = aiBrain:GetCurrentUnits(category)
-            if held + EngineersBuilding(aiBrain, category, held)
-                < Constants.Policy.UpperTierEngineerFloor
-            then
-                return Constants.Policy.UpperTierEngineerFloorPriority
-            end
-        end
         return 0
     end
     -- OriginalPriority is what FAF's Builder:Create copies from the
@@ -703,26 +650,10 @@ local function EngineerPriority(self, aiBrain, tier)
     -- static order still holds before a builder instance exists.
     local base = self.OriginalPriority or self.Priority or 850
     local ceiling = Constants.Policy.EngineerReplacementPriorityCeiling
-    -- Construction recovery is a fact about the whole army and must stay one.
-    -- Read per tier it would be true of every upper tier the moment it is
-    -- empty, which is always at first -- so a brain with twenty-five engineers
-    -- would lift the Tech 2 builder to 1000 and outrank everything it owns.
-    if engineers + inFlight < Constants.Policy.EngineerRecoveryFloor then
+    if held + building < Constants.Policy.EngineerRecoveryFloor then
         ceiling = 1000
     end
     return math.min(ceiling, base + shortfall * 20)
-end
-
-local function EngineerPriorityT1(self, aiBrain)
-    return EngineerPriority(self, aiBrain, 1)
-end
-
-local function EngineerPriorityT2(self, aiBrain)
-    return EngineerPriority(self, aiBrain, 2)
-end
-
-local function EngineerPriorityT3(self, aiBrain)
-    return EngineerPriority(self, aiBrain, 3)
 end
 
 -- A directed platoon is only worth forming when there is somewhere to send it.
@@ -948,7 +879,7 @@ BuilderGroup {
         BuilderName = "Red Queen Engineer T3",
         PlatoonTemplate = "T3BuildEngineer",
         Priority = 870,
-        PriorityFunction = EngineerPriorityT3,
+        PriorityFunction = EngineerPriority,
         BuilderType = "Land",
         BuilderConditions = {
             { ShouldBuildT3Engineer, {} },
@@ -961,7 +892,7 @@ BuilderGroup {
         BuilderName = "Red Queen Engineer T2",
         PlatoonTemplate = "T2BuildEngineer",
         Priority = 860,
-        PriorityFunction = EngineerPriorityT2,
+        PriorityFunction = EngineerPriority,
         BuilderType = "Land",
         BuilderConditions = {
             { ShouldBuildT2Engineer, {} },
@@ -974,7 +905,7 @@ BuilderGroup {
         BuilderName = "Red Queen Engineer T1",
         PlatoonTemplate = "T1BuildEngineer",
         Priority = 850,
-        PriorityFunction = EngineerPriorityT1,
+        PriorityFunction = EngineerPriority,
         BuilderType = "Land",
         BuilderConditions = {
             { ShouldBuildT1Engineer, {} },

@@ -50,8 +50,6 @@ local constants = {
     Policy = {
         EngineerReplacementPriorityCeiling = 910,
         EngineerRecoveryFloor = 3,
-        UpperTierEngineerFloor = 3,
-        UpperTierEngineerFloorPriority = 690,
         StrategicFocusMinimumScore = 35,
         Tech2MinimumMassIncome = 4,
         Tech2MinimumEnergyIncome = 60,
@@ -577,38 +575,10 @@ assert(
 -- eight reached 1000 -- so a few engineer deaths stopped unit production in
 -- every factory. Observed directly in a match.
 local engineerT1 = builders["Red Queen Engineer T1"]
-local engineerT2 = builders["Red Queen Engineer T2"]
 local engineerT3 = builders["Red Queen Engineer T3"]
-assert(engineerT1 and engineerT2 and engineerT3,
-    "the engineer builders must be registered")
+assert(engineerT1 and engineerT3, "the engineer builders must be registered")
 
--- Counts are per tier, because the priority function now asks per tier. The
--- previous fake answered one number for every category -- exactly the
--- conflation the fix removes, and it would have hidden the fix entirely.
-local engineerCounts = { 1, 0, 0 }
-local engineerInFlight = { 0, 0, 0 }
-local engineerCategoryName = {
-    (categories.ENGINEER * categories.MOBILE).Name,
-    (categories.ENGINEER * categories.MOBILE
-        * (categories.TECH2 + categories.TECH3)).Name,
-    (categories.ENGINEER * categories.MOBILE * categories.TECH3).Name,
-}
-local function EngineerTierOf(category)
-    for tier, name in ipairs(engineerCategoryName) do
-        if category.Name == name then
-            return tier
-        end
-    end
-    error("the priority function asked for an unexpected category: "
-        .. tostring(category.Name))
-end
--- held is every mobile engineer the army holds, the way Tech 1 counts them;
--- tech2 and tech3 are the engineers at those tiers, which are a subset of it.
-local function SetEngineers(held, building, tech2, tech3, tech2Building)
-    engineerCounts = { held, tech2 or 0, tech3 or 0 }
-    engineerInFlight = { building or 0, tech2Building or 0, 0 }
-end
-
+local engineerHeld, engineerBuilding = 1, 0
 local engineerBrain = {
     RedQueenContext = { FactionIndex = 2 },
     RedQueenModules = {
@@ -616,22 +586,17 @@ local engineerBrain = {
         Strategy = { ProductionDemand = demand },
         World = world,
     },
-    GetCurrentUnits = function(_, category)
-        return engineerCounts[EngineerTierOf(category)]
-    end,
-    GetListOfUnits = function(_, category)
-        local tier = EngineerTierOf(category)
+    GetCurrentUnits = function() return engineerHeld end,
+    GetListOfUnits = function()
         local all = {}
-        for index = 1, engineerCounts[tier] + engineerInFlight[tier] do
-            all[index] = index
-        end
+        for index = 1, engineerHeld + engineerBuilding do all[index] = index end
         return all
     end,
 }
 
 -- A large shortfall from repeated losses stays below combat production.
 demand.DesiredEngineers = 18
-SetEngineers(12, 0)
+engineerHeld, engineerBuilding = 12, 0
 local capped = engineerT1:PriorityFunction(engineerBrain)
 assert(capped > 0, "a real shortfall must still ask for engineers, got " .. tostring(capped))
 assert(capped <= constants.Policy.EngineerReplacementPriorityCeiling,
@@ -639,16 +604,16 @@ assert(capped <= constants.Policy.EngineerReplacementPriorityCeiling,
 
 -- Engineers already under construction count, so several factories cannot each
 -- answer the same missing engineer.
-SetEngineers(12, 6)
+engineerHeld, engineerBuilding = 12, 6
 assert(engineerT1:PriorityFunction(engineerBrain) == 0,
     "engineers already being built must satisfy the shortfall")
 -- Compared below the ceiling, or both readings clamp to it and the effect is
 -- invisible. Held plus building stays at or above the recovery floor so the
 -- exception is not what is being measured.
 demand.DesiredEngineers = 8
-SetEngineers(4, 0)
+engineerHeld, engineerBuilding = 4, 0
 local uncommitted = engineerT1:PriorityFunction(engineerBrain)
-SetEngineers(4, 2)
+engineerHeld, engineerBuilding = 4, 2
 local partly = engineerT1:PriorityFunction(engineerBrain)
 assert(partly > 0 and partly < uncommitted,
     "partial in-flight production must reduce the demand, got " .. tostring(partly)
@@ -657,93 +622,26 @@ demand.DesiredEngineers = 18
 
 -- Construction recovery is the exception: an army with almost no engineers
 -- cannot rebuild anything, so that case outranks everything.
-SetEngineers(1, 0)
+engineerHeld, engineerBuilding = 1, 0
 local recovery = engineerT1:PriorityFunction(engineerBrain)
 assert(recovery > constants.Policy.EngineerReplacementPriorityCeiling,
     "an army with almost no engineers must outrank combat production, got "
         .. tostring(recovery))
--- And it is a fact about the whole army, not about one tier. Read per tier it
--- would hold for every upper tier the moment it is empty -- which it always is
--- at first -- and lift the Tech 3 builder above everything the brain owns.
-SetEngineers(3, 0, 0, 0)
-local emptyUpperTier = engineerT3:PriorityFunction(engineerBrain)
-assert(emptyUpperTier > 0, "an empty upper tier must still be wanted, got "
-    .. tostring(emptyUpperTier))
-assert(emptyUpperTier <= constants.Policy.EngineerReplacementPriorityCeiling,
-    "an empty upper tier is not a construction emergency, got "
-        .. tostring(emptyUpperTier))
-
--- The keystone. Twenty-five Tech 1 engineers against a target of eighteen is
--- the LandLarge match exactly: the Tech 1 ladder is rightly finished, and the
--- Tech 2 one must not be finished with it. Every Tech 2 fortification builder
--- declares T2EngineerBuilder, so a zero here is why four cells reached Tech 2
--- and ended on Tech 1 point defence, Tech 1 anti-air and no shield.
-SetEngineers(25, 0, 0, 0)
-assert(engineerT1:PriorityFunction(engineerBrain) == 0,
-    "a roster already past target must stop building Tech 1 engineers")
-local capability = engineerT2:PriorityFunction(engineerBrain)
-assert(capability > 0,
-    "a wall of Tech 1 engineers must not switch off the Tech 2 ladder")
--- And it is priced as a capability, not as a shortage. At the shortage ladder's
--- own priority this reached 910 and tied Tech2Priority's mainline: measured, it
--- took the factory from the army at the moment the army was the binding
--- constraint, and Sludge 2071971 Cybran died ten minutes earlier than it had.
-assert(capability == constants.Policy.UpperTierEngineerFloorPriority,
-    "the floor must be priced below combat production, got " .. tostring(capability))
-assert(capability < 700,
-    "combat builders start at 700 and must outrank a capability the army has "
-        .. "not asked for, got " .. tostring(capability))
-
--- Tech 1 is the baseline, not a capability: a satisfied roster that happens to
--- be smaller than the floor must not restart Tech 1 production on that basis.
-demand.DesiredEngineers = 2
-SetEngineers(2, 0, 0, 0)
-assert(engineerT1:PriorityFunction(engineerBrain) == 0,
-    "Tech 1 must never claim the upper-tier capability, got "
-        .. tostring(engineerT1:PriorityFunction(engineerBrain)))
-demand.DesiredEngineers = 18
-
--- The floor is satisfied by the engineers it asked for, and then stops: a
--- roster already over target does not want eighteen of each tier on top of it.
-SetEngineers(25, 0, constants.Policy.UpperTierEngineerFloor, 0)
-assert(engineerT2:PriorityFunction(engineerBrain) == 0,
-    "a satisfied floor on a full roster must stop asking")
-
--- In-flight engineers count at the upper tiers too, or every factory answers
--- the same missing Tech 2 engineer and the floor is built several times over.
-SetEngineers(25, 0, 0, 0, constants.Policy.UpperTierEngineerFloor)
-assert(engineerT2:PriorityFunction(engineerBrain) == 0,
-    "Tech 2 engineers already being built must satisfy the floor")
-
--- But it is a floor and not a cap. An army genuinely below its engineer target
--- builds the missing engineers at the best tier it can, floor or no floor --
--- capping that was measured and cost a won game: cells building 7-9 Tech 2
--- engineers dropped to 3, and Sludge 31337 Seraphim turned from victory to
--- defeat.
-demand.DesiredEngineers = 12
-SetEngineers(9, 0, constants.Policy.UpperTierEngineerFloor, 0)
-local shortage = engineerT2:PriorityFunction(engineerBrain)
-assert(shortage > constants.Policy.UpperTierEngineerFloorPriority,
-    "a shortfall the army actually has outranks a bare capability, got "
-        .. tostring(shortage))
--- A real shortage is answered exactly as it was before any of this: the ladder
--- reads the army's own count, so the healthy cells behave identically.
-SetEngineers(9, 0, 0, 0)
-assert(engineerT2:PriorityFunction(engineerBrain) == shortage,
-    "the shortage ladder must not depend on what the upper tier already holds")
-demand.DesiredEngineers = 18
+engineerHeld, engineerBuilding = 3, 0
+assert(engineerT3:PriorityFunction(engineerBrain)
+        <= constants.Policy.EngineerReplacementPriorityCeiling,
+    "and the exception must end once the army can build again")
 
 -- The tiers keep their intended order relative to each other, which the shared
--- function previously flattened. Compared at equal shortfall and below the
--- ceiling, so the static bases are what separates them.
+-- function previously flattened.
+-- Again below the ceiling, so the static bases are what separates them.
 demand.DesiredEngineers = 8
-SetEngineers(6, 0, 1, 1)
-local tech1 = engineerT1:PriorityFunction(engineerBrain)
-local tech2 = engineerT2:PriorityFunction(engineerBrain)
-local tech3 = engineerT3:PriorityFunction(engineerBrain)
-assert(tech3 > tech2 and tech2 > tech1,
-    "the ladder must keep its order at equal shortfall, got "
-        .. tostring(tech1) .. "/" .. tostring(tech2) .. "/" .. tostring(tech3))
+engineerHeld, engineerBuilding = 6, 0
+assert(engineerT3:PriorityFunction(engineerBrain)
+        > engineerT1:PriorityFunction(engineerBrain),
+    "the Tech 3 engineer builder must outrank the Tech 1 one at equal shortfall, got "
+        .. tostring(engineerT3:PriorityFunction(engineerBrain)) .. " against "
+        .. tostring(engineerT1:PriorityFunction(engineerBrain)))
 demand.DesiredEngineers = nil
 
 print("Red Queen support commander contracts passed")
@@ -754,6 +652,8 @@ print("Red Queen support commander contracts passed")
 -- engineers satisfied a target of twelve forever and no Tech 2 engineer was
 -- ever built -- however good the economy got, and however much more build power
 -- the tier carries.
+local engineerT2 = builders["Red Queen Engineer T2"]
+assert(engineerT2, "the Tech 2 engineer builder must be registered")
 
 local tierCounts = { any = 0, t2 = 0, t3 = 0 }
 local tierBrain = {
