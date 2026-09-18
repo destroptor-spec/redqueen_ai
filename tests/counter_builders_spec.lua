@@ -50,6 +50,7 @@ local constants = {
     Policy = {
         EngineerReplacementPriorityCeiling = 910,
         EngineerRecoveryFloor = 3,
+        UpperTierEngineerQuota = 3,
         StrategicFocusMinimumScore = 35,
         Tech2MinimumMassIncome = 4,
         Tech2MinimumEnergyIncome = 60,
@@ -575,10 +576,38 @@ assert(
 -- eight reached 1000 -- so a few engineer deaths stopped unit production in
 -- every factory. Observed directly in a match.
 local engineerT1 = builders["Red Queen Engineer T1"]
+local engineerT2 = builders["Red Queen Engineer T2"]
 local engineerT3 = builders["Red Queen Engineer T3"]
-assert(engineerT1 and engineerT3, "the engineer builders must be registered")
+assert(engineerT1 and engineerT2 and engineerT3,
+    "the engineer builders must be registered")
 
-local engineerHeld, engineerBuilding = 1, 0
+-- Counts are per tier, because the priority function now asks per tier. The
+-- previous fake answered one number for every category -- exactly the
+-- conflation the fix removes, and it would have hidden the fix entirely.
+local engineerCounts = { 1, 0, 0 }
+local engineerInFlight = { 0, 0, 0 }
+local engineerCategoryName = {
+    (categories.ENGINEER * categories.MOBILE).Name,
+    (categories.ENGINEER * categories.MOBILE
+        * (categories.TECH2 + categories.TECH3)).Name,
+    (categories.ENGINEER * categories.MOBILE * categories.TECH3).Name,
+}
+local function EngineerTierOf(category)
+    for tier, name in ipairs(engineerCategoryName) do
+        if category.Name == name then
+            return tier
+        end
+    end
+    error("the priority function asked for an unexpected category: "
+        .. tostring(category.Name))
+end
+-- held is every mobile engineer the army holds, the way Tech 1 counts them;
+-- tech2 and tech3 are the engineers at those tiers, which are a subset of it.
+local function SetEngineers(held, building, tech2, tech3)
+    engineerCounts = { held, tech2 or 0, tech3 or 0 }
+    engineerInFlight = { building or 0, 0, 0 }
+end
+
 local engineerBrain = {
     RedQueenContext = { FactionIndex = 2 },
     RedQueenModules = {
@@ -586,17 +615,22 @@ local engineerBrain = {
         Strategy = { ProductionDemand = demand },
         World = world,
     },
-    GetCurrentUnits = function() return engineerHeld end,
-    GetListOfUnits = function()
+    GetCurrentUnits = function(_, category)
+        return engineerCounts[EngineerTierOf(category)]
+    end,
+    GetListOfUnits = function(_, category)
+        local tier = EngineerTierOf(category)
         local all = {}
-        for index = 1, engineerHeld + engineerBuilding do all[index] = index end
+        for index = 1, engineerCounts[tier] + engineerInFlight[tier] do
+            all[index] = index
+        end
         return all
     end,
 }
 
 -- A large shortfall from repeated losses stays below combat production.
 demand.DesiredEngineers = 18
-engineerHeld, engineerBuilding = 12, 0
+SetEngineers(12, 0)
 local capped = engineerT1:PriorityFunction(engineerBrain)
 assert(capped > 0, "a real shortfall must still ask for engineers, got " .. tostring(capped))
 assert(capped <= constants.Policy.EngineerReplacementPriorityCeiling,
@@ -604,16 +638,16 @@ assert(capped <= constants.Policy.EngineerReplacementPriorityCeiling,
 
 -- Engineers already under construction count, so several factories cannot each
 -- answer the same missing engineer.
-engineerHeld, engineerBuilding = 12, 6
+SetEngineers(12, 6)
 assert(engineerT1:PriorityFunction(engineerBrain) == 0,
     "engineers already being built must satisfy the shortfall")
 -- Compared below the ceiling, or both readings clamp to it and the effect is
 -- invisible. Held plus building stays at or above the recovery floor so the
 -- exception is not what is being measured.
 demand.DesiredEngineers = 8
-engineerHeld, engineerBuilding = 4, 0
+SetEngineers(4, 0)
 local uncommitted = engineerT1:PriorityFunction(engineerBrain)
-engineerHeld, engineerBuilding = 4, 2
+SetEngineers(4, 2)
 local partly = engineerT1:PriorityFunction(engineerBrain)
 assert(partly > 0 and partly < uncommitted,
     "partial in-flight production must reduce the demand, got " .. tostring(partly)
@@ -622,26 +656,50 @@ demand.DesiredEngineers = 18
 
 -- Construction recovery is the exception: an army with almost no engineers
 -- cannot rebuild anything, so that case outranks everything.
-engineerHeld, engineerBuilding = 1, 0
+SetEngineers(1, 0)
 local recovery = engineerT1:PriorityFunction(engineerBrain)
 assert(recovery > constants.Policy.EngineerReplacementPriorityCeiling,
     "an army with almost no engineers must outrank combat production, got "
         .. tostring(recovery))
-engineerHeld, engineerBuilding = 3, 0
-assert(engineerT3:PriorityFunction(engineerBrain)
-        <= constants.Policy.EngineerReplacementPriorityCeiling,
-    "and the exception must end once the army can build again")
+-- And it is a fact about the whole army, not about one tier. Read per tier it
+-- would hold for every upper tier the moment it is empty -- which it always is
+-- at first -- and lift the Tech 3 builder above everything the brain owns.
+SetEngineers(3, 0, 0, 0)
+local emptyUpperTier = engineerT3:PriorityFunction(engineerBrain)
+assert(emptyUpperTier > 0, "an empty upper tier must still be wanted, got "
+    .. tostring(emptyUpperTier))
+assert(emptyUpperTier <= constants.Policy.EngineerReplacementPriorityCeiling,
+    "an empty upper tier is not a construction emergency, got "
+        .. tostring(emptyUpperTier))
+
+-- The keystone. Twenty-five Tech 1 engineers against a target of eighteen is
+-- the LandLarge match exactly: the Tech 1 ladder is rightly finished, and the
+-- Tech 2 one must not be finished with it. Every Tech 2 fortification builder
+-- declares T2EngineerBuilder, so a zero here is why four cells reached Tech 2
+-- and ended on Tech 1 point defence, Tech 1 anti-air and no shield.
+SetEngineers(25, 0, 0, 0)
+assert(engineerT1:PriorityFunction(engineerBrain) == 0,
+    "a roster already past target must stop building Tech 1 engineers")
+assert(engineerT2:PriorityFunction(engineerBrain) > 0,
+    "a wall of Tech 1 engineers must not switch off the Tech 2 ladder")
+
+-- But the upper tiers are not a second army: they are built to their own small
+-- quota and stop, or eighteen of each is added to a roster already over target.
+SetEngineers(25, 0, constants.Policy.UpperTierEngineerQuota, 0)
+assert(engineerT2:PriorityFunction(engineerBrain) == 0,
+    "the upper tier quota is not the army's engineer target")
 
 -- The tiers keep their intended order relative to each other, which the shared
--- function previously flattened.
--- Again below the ceiling, so the static bases are what separates them.
+-- function previously flattened. Compared at equal shortfall and below the
+-- ceiling, so the static bases are what separates them.
 demand.DesiredEngineers = 8
-engineerHeld, engineerBuilding = 6, 0
-assert(engineerT3:PriorityFunction(engineerBrain)
-        > engineerT1:PriorityFunction(engineerBrain),
-    "the Tech 3 engineer builder must outrank the Tech 1 one at equal shortfall, got "
-        .. tostring(engineerT3:PriorityFunction(engineerBrain)) .. " against "
-        .. tostring(engineerT1:PriorityFunction(engineerBrain)))
+SetEngineers(6, 0, 1, 1)
+local tech1 = engineerT1:PriorityFunction(engineerBrain)
+local tech2 = engineerT2:PriorityFunction(engineerBrain)
+local tech3 = engineerT3:PriorityFunction(engineerBrain)
+assert(tech3 > tech2 and tech2 > tech1,
+    "the ladder must keep its order at equal shortfall, got "
+        .. tostring(tech1) .. "/" .. tostring(tech2) .. "/" .. tostring(tech3))
 demand.DesiredEngineers = nil
 
 print("Red Queen support commander contracts passed")
@@ -652,8 +710,6 @@ print("Red Queen support commander contracts passed")
 -- engineers satisfied a target of twelve forever and no Tech 2 engineer was
 -- ever built -- however good the economy got, and however much more build power
 -- the tier carries.
-local engineerT2 = builders["Red Queen Engineer T2"]
-assert(engineerT2, "the Tech 2 engineer builder must be registered")
 
 local tierCounts = { any = 0, t2 = 0, t3 = 0 }
 local tierBrain = {
