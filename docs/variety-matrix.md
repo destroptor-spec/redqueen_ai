@@ -541,3 +541,46 @@ down from behind: it reaches twice the opponent's army, holds mass and
 engineers, spends neither, and is out-scaled from minute 25. That is a different
 defect from the one the matrix's win column suggests, and it is the one worth
 attacking next.
+
+## The engineer ladder: right diagnosis, wrong inference
+
+Four matrices, one per tree, twelve cells each.
+
+| tree | what the engineer ladder did | record |
+| --- | --- | --- |
+| run A | baseline: one priority function, every tier counted at once | **6W/6L** |
+| `6f0bbf2` | tier-aware, upper tiers capped at a quota of 3 | 5W/7L |
+| `a9290de` | quota turned into a floor | 4W/8L |
+| `2e8e262` | floor priced at 690, below every combat builder | 3W/9L |
+| `549712a` | reverted | **6W/6L**, 12/12 with run A |
+
+The diagnosis is not in doubt and the observer now reports it. A Tech 1 engineer
+cannot build a Tech 2 structure. All three engineer builders share one
+`PriorityFunction`, and it counted engineers across every tier; FAF's
+`Builder:CalculatePriority` *replaces* Priority with what it returns, so a roster
+held above target by native production switched off the Tech 2 and Tech 3
+ladders along with their own. Every Tech 2 fortification builder declares
+`T2EngineerBuilder` and so could not form. That is why all four LandLarge cells
+reach Tech 2 and finish on Tech 1 point defence, Tech 1 anti-air and no shield.
+
+What is false is that closing the gap wins games.
+
+**Priced as a shortage it takes the factory from the army.** The claim reached
+910; `Tech2Priority` returns 910 for the combat mainline, so it tied. Sludge
+2071971 Cybran is exact — run A and the fix ran byte-identical for twelve
+samples, diverged at sample 13 on one Tech 2 engineer against one combat unit,
+and the match ended at sample 14 instead of 24.
+
+**Priced below the army it goes inert where it was needed.** At 690, under
+StrategicPriority's 700 floor, the four LandLarge cells returned to zero Tech 2
+engineers -- and the tree still lost three cells elsewhere, because a builder
+merely *present* at a non-zero priority changes what the factory manager
+considers at all. There is no "strictly additive" change to a builder list.
+
+Syrtis Major 8675309 settles the question on its own: under `6f0bbf2` it built
+14 Tech 2 engineers, 6 Tech 2 point defences and reached Tech 3 factories, where
+it had built none of that -- and lost exactly as it always has.
+
+The control also establishes that `Observer.lua` is inert. It is the only
+simulation difference between `549712a` and run A's tree, and all twelve cells
+agree.
