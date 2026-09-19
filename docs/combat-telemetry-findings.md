@@ -127,3 +127,116 @@ size, target, position, distance, local threat and support are covered;
 departure and arrival transitions, retreat and retarget events, and per-platoon
 losses are not. The defensive requirement against *arrived* force is not
 implemented at all -- the existing `claim=` field reports claims only.
+
+# Round two: what the native plans are, and the defence chain end to end
+
+Same six cells, with loss and living mass attributed to the native task
+(`PlatoonFormManager` writes `PlanName` and `BuilderName` onto the handle) and
+with the defensive chain measured from requirement through to arrival. All six
+clean, all outcomes unchanged.
+
+## The two plans that only appear in the losses
+
+Turnover is lost mass per unit of standing mass-sample: high means the force is
+consumed as fast as it is made instead of accumulating.
+
+| plan | lost across the 4 losses | held mass-samples | turnover | lost in the win |
+| --- | ---: | ---: | ---: | ---: |
+| `StateMachineAI` | 58,660 | 401,106 | 0.152 | 2,472 |
+| `RedQueenDirected` | 50,567 | 214,506 | 0.242 | 1,332 |
+| `GuardMarker` | 39,720 | 103,680 | **0.383** | **0** |
+| `GunshipHuntAI` | 12,420 | 18,750 | **0.662** | **0** |
+| `ArmyPool` | 6,865 | 302,794 | 0.024 | 290 |
+| `AttackForceAI` | 0 | 4,840 | 0.000 | 0 |
+
+`GuardMarker` and `GunshipHuntAI` together lose **52,140** mass across the four
+losses -- more than the directed plan's 50,567 -- and lose **exactly nothing in
+the winning cell**. They are the two fastest-turnover plans in the set.
+`GunshipHuntAI` is consumed 4.4x faster per unit of standing force than
+`StateMachineAI`.
+
+`StateMachineAI` is the largest absolute loser everywhere, including the win,
+at the second-lowest turnover. It is the workhorse, not the leak.
+
+`AttackForceAI` holds 4,840 mass-samples and loses nothing at all. It exists and
+never fights.
+
+### What feeds `GunshipHuntAI`
+
+There is **no directed air plan**. `Red Queen Directed Land Attack` exists;
+nothing equivalent for air, so every air unit is handed to native plans.
+
+`Red Queen T2 Air Dominance` (priority 930) and `Red Queen T2 Land Dominance`
+(priority 930) are the same unconditional shape: `ShouldBuildDominantTier`
+passes whenever the domain's highest tier equals that tier and there is no
+stall. No cap, no target, no check that the previous batch survived. They
+produce exactly the two blueprints with ~100% loss rates, `uaa0203` and
+`xal0203`. `GunshipHuntAI` holds 18,750 mass-samples against 12,420 lost: the
+gunship force never accumulates because it is consumed as fast as it is built.
+
+## The defence chain: a claim is not protection, and the deficit is mostly phantom
+
+Per-sample means.
+
+| cell | required | available | claimed | deficit | sent | arrived | arrival rate |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Isis 8675309 | 72.9 | 30.2 | 10.3 | 63.4 | 1.8 | 0.1 | **6.8%** |
+| Isis 31337 | 76.4 | 15.4 | 5.9 | 70.6 | 7.9 | 0.9 | 11.9% |
+| Syrtis 8675309 | 242.4 | 55.7 | 40.2 | 221.1 | 0.6 | 0.2 | 25.0% |
+| Syrtis 31337 | 87.7 | 20.9 | 9.7 | 78.2 | 4.1 | 0.1 | **1.2%** |
+| Sludge 8675309 | 13.9 | 16.9 | 7.4 | 6.8 | 0.9 | 0.9 | 100.0% |
+| **Sentry Point 31337 (win)** | 82.0 | **6.9** | 2.6 | 79.4 | 1.6 | 0.6 | 37.0% |
+
+Two things fall out, and they point in opposite directions from the report's
+reading.
+
+**Arrival is genuinely broken.** Of the force claimed and ordered to a defensive
+objective, 1.2% to 37% is actually standing there when sampled. The secondary
+slot could report what it took; it could never report that almost none of it
+got there.
+
+**The deficit itself is not a claim-ceiling problem.** `available` -- the
+eligible reserve, measured before anything is taken -- is 8% to 45% of the
+requirement on every land cell. The ceiling is not holding force back and the
+attack is not outbidding the defence; there is simply not enough claimable force
+to meet the number. And the **winning** cell has the worst ratio in the set,
+6.9 available against 82.0 required, or 8%. Deficit does not separate a win from
+a loss any more than directed share did.
+
+The structural reason: `ClaimForSecondary` draws only on `GatherAvailableUnits`,
+which is the ArmyPool. Pool share of living combat mass:
+
+| cell | pool share |
+| --- | ---: |
+| Isis 8675309 | 15.1% |
+| Isis 31337 | 10.3% |
+| Syrtis 8675309 | 47.7% |
+| Syrtis 31337 | 16.0% |
+| Sentry Point 31337 | 12.1% |
+
+The defence can only ever bid for roughly a seventh of the army, because native
+plans hold the rest. A requirement scaled to observed threat is being compared
+against a reserve that structurally cannot match it.
+
+## Revised reading
+
+1. **`GuardMarker` and `GunshipHuntAI`.** Highest turnover, 52,140 mass across
+   the four losses, zero in the win. Neither was on any priority list. For the
+   air half the feeding mechanism is identified: an unconditional Tech 2
+   dominance tap with no directed air plan to steer what it makes.
+2. **Defensive arrival, not defensive allocation.** 1.2-37% of dispatched
+   defenders are at their objective. The allocation shortfall is a measurement
+   artefact of comparing a threat-scaled requirement against a pool holding a
+   seventh of the army; it does not discriminate wins from losses.
+3. **Directed arrival** stays where round one left it -- real, bounded to a
+   fifth to a third of losses.
+4. `AttackForceAI` never fighting and `StateMachineAI`'s low turnover both say
+   the ordinary native land workhorse is not the problem.
+
+## Instrument status
+
+Requirement 1 is now complete: controller inventory, mass, idle, losses, **and
+the plan or task each belongs to**. Requirement 3 is complete: requirement,
+eligible reserve, claimed, deficit, dispatched and arrived, per defensive kind.
+Requirement 2 still lacks departure and arrival transition events, retreat and
+retarget events, and per-platoon losses.

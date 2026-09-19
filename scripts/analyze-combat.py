@@ -8,7 +8,10 @@ import subprocess
 
 
 def summarize(text, army):
-    controllers, factories, blueprints = {}, {}, {}
+    controllers, factories, blueprints, plans = {}, {}, {}, {}
+    # A claimed order is not protection; arrived against sent is the difference.
+    defence = {"samples": 0, "samples_with_force_sent": 0, "required": 0,
+               "available": 0, "claimed": 0, "deficit": 0, "sent": 0, "arrived": 0}
     detail = {"samples": 0, "idle_unit_samples": 0, "unit_samples": 0,
               "near_target_samples": 0, "omitted_platoon_samples": 0,
               # A directed platoon carrying no id cannot appear in the detail
@@ -57,6 +60,26 @@ def summarize(text, army):
                     name, values = entry.split(":")
                     built, lost, held = map(int, values.split("/"))
                     blueprints[name] = {"completed": built, "lost": lost, "held": held}
+        elif " combat-plans " in line:
+            for entry in re.search(r"plans=(.*)$", line)[1].strip().split(","):
+                if not entry:
+                    continue
+                name, values = entry.rsplit(":", 1)
+                held, held_mass, lost, lost_mass = map(float, values.split("/"))
+                p = plans.setdefault(name, {"held_unit_samples": 0, "held_mass_samples": 0,
+                                            "lost_units": 0, "lost_mass": 0})
+                p["held_unit_samples"] += held
+                p["held_mass_samples"] += held_mass
+                # Cumulative, so the last sample is the total, not a sum.
+                p["lost_units"] = lost
+                p["lost_mass"] = lost_mass
+        elif " combat-defence " in line:
+            v = dict(re.findall(r"(\w+)=([\d.]+)", line))
+            defence["samples"] += 1
+            for key in ("required", "available", "claimed", "deficit", "sent", "arrived"):
+                defence[key] += float(v.get(key, 0))
+            if float(v.get("sent", 0)) > 0:
+                defence["samples_with_force_sent"] += 1
         elif " combat-platoon " in line:
             values = dict(re.findall(r"(\w+)=([^ ]+)", line))
             detail["samples"] += 1
@@ -66,7 +89,8 @@ def summarize(text, army):
                 detail["near_target_samples"] += 1
     return {"army": army, "state_samples": samples, "controllers": controllers,
             "repeated_death_callbacks": repeated_deaths,
-            "factories": factories, "blueprints": blueprints, "directed_detail": detail}
+            "factories": factories, "blueprints": blueprints, "plans": plans,
+            "defence": defence, "directed_detail": detail}
 
 
 def main():

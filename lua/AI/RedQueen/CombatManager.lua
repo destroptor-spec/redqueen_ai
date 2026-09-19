@@ -637,6 +637,13 @@ CombatManager = ClassSimple {
         for _, unit in pairs(units) do
             unit.RedQueenOrderUntil = orderUntil
             unit.RedQueenWaveUntil = nil
+            -- Where this unit was actually sent, recorded at the one place an
+            -- order is issued. Read only by diagnostics: a claim is not
+            -- protection, and nothing so far could tell an order that was given
+            -- from force that arrived.
+            unit.RedQueenSentTo = objective.Position
+            unit.RedQueenSentKind = objective.Type
+            unit.RedQueenSentTick = GetGameTick()
         end
         return true
     end,
@@ -1031,6 +1038,16 @@ CombatManager = ClassSimple {
 
         local claimed = { Land = {}, Amphibious = {}, Hover = {}, Air = {}, Water = {} }
         local taken = 0
+        -- The reserve the requirement could have drawn on, before any of it
+        -- was taken. Without it a shortfall cannot be told apart from an army
+        -- that was never there to claim.
+        local eligible = 0
+        for _, units in pairs(groups) do
+            for _, unit in pairs(units) do
+                eligible = eligible + UnitThreat(unit)
+            end
+        end
+        self.SecondaryAvailableThreat = eligible
         for layer, units in pairs(groups) do
             local available = table.getn(units)
             local cap = math.floor(available * ceiling)
@@ -1067,6 +1084,7 @@ CombatManager = ClassSimple {
         self.SlotDispatch = { Primary = 0, Secondary = 0 }
         self.SecondaryClaimedThreat = 0
         self.SecondaryRequiredThreat = 0
+        self.SecondaryAvailableThreat = 0
         self.SecondaryUnmet = false
 
         -- Both slots are served from one pool. The secondary takes what its

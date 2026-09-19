@@ -28,9 +28,28 @@ function Controller(unit, pool)
     return "nativeLand"
 end
 
+-- What a platoon was told to do, as the name its former set on it.
+--
+-- `PlatoonFormManager` writes `PlanName` (the template's plan, or the builder's
+-- `GetPlatoonAIPlan()`) and `BuilderName` onto the handle, so this is the
+-- native task without inferring anything. Controller alone said two thirds of
+-- the dying mass was outside our directed plan; it could not say what the rest
+-- was sent at.
+local function PlanName(unit, pool)
+    local platoon = unit.PlatoonHandle
+    if not platoon then return "unassigned" end
+    if platoon == pool then return "ArmyPool" end
+    if platoon.RedQueenDirected then return "RedQueenDirected" end
+    local name = platoon.PlanName or platoon.BuilderName
+    if type(name) ~= "string" or name == "" then return "unknown" end
+    return name
+end
+
 local function State(brain)
     if not brain.RedQueenCombatTelemetry then
-        brain.RedQueenCombatTelemetry = { Blueprints = {}, Lost = {}, RepeatedDeaths = 0 }
+        brain.RedQueenCombatTelemetry = {
+            Blueprints = {}, Lost = {}, LostByPlan = {}, RepeatedDeaths = 0,
+        }
     end
     return brain.RedQueenCombatTelemetry
 end
@@ -61,8 +80,22 @@ function Record(brain, unit, event)
         local pool = brain:GetPlatoonUniquelyNamed("ArmyPool")
         local controller = Controller(unit, pool)
         state.Lost[controller] = (state.Lost[controller] or 0) + Mass(bp)
+        -- PlatoonHandle still holds here: native Unit:OnKilled notifies the
+        -- brain before anything clears it, and PlatoonDisband clears it later.
+        local plan = PlanName(unit, pool)
+        local record = state.LostByPlan[plan] or { Mass = 0, Count = 0 }
+        state.LostByPlan[plan] = record
+        record.Mass = record.Mass + Mass(bp)
+        record.Count = record.Count + 1
     end
 end
+
+-- How close counts as arrived.
+--
+-- A measurement threshold, not a policy knob: nothing reads it to decide
+-- anything. Matched to the radius the directed-platoon detail already uses for
+-- "at its target", so the two figures mean the same thing.
+local ArrivalRadius = 35
 
 local function Distance(a, b)
     if not a or not b then return -1 end
@@ -80,7 +113,8 @@ end
 function Collect(brain)
     local state = State(brain)
     local pool = brain:GetPlatoonUniquelyNamed("ArmyPool")
-    local result = { Controllers = {}, Platoons = {}, Factories = {}, Inventory = {}, Unkeyed = 0 }
+    local result = { Controllers = {}, Platoons = {}, Factories = {}, Inventory = {},
+        Plans = {}, Sent = {}, Unkeyed = 0 }
     for _, name in ipairs(Controllers) do
         result.Controllers[name] = { Count = 0, Mass = 0, Idle = 0, Lost = state.Lost[name] or 0 }
     end
@@ -98,6 +132,30 @@ function Collect(brain)
                 if idle then bucket.Idle = bucket.Idle + 1 end
                 local id = bp.BlueprintId or unit.UnitId or "unknown"
                 result.Inventory[id] = (result.Inventory[id] or 0) + 1
+                local plan = PlanName(unit, pool)
+                local living = result.Plans[plan] or { Mass = 0, Count = 0 }
+                result.Plans[plan] = living
+                living.Mass = living.Mass + Mass(bp)
+                living.Count = living.Count + 1
+                -- Ordered somewhere, and whether it is there yet. A claim is
+                -- not protection: the secondary slot could report the force it
+                -- took but never whether any of it reached the thing it was
+                -- taken to defend.
+                if unit.RedQueenSentTo and unit.GetPosition then
+                    local kind = unit.RedQueenSentKind or "unknown"
+                    local sent = result.Sent[kind]
+                    if not sent then
+                        sent = { Count = 0, Mass = 0, Arrived = 0, ArrivedMass = 0 }
+                        result.Sent[kind] = sent
+                    end
+                    sent.Count = sent.Count + 1
+                    sent.Mass = sent.Mass + Mass(bp)
+                    local travelled = Distance(unit:GetPosition(), unit.RedQueenSentTo)
+                    if travelled >= 0 and travelled <= ArrivalRadius then
+                        sent.Arrived = sent.Arrived + 1
+                        sent.ArrivedMass = sent.ArrivedMass + Mass(bp)
+                    end
+                end
                 if name == "directed" then
                     local platoon = unit.PlatoonHandle
                     local key = platoon.RedQueenDirectedId
@@ -173,6 +231,60 @@ function Report(brain, modules)
     Logger.Info(brain, string.format("combat-production t=%.0f factories=%s units=%s",
         tick / 10, table.concat(factories, ","), table.concat(blueprints, ",")))
 
+    -- What each task is holding and what it has lost, worst loss first.
+    --
+    -- Bounded to the twelve heaviest losers and the total disclosed, because
+    -- the number of distinct native plans is not ours to bound.
+    local planNames = {}
+    for name in pairs(state.LostByPlan) do planNames[name] = true end
+    for name in pairs(facts.Plans) do planNames[name] = true end
+    local ordered = SortedKeys(planNames)
+    table.sort(ordered, function(a, b)
+        local am = (state.LostByPlan[a] or {}).Mass or 0
+        local bm = (state.LostByPlan[b] or {}).Mass or 0
+        if am ~= bm then return am > bm end
+        return a < b
+    end)
+    local plans = {}
+    for index = 1, math.min(12, table.getn(ordered)) do
+        local name = ordered[index]
+        local lost = state.LostByPlan[name] or { Mass = 0, Count = 0 }
+        local living = facts.Plans[name] or { Mass = 0, Count = 0 }
+        table.insert(plans, string.format("%s:%d/%.0f/%d/%.0f",
+            name, living.Count, living.Mass, lost.Count, lost.Mass))
+    end
+    Logger.Info(brain, string.format("combat-plans t=%.0f shown=%d/%d plans=%s",
+        tick / 10, math.min(12, table.getn(ordered)), table.getn(ordered),
+        table.concat(plans, ",")))
+
+    -- The defensive chain end to end: what was required, what there was to
+    -- draw on, what was taken, and what is actually standing there.
+    --
+    -- The secondary slot already reported required against claimed. Claimed is
+    -- an order, not protection -- so the shortfall could never be told apart
+    -- from force that was taken and never got there, nor from a reserve that
+    -- was never large enough to claim from in the first place.
+    local combat = modules.Combat or {}
+    local required = combat.SecondaryRequiredThreat or 0
+    local claimed = combat.SecondaryClaimedThreat or 0
+    local available = combat.SecondaryAvailableThreat or 0
+    local enRoute, arrived, arrivedMass = 0, 0, 0
+    local kinds = {}
+    for _, kind in ipairs({ "Defend", "Support", "Reinforce", "Investigate" }) do
+        local sent = facts.Sent[kind]
+        if sent then
+            enRoute = enRoute + sent.Count
+            arrived = arrived + sent.Arrived
+            arrivedMass = arrivedMass + sent.ArrivedMass
+            table.insert(kinds, string.format("%s:%d/%d/%.0f/%.0f",
+                kind, sent.Count, sent.Arrived, sent.Mass, sent.ArrivedMass))
+        end
+    end
+    Logger.Info(brain, string.format(
+        "combat-defence t=%.0f required=%.0f available=%.0f claimed=%.0f deficit=%.0f sent=%d arrived=%d arrivedmass=%.0f kinds=%s",
+        tick / 10, required, available, claimed, math.max(0, required - claimed),
+        enRoute, arrived, arrivedMass, table.concat(kinds, ",")))
+
     local keys = SortedKeys(facts.Platoons)
     -- Twelve detail lines per minute maximum; always disclose omitted groups.
     for index = 1, math.min(12, table.getn(keys)) do
@@ -198,6 +310,8 @@ function Report(brain, modules)
     end
     return " combatctl=" .. table.concat(summary, ",")
         .. " combatdetail=" .. tostring(math.min(12, table.getn(keys))) .. "/" .. tostring(table.getn(keys))
+        .. " combatdefence=" .. string.format("%.0f/%.0f/%.0f/%d/%d",
+            required, available, claimed, enRoute, arrived)
         .. " combatunkeyed=" .. tostring(facts.Unkeyed)
         .. " combatdeathrepeats=" .. tostring(state.RepeatedDeaths)
 end

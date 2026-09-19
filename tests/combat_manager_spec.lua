@@ -1516,6 +1516,31 @@ assert(slotManager.SlotDispatch.Secondary <= 4,
         .. tostring(slotManager.SlotDispatch.Secondary))
 assert(not slotManager.SecondaryUnmet, "a requirement inside the ceiling is not unmet")
 
+-- The reserve the requirement could have drawn on, before any of it was taken.
+--
+-- Required against claimed cannot tell a ceiling that held force back from an
+-- army that was never there to claim from. Ten units of ten threat is a hundred
+-- available against a requirement of thirty, so a shortfall here would be a
+-- choice and not a shortage.
+assert(slotManager.SecondaryAvailableThreat >= 100,
+    "the eligible reserve is measured before the claim, got "
+        .. tostring(slotManager.SecondaryAvailableThreat))
+assert(slotManager.SecondaryAvailableThreat > slotManager.SecondaryClaimedThreat,
+    "a reserve larger than the claim is what makes an unmet requirement a decision")
+
+-- Where a dispatched unit was sent, recorded at the one place an order issues.
+-- Nothing could previously tell an order that was given from force that arrived.
+local sentToDefence = 0
+for _, unit in ipairs(slotUnits) do
+    if unit.RedQueenSentTo and unit.RedQueenSentKind == "Defend" then
+        sentToDefence = sentToDefence + 1
+    end
+end
+assert(sentToDefence > 0,
+    "a unit dispatched to the defence must record the destination it was given")
+assert(sentToDefence <= slotManager.SlotDispatch.Secondary,
+    "only units actually ordered carry a destination, got " .. tostring(sentToDefence))
+
 -- The ceiling bounds it: no defence may take the whole army, however large the
 -- threat that raised it.
 for _, unit in ipairs(slotUnits) do unit.RedQueenOrderUntil = nil end
