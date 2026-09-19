@@ -342,3 +342,81 @@ likelier reading and must be tested before treating this as an air problem.
 Opportunity cost of constraining it: gunships are the only Red Queen answer to
 an enemy that fields no anti-air, and the `GunshipCounter` doctrine holds for
 30-38% of samples on these cells. A cap must not make the doctrine inert.
+
+# Why small maps are won and large maps are lost
+
+## The army is split across more places on a large map
+
+Distinct aim points are the rounded target positions the directed plan actually
+pursued, so this is where the army was sent, not where it could have gone.
+
+| cell | size | distinct aim points | max spread | result |
+| --- | --- | ---: | ---: | --- |
+| Sentry Point 31337 | 5 km | **3** | **101** | victory |
+| Syrtis Major 31337 | 10 km | 7 | 231 | defeat |
+| Syrtis Major 8675309 | 10 km | 12 | 288 | defeat |
+| Fields of Isis 31337 | 10 km | 13 | 345 | defeat |
+| Fields of Isis 8675309 | 10 km | **19** | **358** | defeat |
+
+Median platoon size is three in every one of these cells. On Sentry Point that
+army has three places to be and they are within 101 of each other. On Fields of
+Isis the same three-unit platoons are spread across nineteen destinations up to
+358 apart. Nothing in the terrain concentrates them, and nothing in the code
+does either.
+
+This is the same figure the win/loss discriminator asked for. Peak army, income,
+tech and map share do not separate wins from losses; the winning cell is worst
+on nearly all of them. Dispersion does.
+
+## Red Queen has no model of a land approach
+
+`WorldModel` models `NavalApproaches` -- and only naval. There is no land
+corridor, choke, front or approach concept anywhere in the brain:
+
+```
+$ grep -rn "Approach\|Corridor\|Choke\|Lane" lua/AI/RedQueen/WorldModel.lua
+  ... NavalApproaches only
+$ grep -rn "Approach\|Corridor\|Choke" lua/AI/RedQueen/Profile.lua
+  (nothing)
+```
+
+And the entire difference between a 5 km map and a 20 km map is **one boolean**:
+
+```lua
+self.Scale = "Small"
+if world.MapKilometers >= Constants.Policy.LargeMapKilometers then
+    self.Scale = "Large"
+    self.Name = self.Name == "LandSmall" and "LandLarge" or self.Name .. "Large"
+    self.Flags.TierReadinessObsolescence = true
+end
+```
+
+`TierReadinessObsolescence` is about when to retire low-tier production. Nothing
+about the number of ways in, force distribution, reinforcement travel time, how
+many places must be held at once, or concentration.
+
+So on a small map the terrain concentrates the force for free and Red Queen
+wins. On a large map nothing concentrates it, and the brain has no
+representation that would let it notice. `maps.md` in the strategy skill asks
+for exactly the missing primitive -- *"number, width and connectivity of viable
+approaches"* and *"path distance and estimated travel time to each contested
+site"* -- and lists what it changes: *"force concentration, flanks, congestion,
+reserve placement, and whether a single defensive position matters."*
+
+A suggestive corroboration, not proof: the one domain where Red Queen **does**
+model approaches is naval, and Sludge is 4 wins from 5. Size and approach
+modelling are confounded there -- Sludge is also 5 km -- so this cannot carry
+weight on its own. The land side is clean: no approach model, and every large
+land cell is lost.
+
+## The measurement that would justify building one
+
+Concentration: per sample, the largest own combat mass within one engagement
+radius of a single own cluster, over total own combat mass. If the winning cell
+sits near 1 and the losing cells near 0.2, then committing piecemeal is the
+disease, the approach model is the missing primitive, and the fix belongs in
+`CombatManager`'s commitment gate rather than in any builder.
+
+If concentration is similar across wins and losses, this hypothesis is wrong and
+the collapse after parity is something else -- reinforcement access or retreat
+paths next.
