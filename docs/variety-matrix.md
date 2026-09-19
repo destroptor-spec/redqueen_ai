@@ -752,3 +752,56 @@ shape.
 The alert latch itself is not the defect it looked like. It renews because
 hostiles really are near an anchor every pass in a losing match; the alert is
 reporting the truth. What varies is whether a given consumer should care.
+
+## Scoping factory assistance: reverted, and unmeasurable
+
+Same scope, applied to `UpdateFactoryAssistance`, which passes the test the
+previous two results established -- an assistant adds to unit output rather than
+suspending it. Twelve cells, early-reaped on `GameEnded` so the matrix takes
+twenty-two minutes instead of ninety.
+
+**7W/5L -> 6W/6L.** One cell lost (Sentry Point 2071971 Aeon), none gained.
+
+The more useful finding is that the change could not be evaluated at all.
+`FactoryAssistants` has **no figure in the state line**: `assist=` reports
+`AssistSummary`, which is written only by `MaintainIdleAssistants` and
+`AssignIdleEngineers` -- a different subsystem, already scoped by `37bf144`.
+Mean active assistants while alerted moved 0.41 to 0.12 and 1.84 to 1.26, which
+measures the idle-assistant system, not this one.
+
+So this is the failure AGENTS.md names: a mechanism that ran a full matrix
+leaving no trace. Reverted on the record, and the standing gap is that a
+factory-assistant count belongs in the periodic state line before this is tried
+again.
+
+## Tech 2 defences: resolved by the extractor scope
+
+The four LandLarge cells had never built a Tech 2 defence of any kind. On the
+committed tree they all do, with no change to any fortification builder:
+
+| cell | Tech 2 PD | Tech 2 AA | shields | TMD |
+| --- | --- | --- | --- | --- |
+| Fields of Isis 8675309 | 0 -> **8** | 0 -> **3** | 0 -> **4** | 0 -> **2** |
+| Fields of Isis 31337 | 0 -> **3** | 0 -> **2** | 0 -> **8** | 0 -> **1** |
+| Syrtis Major 8675309 | 0 -> **8** | 0 -> **2** | 0 -> **8** | 0 -> **3** |
+| Syrtis Major 31337 | 0 -> **9** | 0 -> **1** | 0 -> **7** | 0 -> **2** |
+
+Peak Tech 2 engineers 0 -> 11-19 and Tech 3 engineers 0 -> 1-11 on the same
+cells. The `T2EngineerBuilder` gap was real, and it closed itself the moment
+there was an economy to build a Tech 2 engineer with.
+
+There is also no unbounded point-defence defect. `alert.Targets.Ground` is
+`max(4, min(12, ceil(surfaceThreat/12)))` per location, so it is capped; the 44
+observed on one earlier log was several locations on a different tree, not a
+runaway.
+
+## Where this leaves the large maps
+
+Every item on the ranked list is now settled. The four LandLarge cells still
+lose -- with Tech 3 in land and air, three to five times the income, Tech 2
+point defences, shields and tactical missile defence. The economic and
+technological explanations are spent, and the two attempts to widen the alert
+scope past the extractor both cost cells.
+
+That is the honest state: the opening and the economy are no longer what loses
+these matches, and what does has not been identified.
