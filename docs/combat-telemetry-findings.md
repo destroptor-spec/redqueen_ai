@@ -240,3 +240,105 @@ the plan or task each belongs to**. Requirement 3 is complete: requirement,
 eligible reserve, claimed, deficit, dispatched and arrived, per defensive kind.
 Requirement 2 still lacks departure and arrival transition events, retreat and
 retarget events, and per-platoon losses.
+
+# What is assigning `GuardMarker` and `GunshipHuntAI`
+
+Read out of the installed archive (`~/.faforever/gamedata/lua.nx2`), not guessed.
+Red Queen names neither plan anywhere: `grep -rn "GuardMarker\|GunshipHuntAI"
+lua/ hook/` is empty. Both are native, and Red Queen's only contribution is the
+mass that feeds them.
+
+## `GunshipHuntAI` — the loop
+
+`lua/AI/AIBuilders/AIAirAttackBuilders.lua`, template `GunshipAttack`:
+
+| builder | priority | instances | conditions |
+| --- | ---: | ---: | --- |
+| `GunshipAttackT2Frequent` | 100 | 5 | pool has **4+** gunships; fewer than 1 Tech 3 air |
+| `GunshipAttackT1Frequent` | 100 | 5 | pool has 2+ gunships; fewer than 1 Tech 2/3 air |
+| `GunshipAttackT1Cap` | 100 | 5 | unit cap above 90% |
+
+`lua/platoon.lua:2688` is the plan itself:
+
+```lua
+target = self:FindClosestUnit('Attack', 'Enemy', true,
+    categories.EXPERIMENTAL * (categories.LAND + categories.NAVAL + categories.STRUCTURE))
+if not target then
+    target = self:FindClosestUnit('Attack', 'Enemy', true, categories.ALLUNITS - categories.WALL)
+end
+...
+self:AggressiveMoveToLocation(tableCopy(target:GetPosition()))
+...
+WaitSeconds(17)
+```
+
+It flies at the **closest enemy unit of any category** with **no threat check of
+any kind** -- no anti-air avoidance, no threshold, nothing -- and reassesses
+every seventeen seconds. Mobile anti-air and static anti-air are as attractive
+as an extractor.
+
+The loop is closed by our own production. `Red Queen T2 Air Dominance` (priority
+930) fires on `ShouldBuildDominantTier` alone: air's highest tier is 2 and there
+is no stall. No cap, no target, no check that the previous batch survived. So:
+build gunships unconditionally, four of them reach the pool, native forms up to
+five hunt platoons, they fly into anti-air, they die, build more. Red Queen has
+**no directed air plan**, so nothing interrupts it at any point.
+
+That is the 0.662 turnover.
+
+## `GuardMarker` — two different builders share the name
+
+| builder | template | priority | instances | conditions | sends units to |
+| --- | --- | ---: | ---: | --- | --- |
+| `Mass Hunter Gunships` | `GunshipMassHunter` | 950 | 2 | **none -- all commented out** | random `Mass` markers |
+| `Expansion Area Patrol` | `StartLocationAttack2` | 925 | 2 | game time < 300s | random `Expansion Area` markers |
+
+The marker path does gate on threat (`MinThreatThreshold 50`,
+`MaxThreatThreshold 140`), which the hunt path does not. `Mass Hunter Gunships`
+runs all match with no conditions at all; the land patrol only forms in the
+first five minutes.
+
+One native oddity worth recording but not overstating: that builder sets
+`MoveNext = 'GunshipHuntAI'` with the comment `--DUNCAN - was guardbase`.
+`MoveNext` is a marker-selection mode -- `Random`, `Threat`, `Closest` or
+`None` -- not a plan name. `platoon.lua:1103` assigns it into `MoveFirst` and
+recurses, so from the second marker onward the selection mode is a string the
+code does not recognise. The effect on target choice is not measured here.
+
+**Limitation.** The telemetry attributes losses by plan, not by plan crossed with
+blueprint, so the split of `GuardMarker`'s 39,720 mass between the air mass
+hunters and the early land patrol is not established. The unconditional,
+all-match half of it is the air one.
+
+## The discriminator
+
+| cell | gunships built | lost | still held | air tier | result |
+| --- | ---: | ---: | ---: | --- | --- |
+| Isis 8675309 | 47 | 57 | 6 | A2 | defeat |
+| Isis 31337 | 28 | 28 | 0 | A3 | defeat |
+| Syrtis 8675309 | 42 | 42 | 0 | A3 | defeat |
+| Syrtis 31337 | 59 | 57 | 2 | A3 | defeat |
+| **Sentry Point 31337** | **2** | **0** | 3 | A2 | **victory** |
+
+The winning cell reaches air Tech 2 and simply never pours mass into the
+pipeline -- two gunships, none lost. It is not that the win lacks the tier; it
+is that it never runs the loop. Every losing cell builds 28 to 59 and loses
+essentially all of them.
+
+## Where a correction would go
+
+The smallest lever that is ours is `Red Queen T2 Air Dominance`. It is our
+builder, our priority, and it is what fills the pool that native drains into
+anti-air. Native's `GunshipHuntAI` having no threat gate is not ours to fix and
+hooking it is a much larger change than the evidence justifies yet.
+
+Falsifier for that lever: if constraining gunship production simply moves the
+mass into another unconditional tap -- `T2 Land Dominance` is the same shape at
+the same priority -- with the same turnover, then the defect is the shape of the
+dominance builders and not air specifically. Both taps are `ShouldBuildDominantTier`
+at 930, and `xal0203` already dies at 76 built for 76 lost, so that is the
+likelier reading and must be tested before treating this as an air problem.
+
+Opportunity cost of constraining it: gunships are the only Red Queen answer to
+an enemy that fields no anti-air, and the `GunshipCounter` doctrine holds for
+30-38% of samples on these cells. A cap must not make the doctrine inert.
