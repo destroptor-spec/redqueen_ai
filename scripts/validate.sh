@@ -15,6 +15,7 @@ luajit tests/base_lifecycle_spec.lua
 luajit tests/contract_spec.lua
 luajit tests/commander_safety_spec.lua
 luajit tests/combat_manager_spec.lua
+luajit tests/combat_telemetry_spec.lua
 luajit tests/counter_builders_spec.lua
 luajit tests/diagnostics_spec.lua
 luajit tests/economy_manager_spec.lua
@@ -39,6 +40,7 @@ luajit tests/platoon_plans_spec.lua
 luajit tests/narrator_spec.lua
 luajit tests/observer_spec.lua
 python3 tests/analyze_log_spec.py
+python3 tests/analyze_combat_spec.py
 python3 tests/watch_match_spec.py
 python3 -B tests/production_trace_log_spec.py
 python3 -B tests/prepare_runtime_spec.py

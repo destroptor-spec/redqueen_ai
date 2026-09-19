@@ -68,12 +68,17 @@ function ObjectiveAttack(self)
     end
 
     brain.RedQueenDirectedPlatoons = (brain.RedQueenDirectedPlatoons or 0) + 1
+    -- Read only by diagnostics; native plans remain distinguishable from ours.
+    self.RedQueenDirected = true
+    self.RedQueenDirectedId = brain.RedQueenDirectedPlatoons
+    self.RedQueenDirectionBorn = GetGameTick()
     local pursuing = nil
     while brain:PlatoonExists(self) do
         local position, kind = DirectionTarget(brain, self:GetPlatoonPosition(), "Land")
         local key = DirectionKey(position)
         if key and key ~= pursuing then
             pursuing = key
+            self.RedQueenDirectionPosition = position
             self:Stop()
             self:AggressiveMoveToLocation(position)
             brain.RedQueenPlatoonAims = (brain.RedQueenPlatoonAims or 0) + 1

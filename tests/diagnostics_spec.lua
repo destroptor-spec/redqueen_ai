@@ -76,6 +76,8 @@ function import(path)
         return experimentals
     elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/Observer.lua" then
         return { Report = function() end }
+    elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/CombatTelemetry.lua" then
+        return { Report = function() return " combatctl=directed:3/540/0/180 combatdetail=1/1" end }
     end
     error("unexpected import: " .. tostring(path))
 end
@@ -266,6 +268,8 @@ brain.RedQueenExtractorBlocks = 4
 reporter:Update()
 local state = logged[table.getn(logged)]
 assert(state, "Update must log a state line")
+assert(string.find(state, "combatctl=directed:3/540/0/180 combatdetail=1/1", 1, true),
+    "the periodic state must expose controller inventory, losses and detail coverage")
 assert(string.find(state, "assist=2/7/5 acuassist=3 mexgate=under-attack/4", 1, true),
     "normal diagnostics must expose assist activity and blocked native extractor starts")
 

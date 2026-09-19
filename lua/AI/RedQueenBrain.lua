@@ -13,6 +13,7 @@ local PingManager = import("/mods/TheRedQueen/lua/AI/RedQueen/PingManager.lua")
 local ProductionManager = import("/mods/TheRedQueen/lua/AI/RedQueen/ProductionManager.lua")
 local Profile = import("/mods/TheRedQueen/lua/AI/RedQueen/Profile.lua")
 local ProductionTrace = import("/mods/TheRedQueen/lua/AI/RedQueen/ProductionTrace.lua")
+local CombatTelemetry = import("/mods/TheRedQueen/lua/AI/RedQueen/CombatTelemetry.lua")
 local Scheduler = import("/mods/TheRedQueen/lua/AI/RedQueen/Scheduler.lua")
 local ScoutingConfig = import("/mods/TheRedQueen/lua/AI/RedQueen/ScoutingConfig.lua")
 local StrategyDirector = import("/mods/TheRedQueen/lua/AI/RedQueen/StrategyDirector.lua")
@@ -197,11 +198,13 @@ AIBrain = Class(AdaptiveBrain) {
     OnUnitStopBeingBuilt = function(self, unit, builder, layer)
         AdaptiveBrain.OnUnitStopBeingBuilt(self, unit, builder, layer)
         IncomeBonus.OnUnitCreated(self, unit)
+        CombatTelemetry.Record(self, unit, "built")
         local trace = self.RedQueenModules and self.RedQueenModules.ProductionTrace
         if trace then trace:Safe(trace.UnitCompleted, unit, builder) end
     end,
 
     OnUnitKilled = function(self, unit, instigator, damageType, overkillRatio)
+        CombatTelemetry.Record(self, unit, "lost")
         local trace = self.RedQueenModules and self.RedQueenModules.ProductionTrace
         if trace then trace:Safe(trace.UnitLost, unit) end
         AdaptiveBrain.OnUnitKilled(self, unit, instigator, damageType, overkillRatio)

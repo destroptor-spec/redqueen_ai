@@ -2,6 +2,7 @@ local Constants = import("/mods/TheRedQueen/lua/AI/RedQueen/Constants.lua")
 local Logger = import("/mods/TheRedQueen/lua/AI/RedQueen/Logger.lua")
 local Experimentals = import("/mods/TheRedQueen/lua/AI/RedQueen/Experimentals.lua")
 local Observer = import("/mods/TheRedQueen/lua/AI/RedQueen/Observer.lua")
+local CombatTelemetry = import("/mods/TheRedQueen/lua/AI/RedQueen/CombatTelemetry.lua")
 
 ---@class RedQueenDiagnostics
 -- Whether the attack actually received force.
@@ -102,6 +103,7 @@ Diagnostics = ClassSimple {
         -- state line's formatting -- which carries fifty fields and has raised
         -- before.
         Observer.Report(self.Brain, modules)
+        local combatTelemetry = CombatTelemetry.Report(self.Brain, modules)
         local objective = modules.Strategy.CurrentObjective or {}
         -- The two slots, and whether pressure survived whatever else happened.
         -- A win rate cannot tell a defence that cost nothing from one that
@@ -317,7 +319,7 @@ Diagnostics = ClassSimple {
             -- while the other three still hold the ladder down.
             gate.Land2, gate.Land3,
             gate.Air2, gate.Air3,
-            gate.Naval2, gate.Naval3))
+            gate.Naval2, gate.Naval3) .. combatTelemetry)
     end,
 }
 
