@@ -153,6 +153,24 @@ Visual capture is not available on this machine. The game runs under rootless
 XWayland, so an X11 grab of its window returns black, and this build's
 ImageMagick `import` cannot reach the display at all. The log is the view.
 
+### Reaping a finished cell
+
+A match writes `GameEnded` and `JsonStats` and then **sits at the post-game
+screen forever**. `run-matrix.sh` has no timeout of its own, so a driver that
+only waits on the process waits until its own timeout expires: twelve cells took
+ninety minutes where the matches themselves took four minutes each. Wrap each
+cell in `timeout --signal=TERM --kill-after=15s 900s` as the backstop, and poll
+its log so the cell is reaped as soon as the match is actually over:
+
+```bash
+while ! grep -q GameEnded "$log" 2>/dev/null; do sleep 5; done
+sleep 3   # let JsonStats land
+```
+
+Then terminate only processes whose own `/proc/<pid>/cmdline` contains that
+cell's log path, and never one containing `/gpgnet`. With early reaping the same
+twelve cells take twenty-two minutes.
+
 ### Reading the result
 
 ```bash
