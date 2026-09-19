@@ -96,6 +96,43 @@ assert(string.find(logged[3], "Defend:2/1/360/180", 1, true),
 assert(string.find(summary, "combatdefence=120/900/80/2/1", 1, true),
     "the periodic state carries the same chain: " .. summary)
 
+-- Concentration: the heaviest own combat mass in one box, over the total.
+--
+-- The one figure that separated the winning cell from the losing ones was how
+-- many places the army was in, not how much of it there was. Peak army, income,
+-- tech and map share all failed to discriminate.
+local concentrationRestore = units
+local function Placed(id, mass, x, z)
+    local u = Unit(id, tank, mass, native, false)
+    u.GetPosition = function() return { x, 0, z } end
+    return u
+end
+-- Three tanks in one box, one far away: 540 of 720 concentrated.
+units = { Placed("tank", 180, 10, 10), Placed("tank", 180, 40, 40),
+          Placed("tank", 180, 60, 60), Placed("tank", 180, 4000, 4000) }
+logged = {}
+summary = telemetry.Report(brain, modules)
+assert(string.find(summary, "combatconc=540/720/", 1, true),
+    "the heaviest box against the whole army: " .. summary)
+
+-- The same four units, all together: fully concentrated.
+units = { Placed("tank", 180, 10, 10), Placed("tank", 180, 20, 20),
+          Placed("tank", 180, 30, 30), Placed("tank", 180, 40, 40) }
+summary = telemetry.Report(brain, modules)
+assert(string.find(summary, "combatconc=720/720/1", 1, true),
+    "an army in one place reports one occupied cell and total concentration: " .. summary)
+
+-- And spread one per box: concentration collapses to a single unit.
+units = { Placed("tank", 180, 0, 0), Placed("tank", 180, 500, 0),
+          Placed("tank", 180, 0, 500), Placed("tank", 180, 500, 500) }
+summary = telemetry.Report(brain, modules)
+assert(string.find(summary, "combatconc=180/720/4", 1, true),
+    "four separated units concentrate nothing: " .. summary)
+-- Put the shared fixture back; the assertions below read it.
+units = concentrationRestore
+logged = {}
+summary = telemetry.Report(brain, modules)
+
 -- What a platoon was told to do, not just who owns it.
 --
 -- Controller alone said two thirds of the dying mass was outside our directed

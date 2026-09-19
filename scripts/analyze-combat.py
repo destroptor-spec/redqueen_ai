@@ -10,6 +10,8 @@ import subprocess
 def summarize(text, army):
     controllers, factories, blueprints, plans = {}, {}, {}, {}
     # A claimed order is not protection; arrived against sent is the difference.
+    # The share of our own combat mass that is in one fight at one time.
+    conc = {"samples": 0, "largest_mass": 0, "total_mass": 0, "occupied_cells": 0}
     defence = {"samples": 0, "samples_with_force_sent": 0, "required": 0,
                "available": 0, "claimed": 0, "deficit": 0, "sent": 0, "arrived": 0}
     detail = {"samples": 0, "idle_unit_samples": 0, "unit_samples": 0,
@@ -38,6 +40,12 @@ def summarize(text, army):
             match = re.search(r"combatdetail=(\d+)/(\d+)", line)
             if match:
                 detail["omitted_platoon_samples"] += int(match[2]) - int(match[1])
+            match = re.search(r"combatconc=([\d.]+)/([\d.]+)/(\d+)", line)
+            if match:
+                conc["samples"] += 1
+                conc["largest_mass"] += float(match[1])
+                conc["total_mass"] += float(match[2])
+                conc["occupied_cells"] += int(match[3])
             match = re.search(r"combatunkeyed=(\d+)", line)
             if match:
                 detail["unkeyed_unit_samples"] += int(match[1])
@@ -90,7 +98,7 @@ def summarize(text, army):
     return {"army": army, "state_samples": samples, "controllers": controllers,
             "repeated_death_callbacks": repeated_deaths,
             "factories": factories, "blueprints": blueprints, "plans": plans,
-            "defence": defence, "directed_detail": detail}
+            "defence": defence, "concentration": conc, "directed_detail": detail}
 
 
 def main():

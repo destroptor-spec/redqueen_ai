@@ -97,6 +97,13 @@ end
 -- "at its target", so the two figures mean the same thing.
 local ArrivalRadius = 35
 
+-- Half the side of the box concentration is measured in.
+--
+-- Units within this of each other are in one fight: past a Tech 3 direct-fire
+-- range, short of a separate engagement. A measurement constant, not a policy
+-- knob -- nothing reads it to decide anything.
+local ConcentrationRadius = 50
+
 local function Distance(a, b)
     if not a or not b then return -1 end
     local x, z = a[1] - b[1], a[3] - b[3]
@@ -114,7 +121,7 @@ function Collect(brain)
     local state = State(brain)
     local pool = brain:GetPlatoonUniquelyNamed("ArmyPool")
     local result = { Controllers = {}, Platoons = {}, Factories = {}, Inventory = {},
-        Plans = {}, Sent = {}, Unkeyed = 0 }
+        Plans = {}, Sent = {}, Cells = {}, CombatMass = 0, Unkeyed = 0 }
     for _, name in ipairs(Controllers) do
         result.Controllers[name] = { Count = 0, Mass = 0, Idle = 0, Lost = state.Lost[name] or 0 }
     end
@@ -132,6 +139,25 @@ function Collect(brain)
                 if idle then bucket.Idle = bucket.Idle + 1 end
                 local id = bp.BlueprintId or unit.UnitId or "unknown"
                 result.Inventory[id] = (result.Inventory[id] or 0) + 1
+                -- Grid-bucket for concentration. Cheap and deterministic:
+                -- O(n) here, then a bounded pass over occupied cells below.
+                -- Iterating every unit against every other would be O(n^2) on
+                -- an army of hundreds, once a game minute.
+                if unit.GetPosition then
+                    local at = unit:GetPosition()
+                    if at then
+                        local bx = math.floor(at[1] / ConcentrationRadius)
+                        local bz = math.floor(at[3] / ConcentrationRadius)
+                        local key = tostring(bx) .. ":" .. tostring(bz)
+                        local cell = result.Cells[key]
+                        if not cell then
+                            cell = { X = bx, Z = bz, Mass = 0 }
+                            result.Cells[key] = cell
+                        end
+                        cell.Mass = cell.Mass + Mass(bp)
+                        result.CombatMass = result.CombatMass + Mass(bp)
+                    end
+                end
                 local plan = PlanName(unit, pool)
                 local living = result.Plans[plan] or { Mass = 0, Count = 0 }
                 result.Plans[plan] = living
@@ -200,6 +226,25 @@ function Collect(brain)
             end
         end
     end
+    -- The heaviest own combat mass inside any axis-aligned box of side
+    -- 2 * ConcentrationRadius, taken as the best 2x2 block of cells. An
+    -- approximation of "one fight", stated as one: it does not find the true
+    -- optimal circle, and it never overstates, because every unit it counts is
+    -- genuinely inside that box.
+    local best, occupied = 0, 0
+    for _, cell in pairs(result.Cells) do
+        occupied = occupied + 1
+        local block = 0
+        for dx = 0, 1 do
+            for dz = 0, 1 do
+                local neighbour = result.Cells[tostring(cell.X + dx) .. ":" .. tostring(cell.Z + dz)]
+                if neighbour then block = block + neighbour.Mass end
+            end
+        end
+        if block > best then best = block end
+    end
+    result.Concentration = best
+    result.OccupiedCells = occupied
     return result
 end
 
@@ -310,6 +355,8 @@ function Report(brain, modules)
     end
     return " combatctl=" .. table.concat(summary, ",")
         .. " combatdetail=" .. tostring(math.min(12, table.getn(keys))) .. "/" .. tostring(table.getn(keys))
+        .. " combatconc=" .. string.format("%.0f/%.0f/%d",
+            facts.Concentration or 0, facts.CombatMass or 0, facts.OccupiedCells or 0)
         .. " combatdefence=" .. string.format("%.0f/%.0f/%.0f/%d/%d",
             required, available, claimed, enRoute, arrived)
         .. " combatunkeyed=" .. tostring(facts.Unkeyed)

@@ -9,7 +9,7 @@ spec.loader.exec_module(combat)
 
 class CombatLogTests(unittest.TestCase):
     def test_army_filter_cumulative_losses_and_partial_detail(self):
-        lines = """[army=2] state combatctl=directed:3/540/1/180 combatdetail=12/15 combatunkeyed=2
+        lines = """[army=2] state combatctl=directed:3/540/1/180 combatdetail=12/15 combatconc=540/1800/7 combatunkeyed=2
 [army=3] state combatctl=directed:90/9999/90/9999 combatdetail=0/90
 [army=2] combat-platoon units=3 idle=1 distance=20
 [army=2] combat-production factories=L1:3/1/0/2,L2:1/1/0/0 units=xal0203:8/5/3
@@ -35,6 +35,10 @@ class CombatLogTests(unittest.TestCase):
         self.assertEqual(result["defence"]["sent"], 2)
         self.assertEqual(result["defence"]["arrived"], 1)
         self.assertEqual(result["defence"]["deficit"], 40)
+        # Concentration is a share, so both halves have to survive parsing.
+        self.assertEqual(result["concentration"]["largest_mass"], 540)
+        self.assertEqual(result["concentration"]["total_mass"], 1800)
+        self.assertEqual(result["concentration"]["occupied_cells"], 7)
 
     def test_legacy_logs_do_not_invent_measurements(self):
         result = combat.summarize("[army=2] state directed=200/300", 2)

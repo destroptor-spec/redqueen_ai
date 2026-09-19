@@ -420,3 +420,103 @@ disease, the approach model is the missing primitive, and the fix belongs in
 If concentration is similar across wins and losses, this hypothesis is wrong and
 the collapse after parity is something else -- reinforcement access or retreat
 paths next.
+
+# Concentration: hypothesis falsified
+
+Concentration is own combat mass inside the heaviest axis-aligned box of side
+100, over total own combat mass. Prediction stated before the run: near 1 in the
+win, near 0.2 in the losses.
+
+| cell | size | mean | late-match | occupied cells | result |
+| --- | --- | ---: | ---: | ---: | --- |
+| Sentry Point 31337 | 5 km | **0.63** | 0.63 | 6.3 | victory |
+| Sludge 8675309 | 5 km | **0.99** | 1.00 | 3.4 | **defeat** |
+| Fields of Isis 8675309 | 10 km | 0.58 | 0.55 | 9.1 | defeat |
+| Fields of Isis 31337 | 10 km | 0.66 | 0.54 | 7.4 | defeat |
+| Syrtis Major 8675309 | 10 km | 0.60 | 0.58 | 8.2 | defeat |
+| Syrtis Major 31337 | 10 km | 0.54 | 0.50 | 9.5 | defeat |
+
+**The prediction was wrong.** The winning cell sits inside the losing range, and
+the most concentrated army in the set -- Sludge at 0.99 -- loses. Occupied cells
+differ slightly (6.3 against 7.4-9.5) but nothing like the 3-against-19 the
+directed aim points suggested.
+
+The measure is biased *toward* small maps -- a 100-side box is about 15% of a
+5 km map's area against 4% of a 10 km map's -- and the small map still scores no
+higher. That strengthens the falsification rather than weakening it.
+
+The 3-against-19 dispersion figure was a **directed-plan artefact**. Directed
+platoons are a fifth to a third of the force; the whole army does not behave
+that way. That risk was stated before the run and it is what happened.
+
+Syrtis Major 8675309's 70,250 peak combat mass is one CZAR (`uaa0310`, ~42,000
+mass), so its denominator is not comparable to its siblings. Its concentration
+of 0.60 is mid-range either way.
+
+# The discriminator is the exchange rate
+
+Engine end-of-match `JsonStats`, army 2:
+
+| cell | mass built | mass lost | mass killed | **kill/loss** | result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Sentry Point 31337 | 50,591 | 10,160 | 11,407 | **1.12** | victory |
+| Sludge 8675309 | 21,734 | 9,478 | 3,091 | 0.33 | defeat |
+| Fields of Isis 8675309 | 253,415 | 104,714 | 44,290 | 0.42 | defeat |
+| Syrtis Major 31337 | 254,665 | 127,240 | 68,758 | 0.54 | defeat |
+| Syrtis Major 8675309 | 286,027 | 138,015 | 81,396 | 0.59 | defeat |
+| Fields of Isis 31337 | 198,265 | 81,143 | 54,087 | 0.67 | defeat |
+
+Clean separation, no overlap: the win is the only cell above 1.0. And it is not
+volume -- the losing cells build four to five times as much mass and trade it
+away at roughly two to one against.
+
+Everything else measured this session fails to discriminate: map share (~50%
+everywhere), income, peak army, tech tier, directed share of losses, defensive
+deficit, and now concentration. On several of them the winning cell is the
+worst in the set.
+
+# What the exchange rate is made of
+
+Units completed by role, from the blueprint archive:
+
+| role | Sentry Point (win) | Isis 8675309 | Syrtis 31337 |
+| --- | ---: | ---: | ---: |
+| direct-fire | 68.6% | 51.7% | 52.4% |
+| **fighter** | **21.4%** | 3.9% | 7.4% |
+| **gunship** | **2.9%** | **22.9%** | **19.9%** |
+| artillery | 5.7% | 13.7% | 3.4% |
+| mobile AA | 0% | 0.5% | 8.4% |
+| shield | 0% | 6.8% | 7.8% |
+
+The win builds fighters and almost no gunships, seven to one. The losses invert
+it, four to six gunships per fighter, and those gunships die at essentially
+100%: 47 built against 57 lost, 59 against 57.
+
+So a fifth to a quarter of all unit output on the losing cells goes into the
+pipeline already documented above -- `Red Queen T2 Air Dominance` firing on tier
+availability alone, filling a pool that native `GunshipAttackT2Frequent` drains
+into `GunshipHuntAI`, which attacks the closest enemy unit of any category with
+no threat check whatsoever.
+
+**This revises an earlier judgement in this document.** The gunship pipeline was
+called "a leak, not the disease" on the grounds that leaks had not changed an
+outcome before. That was too quick. It is a fifth of production at a 0:1 trade,
+and the exchange rate is the one measure that separates the win from the losses.
+
+Confound to respect: one win against five losses, and the win is a 5 km map
+where air matters less. The composition correlation cannot carry a conclusion on
+its own. What does not depend on the correlation is the mechanism -- an
+unconditional builder, a native plan with no threat gate, and 100% loss rates
+measured per blueprint.
+
+# Standing state
+
+| candidate | status |
+| --- | --- |
+| map control | measured, does not discriminate |
+| concentration / piecemeal commitment | **falsified** |
+| income, tech, peak army | measured, win is worst |
+| directed-plan arrival | real, bounded to a fifth to a third of losses |
+| defensive arrival | real (1.2-37%), deficit does not discriminate |
+| **exchange rate** | **the only clean discriminator found** |
+| gunship output share | strongest mechanism feeding it |
