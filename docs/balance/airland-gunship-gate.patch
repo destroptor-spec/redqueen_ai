@@ -1,0 +1,85 @@
+diff --git a/lua/AI/RedQueen/CombatTelemetry.lua b/lua/AI/RedQueen/CombatTelemetry.lua
+index 16cf42b..9ed014f 100644
+--- a/lua/AI/RedQueen/CombatTelemetry.lua
++++ b/lua/AI/RedQueen/CombatTelemetry.lua
+@@ -361,4 +361,5 @@ function Report(brain, modules)
+             required, available, claimed, enRoute, arrived)
+         .. " combatunkeyed=" .. tostring(facts.Unkeyed)
+         .. " combatdeathrepeats=" .. tostring(state.RepeatedDeaths)
++        .. " airdominance=" .. tostring(brain.RedQueenAirDominanceGate or "none")
+ end
+diff --git a/lua/AI/RedQueen/CounterBuilders.lua b/lua/AI/RedQueen/CounterBuilders.lua
+index 86ad59d..48242a4 100644
+--- a/lua/AI/RedQueen/CounterBuilders.lua
++++ b/lua/AI/RedQueen/CounterBuilders.lua
+@@ -147,14 +147,11 @@ local function NukePriority(self, aiBrain)
+     return StrategicPriority(aiBrain, "Nuke")
+ end
+ 
+-local function ShouldBuildGunships(aiBrain)
++local function GunshipRefusal(aiBrain)
+     local demand, economy = GetDemand(aiBrain)
+-    if not demand
+-        or economy.StallRisk
+-        or demand.Doctrine ~= "GunshipCounter"
+-    then
+-        return false
+-    end
++    if not demand then return "no-demand" end
++    if economy.StallRisk then return "stall" end
++    if demand.Doctrine ~= "GunshipCounter" then return "doctrine" end
+ 
+     local gunships = aiBrain:GetCurrentUnits(
+         categories.MOBILE * categories.AIR * categories.GROUNDATTACK
+@@ -166,7 +163,12 @@ local function ShouldBuildGunships(aiBrain)
+             - categories.SCOUT
+     )
+     local desired = math.max(6, math.floor(combatUnits * demand.Gunships))
+-    return gunships < desired
++    if gunships >= desired then return "quota" end
++    return nil
++end
++
++local function ShouldBuildGunships(aiBrain)
++    return GunshipRefusal(aiBrain) == nil
+ end
+ 
+ -- Scouts, asked for the same way gunships and anti-air are: a share of the
+@@ -384,7 +386,20 @@ local function ShouldBuildT3Land(aiBrain)
+ end
+ 
+ local function ShouldBuildT2Air(aiBrain)
+-    return ShouldBuildDominantTier(aiBrain, "Air", 2)
++    if not ProfileFlag(aiBrain, "DemandDrivenGunships") then
++        aiBrain.RedQueenAirDominanceGate = "legacy"
++        return ShouldBuildDominantTier(aiBrain, "Air", 2)
++    end
++    -- This produces gunships, not generic T2 air capability. The old tier-only
++    -- condition kept replacing them even after the counter doctrine abandoned
++    -- its losses, and also bypassed its fleet quota. Keep the same demand and
++    -- exit conditions as the explicit gunship counter builder.
++    local reason = "tier-or-stall"
++    if ShouldBuildDominantTier(aiBrain, "Air", 2) then
++        reason = GunshipRefusal(aiBrain)
++    end
++    aiBrain.RedQueenAirDominanceGate = reason or "counter"
++    return reason == nil
+ end
+ 
+ local function ShouldBuildT3Air(aiBrain)
+diff --git a/lua/AI/RedQueen/Profile.lua b/lua/AI/RedQueen/Profile.lua
+index 3084a01..2d27f64 100644
+--- a/lua/AI/RedQueen/Profile.lua
++++ b/lua/AI/RedQueen/Profile.lua
+@@ -109,6 +109,11 @@ Profile = ClassSimple {
+             self.Flags.TierReadinessObsolescence = true
+         end
+ 
++        -- Measured on the large land profile: an unconditional T2 gunship
++        -- queue feeds repeated losses. Applying its counter gate globally lost
++        -- a Sentry Point control, so preserve the other profiles' calibration.
++        self.Flags.DemandDrivenGunships = self.Name == "LandLarge"
++
+         -- Log the inputs alongside the choice. A profile name on its own cannot
+         -- be checked against a match; these four can.
+         Logger.Info(brain, string.format(

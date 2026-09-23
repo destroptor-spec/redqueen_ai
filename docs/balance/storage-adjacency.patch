@@ -1,0 +1,324 @@
+diff --git a/lua/AI/RedQueen/Constants.lua b/lua/AI/RedQueen/Constants.lua
+index 3b6bdd9..9e4c68a 100644
+--- a/lua/AI/RedQueen/Constants.lua
++++ b/lua/AI/RedQueen/Constants.lua
+@@ -252,6 +252,38 @@ Policy = {
+     -- observed fleet of 30 that produced no kills; the transport budget
+     -- diagnostic reports when it engages so it can be tuned from evidence.
+     MaximumTransports = 10,
++    -- Storage bought for adjacency, not for the tank.
++    --
++    -- Verified against the installed blueprints and lua/sim/AdjacencyBuffs.lua,
++    -- not assumed. Every mass extractor is SIZE4, so each adjacent storage adds
++    -- 12.5% of its yield and a 2x2 skirt takes four: +50%. Tech 2 goes 6/s to
++    -- 9/s and pays its 800 mass back in 4.4 minutes, Tech 3 goes 18/s to 27/s
++    -- and pays back in 1.5. Tech 1 at 2/s would take 13 minutes, so it is not
++    -- offered storage at all.
++    MassStoragePerExtractor = 4,
++    -- The hydrocarbon plant is SIZE12, so a storage adds only 8.3% of its
++    -- 100/s. Six are +50 energy a second for 1500 mass -- eight times the mass
++    -- a Tech 1 generator pays for the same energy, so this is not an energy
++    -- play. It is bought for the 60,000 of buffer that keeps StallRisk off and
++    -- as a late incremental gain, and it waits for an economy that can spare
++    -- the mass rather than competing with the opening.
++    EnergyStoragePerHydrocarbon = 6,
++    StorageAdjacencyMinimumMassIncome = 8,
++    -- How much ground defence an alert asks for.
++    --
++    -- Observed in a spectated match: four to five Tech 2 point defences in the
++    -- main base. The floor was 4 and the threat divisor 12, so an ordinary
++    -- alert asked for exactly the floor. Doubling the floor and the ceiling and
++    -- tightening the divisor asks for eight at minimum and scales to
++    -- twenty-four. The tier conditions are mutually exclusive -- NeedsT1Ground
++    -- is false once a Tech 2 engineer exists -- so this does not also multiply
++    -- Tech 1 point defence once the base can build Tech 2.
++    -- Reverted to the original 4/12/12 after the raise cost five of six wins.
++    -- The constants stay because the numbers belong somewhere visible; the
++    -- calibration does not.
++    GroundDefenseTargetFloor = 4,
++    GroundDefenseTargetCeiling = 12,
++    GroundDefenseThreatPerStructure = 12,
+     Tech2MinimumMassIncome = 4,
+     Tech2MinimumEnergyIncome = 60,
+     Tech3MinimumMassIncome = 10,
+diff --git a/lua/AI/RedQueen/CounterBuilders.lua b/lua/AI/RedQueen/CounterBuilders.lua
+index 86ad59d..b641f43 100644
+--- a/lua/AI/RedQueen/CounterBuilders.lua
++++ b/lua/AI/RedQueen/CounterBuilders.lua
+@@ -367,6 +367,52 @@ local function ShouldBuildTechEnergySmall(aiBrain)
+             or aiBrain:GetCurrentUnits(categories.ENGINEER * categories.TECH3) == 0)
+ end
+ 
++-- Storage exists for the adjacency bonus, not for the tank.
++--
++-- Red Queen built no storage of any kind before this. Each adjacent Tech 1 mass
++-- storage adds 12.5% of an extractor's yield (every extractor is SIZE4) and a
++-- 2x2 skirt takes four, so a full ring is +50%: Tech 2 goes 6/s to 9/s and pays
++-- its 800 mass back in 4.4 minutes, Tech 3 goes 18/s to 27/s and pays back in
++-- 1.5. Tech 1 would take 13 minutes and is deliberately not offered one.
++--
++-- Capped at four per upgraded extractor because a fifth touches nothing: the
++-- bonus is adjacency, so anything past the skirt is dead mass.
++local function ShouldBuildMassStorage(aiBrain)
++    local demand, economy = GetDemand(aiBrain)
++    if not demand or economy.StallRisk then
++        return false
++    end
++    local upgraded = aiBrain:GetCurrentUnits(
++        categories.STRUCTURE * categories.MASSEXTRACTION
++            * (categories.TECH2 + categories.TECH3))
++    if upgraded == 0 then
++        return false
++    end
++    local storage = aiBrain:GetCurrentUnits(categories.STRUCTURE * categories.MASSSTORAGE)
++    return storage < upgraded * Constants.Policy.MassStoragePerExtractor
++end
++
++-- The hydrocarbon plant is SIZE12, so its storages are worth far less: 8.3%
++-- each, six for +50 energy a second at 1500 mass, against 188 mass of Tech 1
++-- generators for the same energy. So this is not bought as an energy play. It
++-- is bought for the 60,000 of buffer that keeps StallRisk off a developed
++-- economy, and as a late incremental gain once the mass is genuinely spare.
++local function ShouldBuildEnergyStorage(aiBrain)
++    local demand, economy = GetDemand(aiBrain)
++    if not demand or economy.StallRisk then
++        return false
++    end
++    if economy.MassIncome < Constants.Policy.StorageAdjacencyMinimumMassIncome then
++        return false
++    end
++    local hydro = aiBrain:GetCurrentUnits(categories.STRUCTURE * categories.HYDROCARBON)
++    if hydro == 0 then
++        return false
++    end
++    local storage = aiBrain:GetCurrentUnits(categories.STRUCTURE * categories.ENERGYSTORAGE)
++    return storage < hydro * Constants.Policy.EnergyStoragePerHydrocarbon
++end
++
+ local function ShouldBuildDominantTier(aiBrain, domain, tier)
+     local demand, economy = GetDemand(aiBrain)
+     local policy = demand and demand.TierPolicy and demand.TierPolicy[domain]
+@@ -1238,6 +1284,49 @@ BuilderGroup {
+             },
+         },
+     },
++    Builder {
++        BuilderName = "Red Queen Mass Storage Adjacency",
++        PlatoonTemplate = "EngineerBuilder",
++        Priority = 935,
++        InstanceCount = 2,
++        BuilderType = "Any",
++        BuilderConditions = {
++            { ShouldBuildMassStorage, {} },
++            { InstantBuildConditions, "BrainNotLowPowerMode", {} },
++        },
++        BuilderData = {
++            Construction = {
++                -- Native adjacency placement: AIBuildAdjacency finds our own
++                -- upgraded extractors near this base and puts the storage on
++                -- their skirt. Hand-rolling the four positions would duplicate
++                -- engine behaviour that already exists.
++                AdjacencyCategory = categories.STRUCTURE * categories.MASSEXTRACTION
++                    * (categories.TECH2 + categories.TECH3),
++                AdjacencyDistance = 60,
++                BuildStructures = { "MassStorage" },
++                Location = "LocationType",
++            },
++        },
++    },
++    Builder {
++        BuilderName = "Red Queen Energy Storage Adjacency",
++        PlatoonTemplate = "EngineerBuilder",
++        Priority = 930,
++        InstanceCount = 1,
++        BuilderType = "Any",
++        BuilderConditions = {
++            { ShouldBuildEnergyStorage, {} },
++            { InstantBuildConditions, "BrainNotLowPowerMode", {} },
++        },
++        BuilderData = {
++            Construction = {
++                AdjacencyCategory = categories.STRUCTURE * categories.HYDROCARBON,
++                AdjacencyDistance = 60,
++                BuildStructures = { "EnergyStorage" },
++                Location = "LocationType",
++            },
++        },
++    },
+     Builder {
+         BuilderName = "Red Queen Tech Energy T2",
+         PlatoonTemplate = "T2EngineerBuilder",
+diff --git a/lua/AI/RedQueen/Diagnostics.lua b/lua/AI/RedQueen/Diagnostics.lua
+index e6108a8..2b2e153 100644
+--- a/lua/AI/RedQueen/Diagnostics.lua
++++ b/lua/AI/RedQueen/Diagnostics.lua
+@@ -176,7 +176,7 @@ Diagnostics = ClassSimple {
+         }
+ 
+         Logger.Info(self.Brain, string.format(
+-            "state objective=%s primary=%s/%d secondary=%s/%d pressure=%s claim=%.0f/%.0f%s eco=%s mass=%.1f energy=%.1f factories=%d/%d intel=%d doctrine=%s focus=%s weights=A=%d,T2=%d,T3=%d,X=%d,N=%d ready=%.2f slots=%d reason=%s landloss=%d/%.0f airloss=%d/%.0f airdrop=%s alert=%s/%.1f/%.2f/%s/%.0f/%.0f momentum=%.0f/%.0f/%s tiers=L%d,A%d,N%d forward=%d/%s/%s exp=%s/%d/%d eng=%d/%d/%d engtier=%d/%d/%d cover=%d/%d engpolicy=%d/%d mex=%d/%d scout=%d/%d/%d scoutorders=%d/%d scouts=%d scoutfraction=%.3f/%.3f dispatch=L%d,A%d,W%d,M%d,H%d army=%d/%d/%d held=%d/%d/%d directed=%d/%d assist=%d/%d/%d acuassist=%d mexgate=%s/%d techgate=L%s/%s,A%s/%s,N%s/%s",
++            "state objective=%s primary=%s/%d secondary=%s/%d pressure=%s claim=%.0f/%.0f%s eco=%s mass=%.1f energy=%.1f factories=%d/%d intel=%d doctrine=%s focus=%s weights=A=%d,T2=%d,T3=%d,X=%d,N=%d ready=%.2f slots=%d reason=%s landloss=%d/%.0f airloss=%d/%.0f airdrop=%s alert=%s/%.1f/%.2f/%s/%.0f/%.0f momentum=%.0f/%.0f/%s tiers=L%d,A%d,N%d forward=%d/%s/%s exp=%s/%d/%d eng=%d/%d/%d engtier=%d/%d/%d cover=%d/%d engpolicy=%d/%d mex=%d/%d scout=%d/%d/%d scoutorders=%d/%d scouts=%d scoutfraction=%.3f/%.3f dispatch=L%d,A%d,W%d,M%d,H%d army=%d/%d/%d held=%d/%d/%d directed=%d/%d assist=%d/%d/%d acuassist=%d mexgate=%s/%d storage=%d/%d techgate=L%s/%s,A%s/%s,N%s/%s",
+             tostring(objective.Type or "none"),
+             primary and tostring(primary.Type) or "none",
+             slotDispatch.Primary or 0,
+@@ -310,6 +310,13 @@ Diagnostics = ClassSimple {
+             modules.Production.CommanderAssists or 0,
+             (modules.Production.CoreUpgrade or {}).State or "none",
+             self.Brain.RedQueenExtractorBlocks or 0,
++            -- Storage held, mass then energy. Bought for adjacency, so the
++            -- count is the mechanism: without it a matrix cannot tell a policy
++            -- that never fired from one that fired and did not pay.
++            self.Brain.GetCurrentUnits and self.Brain:GetCurrentUnits(
++                categories.STRUCTURE * categories.MASSSTORAGE) or 0,
++            self.Brain.GetCurrentUnits and self.Brain:GetCurrentUnits(
++                categories.STRUCTURE * categories.ENERGYSTORAGE) or 0,
+             -- Which gate is actually holding each domain's tier ladder down,
+             -- Tech 2 then Tech 3. Four different refusals -- alert, focus,
+             -- mass, energy -- produce the identical outcome of a tier that
+diff --git a/lua/AI/RedQueen/StrategyDirector.lua b/lua/AI/RedQueen/StrategyDirector.lua
+index bb6e3d6..891f221 100644
+--- a/lua/AI/RedQueen/StrategyDirector.lua
++++ b/lua/AI/RedQueen/StrategyDirector.lua
+@@ -1065,7 +1065,13 @@ StrategyDirector = ClassSimple {
+                         -- defence was built at all. On a land map `naval` is 0,
+                         -- so these are unchanged there.
+                         Ground = surfaceThreat > 0
+-                            and math.max(4, math.min(12, math.ceil(surfaceThreat / 12))) or 0,
++                            and math.max(
++                                Constants.Policy.GroundDefenseTargetFloor,
++                                math.min(
++                                    Constants.Policy.GroundDefenseTargetCeiling,
++                                    math.ceil(surfaceThreat
++                                        / Constants.Policy.GroundDefenseThreatPerStructure)))
++                            or 0,
+                         AntiAir = air > 0 and math.max(2, math.min(8, math.ceil(air / 10))) or 0,
+                         Shields = (ratio >= 2 or cluster.DistanceToAnchor <= 60) and 2 or 1,
+                         StrategicMissileDefense = 1,
+diff --git a/tests/counter_builders_spec.lua b/tests/counter_builders_spec.lua
+index cfa015e..05b0a3b 100644
+--- a/tests/counter_builders_spec.lua
++++ b/tests/counter_builders_spec.lua
+@@ -53,6 +53,9 @@ local constants = {
+         StrategicFocusMinimumScore = 35,
+         Tech2MinimumMassIncome = 4,
+         Tech2MinimumEnergyIncome = 60,
++        MassStoragePerExtractor = 4,
++        EnergyStoragePerHydrocarbon = 6,
++        StorageAdjacencyMinimumMassIncome = 8,
+         Tech3MinimumMassIncome = 10,
+         Tech3MinimumEnergyIncome = 250,
+         ExperimentalMinimumMassIncome = 22,
+@@ -164,6 +167,66 @@ local brain = {
+     GetListOfUnits = function() return constructors end,
+ }
+ 
++-- Storage is bought for adjacency, and only where adjacency pays.
++--
++-- Every extractor is SIZE4, so each adjacent storage adds 12.5% and a 2x2
++-- skirt takes four: +50%. Tech 2 pays its 800 mass back in 4.4 minutes and
++-- Tech 3 in 1.5; Tech 1 would take 13, so it is never offered one. The
++-- hydrocarbon plant is SIZE12 and worth only 8.3% a storage, so it waits for
++-- mass that is genuinely spare.
++local massStorage = builders["Red Queen Mass Storage Adjacency"]
++local energyStorage = builders["Red Queen Energy Storage Adjacency"]
++assert(massStorage and energyStorage, "both storage builders must register")
++local massStorageCondition = massStorage.BuilderConditions[1][1]
++local energyStorageCondition = energyStorage.BuilderConditions[1][1]
++
++local massExtractorKey = (categories.STRUCTURE * categories.MASSEXTRACTION
++    * (categories.TECH2 + categories.TECH3)).Name
++local massStorageKey = (categories.STRUCTURE * categories.MASSSTORAGE).Name
++local hydroKey = (categories.STRUCTURE * categories.HYDROCARBON).Name
++local energyStorageKey = (categories.STRUCTURE * categories.ENERGYSTORAGE).Name
++
++-- Nothing upgraded yet: a Tech 1 extractor is not worth a ring of storage.
++unitCounts[massExtractorKey] = 0
++assert(not massStorageCondition(brain), "a Tech 1 only economy gets no mass storage")
++
++unitCounts[massExtractorKey] = 3
++unitCounts[massStorageKey] = 0
++assert(massStorageCondition(brain), "upgraded extractors are worth a ring of storage")
++unitCounts[massStorageKey] = 11
++assert(massStorageCondition(brain), "three extractors still want a twelfth storage")
++unitCounts[massStorageKey] = 12
++assert(not massStorageCondition(brain),
++    "four per upgraded extractor is the whole skirt; a fifth touches nothing")
++economy.StallRisk = true
++unitCounts[massStorageKey] = 0
++assert(not massStorageCondition(brain), "a stall is no time to buy storage")
++economy.StallRisk = false
++
++-- The hydrocarbon ring is a buffer and a late gain, not an energy play, so it
++-- waits for an economy that can spare 1500 mass.
++unitCounts[hydroKey] = 1
++unitCounts[energyStorageKey] = 0
++economy.MassIncome = 4
++assert(not energyStorageCondition(brain),
++    "a developing economy buys generators before it buys buffer")
++economy.MassIncome = 20
++assert(energyStorageCondition(brain), "spare mass buys the buffer")
++unitCounts[energyStorageKey] = 6
++assert(not energyStorageCondition(brain), "six a plant is the whole skirt")
++unitCounts[hydroKey] = 0
++unitCounts[energyStorageKey] = 0
++assert(not energyStorageCondition(brain), "no plant, nothing to be adjacent to")
++unitCounts[hydroKey] = 1
++economy.MassIncome = 10
++
++-- Placement is the engine's, not ours: the builders declare the adjacency
++-- category so AIBuildAdjacency puts the storage on the skirt.
++local massConstruction = massStorage.BuilderData.Construction
++assert(massConstruction.AdjacencyCategory and massConstruction.BuildStructures[1] == "MassStorage",
++    "mass storage must be placed by adjacency, not dropped anywhere near the base")
++assert(energyStorage.BuilderData.Construction.BuildStructures[1] == "EnergyStorage")
++
+ local gunshipCondition = builders["Red Queen T3 Gunship Counter"].BuilderConditions[1][1]
+ assert(gunshipCondition(brain), "land-loss doctrine must enable native gunship builders")
+ 
+diff --git a/tests/diagnostics_spec.lua b/tests/diagnostics_spec.lua
+index ac03a01..3b561d8 100644
+--- a/tests/diagnostics_spec.lua
++++ b/tests/diagnostics_spec.lua
+@@ -280,6 +280,9 @@ assert(string.find(state, "assist=2/7/5 acuassist=3 mexgate=under-attack/4", 1,
+ -- the twelve logged matches with nothing in the log to say which one shut it.
+ -- A domain no builder has evaluated yet reads "none" rather than going absent,
+ -- so the field is greppable from the first sample.
++assert(string.find(state, "storage=1/1 ", 1, true),
++    "the state line must report storage held, or a matrix cannot tell a policy "
++        .. "that never fired from one that fired and did not pay: " .. state)
+ assert(string.find(state, "techgate=Lnone/none,Anone/none,Nnone/none", 1, true),
+     "the state line must report the tier-ladder refusal per domain: " .. state)
+ brain.RedQueenTechGate = { Land2 = "ok", Land3 = "energy", Air3 = "alert" }
+diff --git a/tests/strategy_director_spec.lua b/tests/strategy_director_spec.lua
+index 1d4c253..3b50711 100644
+--- a/tests/strategy_director_spec.lua
++++ b/tests/strategy_director_spec.lua
+@@ -111,6 +111,9 @@ local constants = {
+         AirDropRequestCooldownSeconds = 90,
+         AirDropDiagnosticSeconds = 30,
+         MaximumAirDropTransports = 2,
++        GroundDefenseTargetFloor = 4,
++        GroundDefenseTargetCeiling = 12,
++        GroundDefenseThreatPerStructure = 12,
+         Tech2MinimumMassIncome = 4,
+         Tech2MinimumEnergyIncome = 60,
+         Tech3MinimumMassIncome = 10,
+@@ -1546,6 +1549,18 @@ assert(director.DefenseAlert.FriendlyThreat == 0)
+ -- all three, or a bombarded base builds nothing.
+ assert(director.DefenseAlert.Targets.Ground > 0,
+     "a fleet-only attack must still call for point defence, which fires on ships")
++-- How much it calls for, not merely that it calls.
++--
++-- Observed in a spectated match: four to five Tech 2 point defences in the main
++-- base, because the floor was 4 and an ordinary alert never cleared it. The
++-- target is the floor at minimum, scales on the threat divisor, and stops at
++-- the ceiling -- so a change to any of the three is visible here rather than
++-- only in a match.
++assert(director.DefenseAlert.Targets.Ground >= constants.Policy.GroundDefenseTargetFloor,
++    "an alert asks for the floor at minimum, got "
++        .. tostring(director.DefenseAlert.Targets.Ground))
++assert(director.DefenseAlert.Targets.Ground <= constants.Policy.GroundDefenseTargetCeiling,
++    "and never more than the ceiling")
+ assert(director.DefenseAlert.Targets.TacticalMissiles > 0,
+     "a fleet-only attack must still call for tactical missiles")
+ assert(director.DefenseAlert.Targets.Artillery > 0,

@@ -1,0 +1,294 @@
+{
+  "format": 1,
+  "description": "Retained large-land gunship gate: 8W/4L. Every reference victory must remain a victory; scope is these exact strict 1v1 cases.",
+  "cases": [
+    {
+      "settings": {
+        "map": "SCMP_015",
+        "seed": 31337,
+        "rq_faction": 2,
+        "opponent_faction": 3,
+        "victory": "Assassination",
+        "income": "1.00",
+        "starts": [
+          "449.5,328.5",
+          "61.5,325.5"
+        ],
+        "scouting": "combined",
+        "difficulty": 44,
+        "native_lua_sha256": "ac520415c718a69c28ce7fc92e41dd9650602874c18460f8e9ad9f97a83028f8"
+      },
+      "result": "defeat",
+      "killed_mass": 82012.071875,
+      "lost_mass": 92114.03203125,
+      "stats_sha256": "91ec06c2a13f20d2f17754f1c4a4c637b96b38888857e656cef59df056dc77f4",
+      "payload_sha256": "e1f97d29559e15aa4882af430e24b35dbf1292903275677ba1b64a45d251d724",
+      "log": "/tmp/rq-m-combat-airland-isis-31337-aeon.log",
+      "log_sha256": "25abe9666f146174e9830fa348f573612640b75e15ade857385c0535de64f591"
+    },
+    {
+      "settings": {
+        "map": "SCMP_015",
+        "seed": 8675309,
+        "rq_faction": 2,
+        "opponent_faction": 3,
+        "victory": "Assassination",
+        "income": "1.00",
+        "starts": [
+          "449.5,328.5",
+          "61.5,325.5"
+        ],
+        "scouting": "combined",
+        "difficulty": 44,
+        "native_lua_sha256": "ac520415c718a69c28ce7fc92e41dd9650602874c18460f8e9ad9f97a83028f8"
+      },
+      "result": "victory",
+      "killed_mass": 106636.08671875,
+      "lost_mass": 72609.084375,
+      "stats_sha256": "6bfa88b8814fac020fd7a162bb4aa7b6c468fd14290e0a87b5f1f5b56113e970",
+      "payload_sha256": "e1f97d29559e15aa4882af430e24b35dbf1292903275677ba1b64a45d251d724",
+      "log": "/tmp/rq-m-combat-airland-isis-8675309-aeon.log",
+      "log_sha256": "7ee498da8c740ed237584494929c8f7434eae02eaf805078f53f52f3c8adade7"
+    },
+    {
+      "settings": {
+        "map": "SCMP_037",
+        "seed": 2071971,
+        "rq_faction": 2,
+        "opponent_faction": 3,
+        "victory": "Assassination",
+        "income": "1.00",
+        "starts": [
+          "69.5,89.5",
+          "190.5,93.5"
+        ],
+        "scouting": "combined",
+        "difficulty": 44,
+        "native_lua_sha256": "ac520415c718a69c28ce7fc92e41dd9650602874c18460f8e9ad9f97a83028f8"
+      },
+      "result": "victory",
+      "killed_mass": 4878.09150390625,
+      "lost_mass": 2160,
+      "stats_sha256": "2c6c0560e581b145fcedad48cec958aa8a65c1b5087a735792875ed78d345987",
+      "payload_sha256": "e1f97d29559e15aa4882af430e24b35dbf1292903275677ba1b64a45d251d724",
+      "log": "/tmp/rq-m-combat-airland-naval-2071971-aeon.log",
+      "log_sha256": "c26d0710a4ff75ef370fa7a2d3c1ae137bce5e8bc6577c73706bb01597bd8b9e"
+    },
+    {
+      "settings": {
+        "map": "SCMP_037",
+        "seed": 2071971,
+        "rq_faction": 3,
+        "opponent_faction": 3,
+        "victory": "Assassination",
+        "income": "1.00",
+        "starts": [
+          "69.5,89.5",
+          "190.5,93.5"
+        ],
+        "scouting": "combined",
+        "difficulty": 44,
+        "native_lua_sha256": "ac520415c718a69c28ce7fc92e41dd9650602874c18460f8e9ad9f97a83028f8"
+      },
+      "result": "victory",
+      "killed_mass": 37338.07578125,
+      "lost_mass": 13491.0291015625,
+      "stats_sha256": "327468572756e29e331bad7e52b68d6112c5ec6b715574b0f5b839b41ad57d94",
+      "payload_sha256": "e1f97d29559e15aa4882af430e24b35dbf1292903275677ba1b64a45d251d724",
+      "log": "/tmp/rq-m-combat-airland-naval-2071971-cybran.log",
+      "log_sha256": "efdb0e4693041b84b997466f1aa1a90820e3ee6704d4d0de10724c70b7f8d3fa"
+    },
+    {
+      "settings": {
+        "map": "SCMP_037",
+        "seed": 2071971,
+        "rq_faction": 4,
+        "opponent_faction": 3,
+        "victory": "Assassination",
+        "income": "1.00",
+        "starts": [
+          "69.5,89.5",
+          "190.5,93.5"
+        ],
+        "scouting": "combined",
+        "difficulty": 44,
+        "native_lua_sha256": "ac520415c718a69c28ce7fc92e41dd9650602874c18460f8e9ad9f97a83028f8"
+      },
+      "result": "victory",
+      "killed_mass": 43555.02734375,
+      "lost_mass": 18988.0365234375,
+      "stats_sha256": "4a1964ac38dc54ee17c7520bc9f09212afb6d4214911c3828182d38e4f5828bf",
+      "payload_sha256": "e1f97d29559e15aa4882af430e24b35dbf1292903275677ba1b64a45d251d724",
+      "log": "/tmp/rq-m-combat-airland-naval-2071971-sera.log",
+      "log_sha256": "ae3a9441cf37c91556d9b35dac57ed240dcd8188db68629feb91bfde101f6800"
+    },
+    {
+      "settings": {
+        "map": "SCMP_037",
+        "seed": 31337,
+        "rq_faction": 4,
+        "opponent_faction": 3,
+        "victory": "Assassination",
+        "income": "1.00",
+        "starts": [
+          "69.5,89.5",
+          "190.5,93.5"
+        ],
+        "scouting": "combined",
+        "difficulty": 44,
+        "native_lua_sha256": "ac520415c718a69c28ce7fc92e41dd9650602874c18460f8e9ad9f97a83028f8"
+      },
+      "result": "victory",
+      "killed_mass": 16805.06015625,
+      "lost_mass": 15486.0759765625,
+      "stats_sha256": "df5d0fe6c8ac471e0f07448e3a033de555e70caa6d6031413a1960f7ba54a646",
+      "payload_sha256": "e1f97d29559e15aa4882af430e24b35dbf1292903275677ba1b64a45d251d724",
+      "log": "/tmp/rq-m-combat-airland-naval-31337-sera.log",
+      "log_sha256": "c1ed30c289f96384a439466274c1ed5998c140cc3823ab53d16c0310a942ac04"
+    },
+    {
+      "settings": {
+        "map": "SCMP_037",
+        "seed": 8675309,
+        "rq_faction": 4,
+        "opponent_faction": 3,
+        "victory": "Assassination",
+        "income": "1.00",
+        "starts": [
+          "69.5,89.5",
+          "190.5,93.5"
+        ],
+        "scouting": "combined",
+        "difficulty": 44,
+        "native_lua_sha256": "ac520415c718a69c28ce7fc92e41dd9650602874c18460f8e9ad9f97a83028f8"
+      },
+      "result": "defeat",
+      "killed_mass": 3091.00646972656,
+      "lost_mass": 9478.0201171875,
+      "stats_sha256": "b925741c05612d643484386c38d2bb385470417986500704ca69e6adcceca34b",
+      "payload_sha256": "e1f97d29559e15aa4882af430e24b35dbf1292903275677ba1b64a45d251d724",
+      "log": "/tmp/rq-m-combat-airland-naval-8675309-sera.log",
+      "log_sha256": "e40bce59b616aa822474b40ab4e1eba982342fb9dab9362d324b5c3783b4eb8c"
+    },
+    {
+      "settings": {
+        "map": "SCMP_018",
+        "seed": 2071971,
+        "rq_faction": 2,
+        "opponent_faction": 3,
+        "victory": "Assassination",
+        "income": "1.00",
+        "starts": [
+          "217.5,70.5",
+          "132.5,228.5"
+        ],
+        "scouting": "combined",
+        "difficulty": 44,
+        "native_lua_sha256": "ac520415c718a69c28ce7fc92e41dd9650602874c18460f8e9ad9f97a83028f8"
+      },
+      "result": "victory",
+      "killed_mass": 14800.0482421875,
+      "lost_mass": 10582.0825195313,
+      "stats_sha256": "722fe8532287e7b335fa0016e72c18b783455fdda0318973b2f786483c6992e2",
+      "payload_sha256": "e1f97d29559e15aa4882af430e24b35dbf1292903275677ba1b64a45d251d724",
+      "log": "/tmp/rq-m-combat-airland-small-2071971-aeon.log",
+      "log_sha256": "10507edeac2d610bbd155a4dfc6d14899f91fc78583ec190074cadf945e724fb"
+    },
+    {
+      "settings": {
+        "map": "SCMP_018",
+        "seed": 2071971,
+        "rq_faction": 1,
+        "opponent_faction": 3,
+        "victory": "Assassination",
+        "income": "1.00",
+        "starts": [
+          "217.5,70.5",
+          "132.5,228.5"
+        ],
+        "scouting": "combined",
+        "difficulty": 44,
+        "native_lua_sha256": "ac520415c718a69c28ce7fc92e41dd9650602874c18460f8e9ad9f97a83028f8"
+      },
+      "result": "victory",
+      "killed_mass": 2839,
+      "lost_mass": 3522.03835449219,
+      "stats_sha256": "5db5338995d315173556ddfd617ae62ed8d357a15982a96de715b2ace90a1c63",
+      "payload_sha256": "e1f97d29559e15aa4882af430e24b35dbf1292903275677ba1b64a45d251d724",
+      "log": "/tmp/rq-m-combat-airland-small-2071971-uef.log",
+      "log_sha256": "da1f5267f536621fd290676f8684ad6ebe6c1623d40d64d72d5cf73d12f4c057"
+    },
+    {
+      "settings": {
+        "map": "SCMP_018",
+        "seed": 31337,
+        "rq_faction": 2,
+        "opponent_faction": 3,
+        "victory": "Assassination",
+        "income": "1.00",
+        "starts": [
+          "217.5,70.5",
+          "132.5,228.5"
+        ],
+        "scouting": "combined",
+        "difficulty": 44,
+        "native_lua_sha256": "ac520415c718a69c28ce7fc92e41dd9650602874c18460f8e9ad9f97a83028f8"
+      },
+      "result": "victory",
+      "killed_mass": 11407.008203125,
+      "lost_mass": 10160.0991210938,
+      "stats_sha256": "f8e959f91a717434ef5c16a7d83ab53d1233ebca20271f9841f042352a717ad0",
+      "payload_sha256": "e1f97d29559e15aa4882af430e24b35dbf1292903275677ba1b64a45d251d724",
+      "log": "/tmp/rq-m-combat-airland-small-31337-aeon.log",
+      "log_sha256": "6c11d7de01c6508354fcf231b9fe6204a6d76a8dcdcc0ab6300130236f6e4997"
+    },
+    {
+      "settings": {
+        "map": "SCMP_017",
+        "seed": 31337,
+        "rq_faction": 2,
+        "opponent_faction": 3,
+        "victory": "Assassination",
+        "income": "1.00",
+        "starts": [
+          "416.5,234.5",
+          "235.5,417.5"
+        ],
+        "scouting": "combined",
+        "difficulty": 44,
+        "native_lua_sha256": "ac520415c718a69c28ce7fc92e41dd9650602874c18460f8e9ad9f97a83028f8"
+      },
+      "result": "defeat",
+      "killed_mass": 138100.0671875,
+      "lost_mass": 148817.0453125,
+      "stats_sha256": "099a9b4c53e671c27203697c9deb3df637216e4c04360871d5747b6f210e9715",
+      "payload_sha256": "e1f97d29559e15aa4882af430e24b35dbf1292903275677ba1b64a45d251d724",
+      "log": "/tmp/rq-m-combat-airland-syrtis-31337-aeon.log",
+      "log_sha256": "c3bbb8ce35cbf0024a9aa9eb022fcc902ffb39232c9c805968d8e97044f97d47"
+    },
+    {
+      "settings": {
+        "map": "SCMP_017",
+        "seed": 8675309,
+        "rq_faction": 2,
+        "opponent_faction": 3,
+        "victory": "Assassination",
+        "income": "1.00",
+        "starts": [
+          "416.5,234.5",
+          "235.5,417.5"
+        ],
+        "scouting": "combined",
+        "difficulty": 44,
+        "native_lua_sha256": "ac520415c718a69c28ce7fc92e41dd9650602874c18460f8e9ad9f97a83028f8"
+      },
+      "result": "defeat",
+      "killed_mass": 58256.0078125,
+      "lost_mass": 154732.025,
+      "stats_sha256": "4826fd82d3d0edb005e0e97ad8d8a5759e763ca9a3f932bf908d40f7ebb6cc62",
+      "payload_sha256": "e1f97d29559e15aa4882af430e24b35dbf1292903275677ba1b64a45d251d724",
+      "log": "/tmp/rq-m-combat-airland-syrtis-8675309-aeon.log",
+      "log_sha256": "9a8f5634af994afe4773e9a3f460ab28f91fe5edff72d9b2c95cf6a118c9d4be"
+    }
+  ]
+}
