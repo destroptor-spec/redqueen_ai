@@ -1,0 +1,26 @@
+diff --git a/lua/AI/RedQueen/Constants.lua b/lua/AI/RedQueen/Constants.lua
+index e0dace4..5205992 100644
+--- a/lua/AI/RedQueen/Constants.lua
++++ b/lua/AI/RedQueen/Constants.lua
+@@ -317,7 +317,20 @@ Policy = {
+     ForwardBaseAlertRatioCeiling = 2.0,
+     ForwardBaseSafetyRatio = 0.60,
+     ForwardBaseCooldownSeconds = 120,
+-    ForwardBaseMapKilometersPerBase = 10,
++    -- One forward base per this many kilometres of map, clamped by
++    -- MaximumForwardBases. On a 10 km map floor(10/10) = 1, so the ceiling was
++    -- a single forward base and MaximumForwardBases = 3 never bound: measured
++    -- across eighteen cells, 45 forward bases were started, 15 established and
++    -- 943 blocked, 257 of those blocks on this cap.
++    --
++    -- That ceiling is what makes most of the map undefendable. A defence can
++    -- only be requested where a base manager exists -- FortificationBuilders
++    -- resolves no location otherwise -- and with 2.8 managers per match, 570 of
++    -- 828 mass deposits (69%) lay outside every base radius, where no
++    -- fortification builder can be offered the job at all.
++    --
++    -- Moved one step: 5 gives two forward bases on these maps, not a free hand.
++    ForwardBaseMapKilometersPerBase = 5,
+     MaximumForwardBases = 3,
+     -- Summed observation confidence at which a sampled point counts as fully
+     -- known. One fresh sighting is enough, and confidence decays with age, so

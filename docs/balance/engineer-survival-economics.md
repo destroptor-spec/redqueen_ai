@@ -872,3 +872,78 @@ at all** — not under-defended, unreachable.
 
 Measurement 2, the factory eligibility counterfactual, remains unbuilt and
 deliberately unbundled from any of these.
+
+---
+
+# The forward-base cap: moved one step, not adopted (2026-09-24)
+
+Payload `513b620b866b` against `24df7ae613f5`, same 18 cells, all clean.
+
+## Why the cap was the candidate
+
+Both maps log `size=10km`, and
+
+```lua
+GetMaximumForwardBases = max(1, min(MaximumForwardBases, floor(MapKilometers / 10)))
+```
+
+so the ceiling was **one forward base**, and `MaximumForwardBases = 3` never bound
+— the kilometres-per-base divisor did. Worth recording on its own: raising the
+obviously-named constant would have changed nothing, and the null result would
+have read as "base count does not matter".
+
+Moved one step, 10 → 5, giving two forward bases on a 10 km map.
+
+## The change landed
+
+| | control | cap 1→2 |
+| --- | ---: | ---: |
+| `map-cap` blocks | 257 | **50** |
+| forward bases started | 47 | 59 |
+| established | 15 | **23** |
+
+## It bought nothing, and cost a little
+
+| | control | cap 1→2 |
+| --- | ---: | ---: |
+| mean peak claim | 24.0 | 24.0 |
+| mean claim retention | 0.609 | **0.590** |
+| peak base managers | 4.06 | 4.22 |
+| deposits outside every base | **69%** | **69%** |
+| defences held | 27.6 | 25.9 |
+| defences covering the alert | 6.84 | **5.51** |
+| alert samples with zero coverage | 33% | **35%** |
+
+Retention better in 1 cell, worse in 3, unchanged in 14. The deposits-outside
+share is **identical in 17 of 18 cells** — the extra bases covered ground that
+was already covered, so the map geometry did not move at all, while the guns
+were spread thinner across more sites.
+
+This is the falsifier stated before the run: bases rise, coverage does not.
+
+**Not adopted.** Preserved as `forward-base-cap.patch`.
+
+## What it did reveal
+
+The lifecycle is the finding:
+
+| | control | cap 1→2 |
+| --- | ---: | ---: |
+| started | 47 | 59 |
+| **failed before establishing** | 31 | 36 |
+| established | 15 | 23 |
+| **destroyed after establishing** | 12 | 17 |
+
+Two thirds of forward bases never establish, and three quarters of those that do
+are then destroyed. Raising the cap produced more bases and more corpses: net
+survivors went from about three to about six, which is why peak managers moved
+4.06 → 4.22 while established moved 15 → 23.
+
+**Permission to build a forward base was never the constraint. Holding one is.**
+That is the same problem as the extractors, one level up, and it means base
+count cannot be bought — the ground has to be held first.
+
+So the holding problem's largest term is not "too few base managers" but "base
+managers cannot survive where the deposits are", and stepping the cap further
+would only add corpses. The next question is why 31 of 47 starts fail and why
+12 of 15 establishments die — both already logged, neither yet read.
