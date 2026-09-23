@@ -418,6 +418,9 @@ Policy = {
     -- walk, refusing a destination because a scout was seen near it. Observed
     -- scale: a route threat of 0.6 was harmless; 70.5 killed the engineer that
     -- walked it. A first estimate between those, to be calibrated.
+    -- The floor FortificationBuilders applies to a base manager radius, shared
+    -- so the coverage measurement uses the same extent the builder does.
+    FortificationMinimumRadius = 40,
     EngineerSurvivalThreatFloor = 8,
     -- Anything this close to our own start is home construction and is never
     -- refused, so an army under attack can still repair and rebuild itself.

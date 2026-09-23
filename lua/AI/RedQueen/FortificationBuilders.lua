@@ -1,3 +1,4 @@
+local Constants = import("/mods/TheRedQueen/lua/AI/RedQueen/Constants.lua")
 local InstantBuildConditions = "/lua/editor/InstantBuildConditions.lua"
 local UnitCountBuildConditions = "/lua/editor/UnitCountBuildConditions.lua"
 
@@ -42,7 +43,7 @@ local function NeedsDefense(aiBrain, locationType, role, category)
     if not alert
         or not alert.Active
         or not position
-        or DistanceSquared(position, alert.AnchorPosition) > math.max(40, radius) ^ 2
+        or DistanceSquared(position, alert.AnchorPosition) > math.max(Constants.Policy.FortificationMinimumRadius, radius) ^ 2
     then
         return false
     end
@@ -50,7 +51,7 @@ local function NeedsDefense(aiBrain, locationType, role, category)
     if target <= 0 then
         return false
     end
-    return aiBrain:GetNumUnitsAroundPoint(category, position, math.max(40, radius), "Ally") < target
+    return aiBrain:GetNumUnitsAroundPoint(category, position, math.max(Constants.Policy.FortificationMinimumRadius, radius), "Ally") < target
 end
 
 -- What counts toward a tier's ground-defence need.

@@ -3,6 +3,8 @@ local Logger = import("/mods/TheRedQueen/lua/AI/RedQueen/Logger.lua")
 local Experimentals = import("/mods/TheRedQueen/lua/AI/RedQueen/Experimentals.lua")
 local Observer = import("/mods/TheRedQueen/lua/AI/RedQueen/Observer.lua")
 local CombatTelemetry = import("/mods/TheRedQueen/lua/AI/RedQueen/CombatTelemetry.lua")
+local EngineerSurvival = import("/mods/TheRedQueen/lua/AI/RedQueen/EngineerSurvival.lua")
+local DefenseCoverage = import("/mods/TheRedQueen/lua/AI/RedQueen/DefenseCoverage.lua")
 
 ---@class RedQueenDiagnostics
 -- Whether the attack actually received force.
@@ -168,6 +170,12 @@ Diagnostics = ClassSimple {
 
         -- Defaults to "none" for a domain no builder has evaluated yet, so the
         -- field is present from the first sample rather than appearing later.
+        local cover = DefenseCoverage.Summarise(self.Brain, alert)
+        local mexLoss = DefenseCoverage.LossSummary(self.Brain)
+        local span = DefenseCoverage.BaseSpan(self.Brain)
+        local placement = self.Brain.RedQueenPlacement
+            or { Attempts = 0, Gated = 0, Open = 0 }
+        local survival = EngineerSurvival.Summary(self.Brain)
         local gate = self.Brain.RedQueenTechGate or {}
         gate = {
             Land2 = gate.Land2 or "none", Land3 = gate.Land3 or "none",
@@ -176,7 +184,7 @@ Diagnostics = ClassSimple {
         }
 
         Logger.Info(self.Brain, string.format(
-            "state objective=%s primary=%s/%d secondary=%s/%d pressure=%s claim=%.0f/%.0f%s eco=%s mass=%.1f energy=%.1f factories=%d/%d intel=%d doctrine=%s focus=%s weights=A=%d,T2=%d,T3=%d,X=%d,N=%d ready=%.2f slots=%d reason=%s landloss=%d/%.0f airloss=%d/%.0f airdrop=%s alert=%s/%.1f/%.2f/%s/%.0f/%.0f momentum=%.0f/%.0f/%s tiers=L%d,A%d,N%d forward=%d/%s/%s exp=%s/%d/%d eng=%d/%d/%d engtier=%d/%d/%d cover=%d/%d engpolicy=%d/%d mex=%d/%d scout=%d/%d/%d scoutorders=%d/%d scouts=%d scoutfraction=%.3f/%.3f dispatch=L%d,A%d,W%d,M%d,H%d army=%d/%d/%d held=%d/%d/%d directed=%d/%d assist=%d/%d/%d acuassist=%d mexgate=%s/%d techgate=L%s/%s,A%s/%s,N%s/%s",
+            "state objective=%s primary=%s/%d secondary=%s/%d pressure=%s claim=%.0f/%.0f%s eco=%s mass=%.1f energy=%.1f factories=%d/%d intel=%d doctrine=%s focus=%s weights=A=%d,T2=%d,T3=%d,X=%d,N=%d ready=%.2f slots=%d reason=%s landloss=%d/%.0f airloss=%d/%.0f airdrop=%s alert=%s/%.1f/%.2f/%s/%.0f/%.0f momentum=%.0f/%.0f/%s tiers=L%d,A%d,N%d forward=%d/%s/%s exp=%s/%d/%d eng=%d/%d/%d engtier=%d/%d/%d cover=%d/%d engpolicy=%d/%d mex=%d/%d defcover=%d/%d/%.0f mexloss=%d/%d basespan=%d/%d/%d mexplace=%d/%d/%d engsurvival=%d/%d/%d/%d/%d/%d scout=%d/%d/%d scoutorders=%d/%d scouts=%d scoutfraction=%.3f/%.3f dispatch=L%d,A%d,W%d,M%d,H%d army=%d/%d/%d held=%d/%d/%d directed=%d/%d assist=%d/%d/%d acuassist=%d mexgate=%s/%d techgate=L%s/%s,A%s/%s,N%s/%s",
             tostring(objective.Type or "none"),
             primary and tostring(primary.Type) or "none",
             slotDispatch.Primary or 0,
@@ -259,6 +267,54 @@ Diagnostics = ClassSimple {
                     categories.STRUCTURE * categories.MASSEXTRACTION)
                 or 0,
             world and world.MassPointCount or 0,
+            -- Defences held, defences that can actually reach the alert, and
+            -- the distance from the nearest one to it. A base with ten guns
+            -- whose nearest is two hundred away from the fighting is not short
+            -- of guns, and a count alone cannot tell those apart.
+            cover.Total,
+            cover.Covering,
+            cover.Nearest,
+            -- Extractors lost, and how many had any friendly weapon in range of
+            -- them when they died.
+            mexLoss.Lost,
+            mexLoss.Defended,
+            -- Registered bases, and extractors inside versus outside every base
+            -- radius. Ground outside them is not under-defended: no
+            -- fortification builder can be offered it at all.
+            span.Bases,
+            span.Inside,
+            span.Outside,
+            -- Native resource placement, and what it would have found with the
+            -- engine's threat filter open: attempts / offered at the shipped
+            -- limit of 5 / offered at 0. Extractors are the only structure the
+            -- engine refuses on contested ground, and for resource builders it
+            -- queries the deposits directly, so this is the gate that decides
+            -- which point is on offer. The third figure is a counterfactual --
+            -- the gated result is the one returned -- so a gap between the last
+            -- two is the filter binding, measured without changing a decision.
+            placement.Attempts,
+            placement.Gated,
+            placement.Open,
+            -- Why an engineer did not go somewhere, and how much ground is
+            -- currently closed to it: refusals by reason (unsafe route, a site
+            -- that recently killed one, commander leash), sites recorded from a
+            -- loss, sites recorded from a precautionary withdrawal, and the
+            -- live unexpired exclusion.
+            --
+            -- The guard fired in every one of 147 recorded matches and left
+            -- exactly two lines saying so. It is the only mechanism standing
+            -- between an engineer and an unclaimed mass point, and `mex=` above
+            -- peaks under half the map, so these two figures have to be read
+            -- together: a refusal that saves an engineer and a refusal that
+            -- forfeits the expansion are the same event until they are counted.
+            -- Withdrawals are separated from losses because a withdrawal writes
+            -- the same exclusion without anything having died.
+            survival.RefusedUnsafe,
+            survival.RefusedRecentLoss,
+            survival.RefusedLeash,
+            survival.SitesLost,
+            survival.SitesWithdrawn,
+            survival.LiveSites,
             -- Positions the army wants observed, how many it cannot see, and
             -- how many scouts it dispatched this pass. Red Queen's intel comes
             -- only from sampling its own units, so "blind" here is the share of

@@ -541,7 +541,14 @@ if not forward_package_match:
 if '"T3StrategicMissile"' in forward_package_match.group(0):
     fail("forward bases must not queue strategic nuclear launchers")
 
-lua_files = sorted(ROOT.rglob("*.lua"))
+# Packaging scratch directories are not mod source. A candidate staged under
+# docs/balance/*.tmp imports modules the control tree does not have, which
+# failed the control's own gate while every clone-based run passed, because the
+# clone rsync already excludes it.
+lua_files = sorted(
+    path for path in ROOT.rglob("*.lua")
+    if not any(part.endswith(".tmp") for part in path.relative_to(ROOT).parts)
+)
 import_pattern = re.compile(r'import\("' + re.escape(MOD_PREFIX) + r'([^"\n]+)"\)')
 for source_path in lua_files:
     source = source_path.read_text(encoding="utf-8")
@@ -870,7 +877,77 @@ else:
         fail("the engineer travel hook must refuse an unsafe assignment")
 
 survival = (ROOT / "lua/AI/RedQueen/EngineerSurvival.lua").read_text(encoding="utf-8")
-if "return {" in survival:
+
+# The engineer guard is the only thing standing between an engineer and an
+# unclaimed mass point, and it fired in all 147 recorded match logs while
+# reporting nothing but "at least once". A mechanism a matrix has to read
+# belongs in the periodic state line; this pins it there so the counters cannot
+# quietly stop being reported the way forward-base cover and engineer
+# suppression once did.
+for reason in ("route-unsafe", "recent-loss", "commander-leash"):
+    if 'CountEvent(brain, "Refused", "%s")' % reason not in survival:
+        fail(
+            "EngineerSurvival must count its %s refusals; an uncounted refusal is "
+            "an unclaimed mass point no match log can attribute" % reason
+        )
+diagnostics_source = (ROOT / "lua/AI/RedQueen/Diagnostics.lua").read_text(
+    encoding="utf-8")
+# Defence coverage is a weapon-range question, not a count. A spectated match
+# showed point defence and anti-air standing beside the factories, out of range
+# of the fighting until the enemy reached them, which a base-wide structure
+# count reports as fully defended.
+fortification = (ROOT / "lua/AI/RedQueen/FortificationBuilders.lua").read_text(
+    encoding="utf-8")
+if "math.max(40, radius)" in fortification:
+    fail(
+        "FortificationBuilders must take its radius floor from "
+        "Constants.Policy.FortificationMinimumRadius, or the coverage "
+        "measurement silently drifts from the extent the builder uses"
+    )
+coverage = (ROOT / "lua/AI/RedQueen/DefenseCoverage.lua").read_text(encoding="utf-8")
+if "WeaponRange" not in coverage or "MaxRadius" not in coverage:
+    fail("DefenseCoverage must measure reach from the blueprint's weapon radius")
+director_source = (ROOT / "lua/AI/RedQueen/StrategyDirector.lua").read_text(
+    encoding="utf-8")
+if "DefenseCoverage.RecordExtractorLoss" not in director_source:
+    fail(
+        "an extractor loss must be recorded with whether anything covered it; "
+        "a lost extractor cannot be asked afterwards what was defending it"
+    )
+for field in ("defcover=%d/%d/%.0f", "mexloss=%d/%d", "basespan=%d/%d/%d"):
+    if field not in diagnostics_source:
+        fail("the periodic state line must report " + field.split("=")[0])
+
+placement_hook = (ROOT / "hook/lua/AI/aibuildstructures.lua").read_text(encoding="utf-8")
+if "NativeAIExecuteBuildStructure(aiBrain" not in placement_hook:
+    fail("the placement hook must call through to the native implementation")
+if "RedQueenLobbyPersonality" not in placement_hook:
+    fail(
+        "the placement hook must be scoped to Red Queen brains; AIExecuteBuildStructure "
+        "is global to every AI in the match"
+    )
+# The probe measures the filter; it must not decide with the open result, or the
+# run stops being comparable to the payload it is measured against.
+if "return located" not in placement_hook:
+    fail("the placement probe must return the gated result, not the counterfactual")
+diagnostics = (ROOT / "lua/AI/RedQueen/Diagnostics.lua").read_text(encoding="utf-8")
+if "engsurvival=%d/%d/%d/%d/%d/%d" not in diagnostics:
+    fail(
+        "the periodic state line must report engsurvival= (refusals by reason, "
+        "sites by cause, live exclusion)"
+    )
+if "EngineerSurvival.Summary(self.Brain)" not in diagnostics:
+    fail("the state line's engineer-survival figures must come from the guard itself")
+if "RedQueenRefusedAssignments" in (ROOT / "hook/lua/AI/aiutilities.lua").read_text(
+        encoding="utf-8"):
+    fail(
+        "the engineer travel hook must rate-limit off the guard's own counter, not "
+        "a second private tally of the same refusals"
+    )
+# A module-level return is the unindented one. The original substring check
+# also matched a `return {` inside a function, which is an ordinary table
+# result and not an export style at all.
+if re.search(r"^return\s*\{", survival, re.M):
     fail("EngineerSurvival must export globals; import() discards a returned table")
 # Refusing on an absent route would break transport-served expansion, which
 # native handles perfectly well. The module must judge danger, not pathability.
@@ -1064,5 +1141,45 @@ if "PressureState(strategy, slotDispatch)" not in diagnostics_source:
     )
 if re.search(r'strategy\.PressureHeld and "held"', diagnostics_source):
     fail("the naive pressure flag must not be printed alongside the derived one")
+
+# Every production demand the director publishes must have a consumer.
+#
+# `demand.Scouts` was once computed, clamped and written to the state line with
+# nothing reading it; `demand.Land`, `demand.Air` and `demand.Artillery` were
+# later found in the same state. A published demand that nothing acts on is a
+# decision the log reports and the AI never makes, and giving two of them a
+# consumer measured worse, so the answer is to keep publication and consumption
+# in step rather than to accumulate more.
+director_demand = (ROOT / "lua/AI/RedQueen/StrategyDirector.lua").read_text(encoding="utf-8")
+consumer_sources = "".join(
+    (ROOT / name).read_text(encoding="utf-8")
+    for name in (
+        "lua/AI/RedQueen/CounterBuilders.lua",
+        "lua/AI/RedQueen/ProductionManager.lua",
+        "lua/AI/RedQueen/CombatManager.lua",
+        "lua/AI/RedQueen/FortificationBuilders.lua",
+        "lua/AI/RedQueen/Experimentals.lua",
+    )
+)
+# Ratio-style demands only: the desired-count and bookkeeping fields are read
+# through other paths and are not part of this contract.
+demand_ratios = {"Land", "Air", "Naval", "Artillery", "Gunships", "AntiAir", "Scouts"}
+# A consumer may read the table by index rather than by name -- ProductionManager
+# iterates {"Land", "Air", "Naval"} and reads demand[domain]. Checking dotted
+# access alone reported demand.Land and demand.Air as orphans and the deletion
+# that followed emptied GetFactoryTargets' relevant set, collapsing every
+# factory onto Land and building no air at all. A quoted field name next to an
+# indexed read counts as consumption.
+indexed_read = re.search(r"demand\[", consumer_sources)
+for field in sorted(demand_ratios):
+    published = re.search(rf"demand\.{field}\s*=", director_demand)
+    consumed = re.search(rf"demand\.{field}\b", consumer_sources) or (
+        indexed_read and re.search(rf'"{field}"', consumer_sources)
+    )
+    if published and not consumed:
+        fail(
+            f"StrategyDirector publishes demand.{field} but no production module "
+            "reads it; wire it to a builder or remove it"
+        )
 
 print(f"Validated {len(lua_files)} Lua files and The Red Queen mod contract")

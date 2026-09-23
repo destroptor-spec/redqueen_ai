@@ -14,6 +14,11 @@ local constants = {
         EconomyGrowthRatio = 1.05,
         EconomyMarkDecay = 0.97,
         OpeningDurationSeconds = 240,
+        -- Read by EngineerSurvival, which this spec loads for real rather than
+        -- stubbing: the state line has to report the guard's own counters.
+        EngineerLethalSiteMemorySeconds = 180,
+        EngineerLethalSiteRadius = 40,
+        FortificationMinimumRadius = 40,
     },
 }
 
@@ -78,9 +83,19 @@ function import(path)
         return { Report = function() end }
     elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/CombatTelemetry.lua" then
         return { Report = function() return " combatctl=directed:3/540/0/180 combatdetail=1/1" end }
+    elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/EngineerSurvival.lua" then
+        return survival
+    elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/DefenseCoverage.lua" then
+        return defenseCoverage
     end
     error("unexpected import: " .. tostring(path))
 end
+
+-- Loaded after `import` exists, because this module imports Constants at load
+-- time; the real module is used so a counter that stops being reported fails
+-- here rather than in a match.
+survival = importModule("lua/AI/RedQueen/EngineerSurvival.lua")
+defenseCoverage = importModule("lua/AI/RedQueen/DefenseCoverage.lua")
 
 local currentTick = 0
 function GetGameTick() return currentTick end
@@ -265,6 +280,22 @@ modules.Production.AssistSummary = { Active = 2, Assigned = 7, Released = 5 }
 modules.Production.CommanderAssists = 3
 modules.Production.CoreUpgrade = { State = "under-attack" }
 brain.RedQueenExtractorBlocks = 4
+brain.RedQueenPlacement = { Attempts = 40, Gated = 12, Open = 31 }
+
+-- Recorded through the real module, so the spec exercises the path a match
+-- takes rather than a hand-built table the reporter happens to read.
+survival.CountEvent(brain, "Refused", "route-unsafe")
+survival.CountEvent(brain, "Refused", "route-unsafe")
+survival.CountEvent(brain, "Refused", "route-unsafe")
+survival.CountEvent(brain, "Refused", "recent-loss")
+survival.CountEvent(brain, "Refused", "recent-loss")
+survival.CountEvent(brain, "Refused", "commander-leash")
+survival.RememberLethalSite(brain, { 10, 0, 10 }, "engineer-lost")
+survival.RememberLethalSite(brain, { 20, 0, 20 }, "engineer-lost")
+for _ = 1, 5 do
+    survival.RememberLethalSite(brain, { 30, 0, 30 }, "engineer-withdrawn")
+end
+
 reporter:Update()
 local state = logged[table.getn(logged)]
 assert(state, "Update must log a state line")
@@ -312,6 +343,38 @@ assert(string.find(state, "engpolicy=3/18", 1, true),
 -- so this is the figure that says whether there is cheap economy left to take.
 assert(string.find(state, "mex=1/24", 1, true),
     "the state line must report extractors held against the map's mass points: " .. state)
+
+-- Native resource placement against what the engine would have offered with its
+-- threat filter open. Extractors are the only structure it refuses on contested
+-- ground, so a gap between the last two figures is that filter binding.
+-- Coverage, extractor losses and fortifiable span. The brain under test holds
+-- no units, so these read zero; the measurement itself is contracted in
+-- tests/defense_coverage_spec.lua. What is pinned here is that the state line
+-- reports them at all -- the failure mode this whole line of work kept hitting
+-- was a mechanism that ran a full matrix leaving no figure behind.
+assert(string.find(state, "defcover=0/0/0 mexloss=0/0 basespan=0/0/0", 1, true),
+    "the state line must report defence coverage, extractor losses and span: " .. state)
+assert(string.find(state, "mexplace=40/12/31", 1, true),
+    "the state line must report placement attempts, offers and the open "
+        .. "counterfactual: " .. state)
+
+-- The guard between an engineer and an unclaimed mass point. It fired in all
+-- 147 recorded matches and reported only that it had fired at least once, so a
+-- matrix could not tell a refusal that saved an engineer from one that forfeited
+-- the expansion. Withdrawals are counted apart from losses because a withdrawal
+-- closes the same ground without anything having died.
+assert(string.find(state, "engsurvival=3/2/1/2/5/7", 1, true),
+    "the state line must report refusals by reason, sites by cause and the live "
+        .. "exclusion: " .. state)
+
+-- An expired site leaves the live exclusion while its cumulative cause stands.
+-- Without this the live figure could be the running total under another name.
+currentTick = currentTick + 1801
+logged = {}
+reporter:Update()
+local later = logged[table.getn(logged)]
+assert(string.find(later, "engsurvival=3/2/1/2/5/0", 1, true),
+    "expiry must drain the live exclusion without rewriting its causes: " .. later)
 assert(string.find(state, "scout=10/6/0 scoutorders=11/4 scouts=1 scoutfraction=0.128/0.180", 1, true),
     "scouting must report coverage, orders, held scouts, requested fraction and its ceiling: " .. state)
 

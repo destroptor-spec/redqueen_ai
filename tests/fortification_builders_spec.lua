@@ -31,6 +31,11 @@ function BuilderGroup(definition)
 end
 
 function import(path)
+    -- The radius floor is shared with DefenseCoverage so the measurement cannot
+    -- drift from the extent the builder actually uses.
+    if path == "/mods/TheRedQueen/lua/AI/RedQueen/Constants.lua" then
+        return { Policy = { FortificationMinimumRadius = 40 } }
+    end
     return path
 end
 

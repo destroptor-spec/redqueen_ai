@@ -17,6 +17,8 @@ luajit tests/commander_safety_spec.lua
 luajit tests/combat_manager_spec.lua
 luajit tests/combat_telemetry_spec.lua
 luajit tests/counter_builders_spec.lua
+luajit tests/defense_coverage_spec.lua
+luajit tests/placement_probe_spec.lua
 luajit tests/diagnostics_spec.lua
 luajit tests/economy_manager_spec.lua
 luajit tests/assistance_spec.lua

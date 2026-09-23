@@ -161,6 +161,13 @@ local engineerSurvival = {
     end,
 }
 
+extractorLosses = {}
+defenseCoverage = {
+    RecordExtractorLoss = function(_, position)
+        table.insert(extractorLosses, position or "unknown")
+    end,
+}
+
 function import(path)
     if path == "/mods/TheRedQueen/lua/AI/RedQueen/Constants.lua" then
         return constants
@@ -170,6 +177,8 @@ function import(path)
         return logger
     elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/EngineerSurvival.lua" then
         return engineerSurvival
+    elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/DefenseCoverage.lua" then
+        return defenseCoverage
     end
     error("unexpected import: " .. tostring(path))
 end

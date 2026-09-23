@@ -83,16 +83,77 @@ end
 -- to it, and the observed threat that justified refusing may have moved on and
 -- come back. Entries expire, so a place that was dangerous once does not become
 -- permanently forbidden.
+-- Every refusal and every remembered site, counted by reason.
+--
+-- The guard fired in all 147 recorded match logs and the only trace either
+-- reason left was a single rate-limited line saying it had happened at least
+-- once. A refusal is an unclaimed mass point, so the count is an economic
+-- figure, not a debug one: without it a matrix cannot tell a guard that saves
+-- engineers from one that caps expansion. Reported as `engsurvival=` in the
+-- periodic state line.
+function CountEvent(brain, field, reason)
+    if not brain or not reason then
+        return
+    end
+    brain.RedQueenEngineerSurvival = brain.RedQueenEngineerSurvival or {}
+    local counts = brain.RedQueenEngineerSurvival
+    counts[field] = counts[field] or {}
+    counts[field][reason] = (counts[field][reason] or 0) + 1
+end
+
+local function Count(brain, field, reason)
+    local counts = brain and brain.RedQueenEngineerSurvival
+    local bucket = counts and counts[field]
+    return (bucket and bucket[reason]) or 0
+end
+
+-- Exported so the native hook rate-limits its log line off the same counter it
+-- reports, rather than keeping a second private tally of the same events.
+function EventCount(brain, field, reason)
+    return Count(brain, field, reason)
+end
+
+-- Sites still inside their memory window, pruned as they are counted. This is
+-- the live exclusion the expansion planner is working against; the cumulative
+-- totals beside it cannot show whether it is growing or draining.
+function LiveSiteCount(brain)
+    local sites = brain and brain.RedQueenLethalSites
+    if not sites then
+        return 0
+    end
+    local cutoff = GetGameTick()
+        - Constants.Policy.EngineerLethalSiteMemorySeconds * 10
+    for index = table.getn(sites), 1, -1 do
+        if sites[index].Tick < cutoff then
+            table.remove(sites, index)
+        end
+    end
+    return table.getn(sites)
+end
+
+function Summary(brain)
+    return {
+        RefusedUnsafe = Count(brain, "Refused", "route-unsafe"),
+        RefusedRecentLoss = Count(brain, "Refused", "recent-loss"),
+        RefusedLeash = Count(brain, "Refused", "commander-leash"),
+        SitesLost = Count(brain, "Sites", "engineer-lost"),
+        SitesWithdrawn = Count(brain, "Sites", "engineer-withdrawn"),
+        LiveSites = LiveSiteCount(brain),
+    }
+end
+
 function RememberLethalSite(brain, position, reason)
     if not brain or not position then
         return
     end
     brain.RedQueenLethalSites = brain.RedQueenLethalSites or {}
+    local recorded = reason or "engineer-lost"
     table.insert(brain.RedQueenLethalSites, {
         Position = { position[1], position[2], position[3] },
-        Reason = reason or "engineer-lost",
+        Reason = recorded,
         Tick = GetGameTick(),
     })
+    CountEvent(brain, "Sites", recorded)
 end
 
 function RecentlyLethal(brain, position)
@@ -162,12 +223,14 @@ function RouteVerdict(brain, unit, destination)
     then
         local leash = Constants.Policy.CommanderLeashRadius
         if homeDistance and leash and homeDistance > leash * leash then
+            CountEvent(brain, "Refused", "commander-leash")
             return false, "commander-leash"
         end
     end
 
     local lethal = RecentlyLethal(brain, destination)
     if lethal then
+        CountEvent(brain, "Refused", "recent-loss")
         return false, "recent-loss"
     end
 
@@ -202,6 +265,7 @@ function RouteVerdict(brain, unit, destination)
         escort * Constants.Policy.ForwardBaseSafetyRatio
     )
     if threat > limit then
+        CountEvent(brain, "Refused", "route-unsafe")
         return false, "route-unsafe"
     end
     return true, "safe"

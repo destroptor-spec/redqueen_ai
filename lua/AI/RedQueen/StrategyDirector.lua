@@ -1,5 +1,6 @@
 local Logger = import("/mods/TheRedQueen/lua/AI/RedQueen/Logger.lua")
 local Constants = import("/mods/TheRedQueen/lua/AI/RedQueen/Constants.lua")
+local DefenseCoverage = import("/mods/TheRedQueen/lua/AI/RedQueen/DefenseCoverage.lua")
 local Narrator = import("/mods/TheRedQueen/lua/AI/RedQueen/Narrator.lua")
 local EngineerSurvival = import("/mods/TheRedQueen/lua/AI/RedQueen/EngineerSurvival.lua")
 
@@ -435,6 +436,16 @@ StrategyDirector = ClassSimple {
                 Mass = economy.BuildCostMass or 1,
                 Site = unit.RedQueenGarrisonSite,
             })
+        end
+
+        -- An extractor died. Recorded with whether anything could have shot
+        -- what killed it, because a gun count cannot distinguish "too few
+        -- defences" from "defences that cannot reach the fighting" -- and the
+        -- second is what a spectator saw: point defence and anti-air sitting
+        -- beside the factories, out of range until the enemy arrived there.
+        if hash.STRUCTURE and hash.MASSEXTRACTION then
+            DefenseCoverage.RecordExtractorLoss(
+                self.Brain, unit.GetPosition and unit:GetPosition() or nil)
         end
 
         -- An engineer death is not a combat casualty and must not inflate land
