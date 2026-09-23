@@ -757,3 +757,56 @@ before this module ships alongside anything that changes a decision.
 
 Measurement 2 — the per-production-update factory eligibility counterfactual —
 remains unbuilt and deliberately unbundled from this.
+
+---
+
+# Fixing the coverage module's neutrality (2026-09-23)
+
+The coverage payload perturbed one cell of eighteen. Bisected against that cell,
+each row a full match, compared to the baseline's 74 samples:
+
+| configuration | result |
+| --- | --- |
+| everything on | 68, diverges at sample 32 |
+| loss recording made pure (no query on the destruction path) | 68 @ 32 |
+| both state-line queries disabled | **74/74** |
+| `SummariseDefences` only — `GetListOfUnits(STRUCTURE * DEFENSE)` | **74/74** |
+| `BaseSpan` with `pcall` removed | 68 @ 32 |
+| base-manager walk only, no unit query | **74/74** |
+
+The cause is **`GetListOfUnits(STRUCTURE * MASSEXTRACTION)`**. The identical call
+for `STRUCTURE * DEFENSE` is clean, so it is not the call but the units it asks
+for. The mechanism is not understood — a read-only query should not change a
+deterministic simulation, and nothing in the Lua source suggests how it can. It
+is localised, reproducible, and avoided. Do not reintroduce it; a contract now
+fails on `categories.MASSEXTRACTION` appearing in the module.
+
+Two hypotheses were wrong along the way and are recorded because each cost a
+match: the destruction path was not the cause, and neither was the `pcall`.
+
+## The figure changed, and improved
+
+`basespan` now counts the **map's own mass markers** inside and outside the base
+radii, read once when the world model is built, instead of the surviving
+extractors. That removes the engine query, and it removes a bias: counting
+extractors made the denominator move with the very losses the figure existed to
+explain, and the extractors that survive are the defended ones.
+
+The new reading is much starker. On Syrtis, `basespan=4/14/34` — four bases, 14
+of the map's 48 deposits inside a base radius and **34 outside**. About 70% of
+the map cannot be offered a fortification builder at all, against the ~50%
+suggested by the extractor-based version.
+
+The module is now one engine query per state line, all of it proven neutral.
+Verified on the cell that diverged: 74/74 identical to the baseline with every
+figure still reported.
+
+## What still stands, and what needs re-measuring
+
+The `defcover=` and `mexloss=` figures reported above came from the seventeen
+cells that were byte-identical to the baseline, so they stand: 27.0 defences
+held, 6.69 able to reach the alert, 36% of alert samples with zero coverage, and
+71% of 505 lost extractors killed with nothing in range.
+
+`basespan` needs re-measuring across the matrix under the new definition, and
+the eighteenth cell can now be included.

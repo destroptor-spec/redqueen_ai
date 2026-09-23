@@ -80,12 +80,11 @@ end
 -- is from it. The third figure is what separates "too few guns" from "guns in
 -- the wrong place": a base with ten defences whose nearest is 200 away from the
 -- fighting is not short of defences.
-function Summarise(brain, alert)
+function SummariseDefences(defences, alert)
     local summary = { Total = 0, Covering = 0, Nearest = 0 }
     local anchor = alert and alert.Active and alert.AnchorPosition
     local nearest = nil
-    local units = DefenceStructures(brain)
-    for _, unit in pairs(units) do
+    for _, unit in pairs(defences or {}) do
         if Alive(unit) then
             summary.Total = summary.Total + 1
             if anchor then
@@ -106,27 +105,56 @@ function Summarise(brain, alert)
     return summary
 end
 
--- An extractor died. Could anything have shot whatever killed it?
+function Summarise(brain, alert)
+    return SummariseDefences(DefenceStructures(brain), alert)
+end
+
+-- An extractor died. Records the position and nothing else.
 --
--- Counted at the loss rather than sampled, because an extractor that is gone
--- cannot be asked later what was covering it.
+-- Deliberately pure: this runs on the unit-destruction path, and the first
+-- version asked the brain for its defence structures here. That version
+-- perturbed the simulation -- seventeen cells of eighteen reproduced the
+-- baseline and one diverged at sample 33, reproducibly. A measurement that
+-- changes the match it is measuring is worthless, so the question of what
+-- covered this position is answered later, from the defence list the state
+-- line already fetches.
 function RecordExtractorLoss(brain, position)
     if not brain then
         return
     end
     brain.RedQueenExtractorLosses = brain.RedQueenExtractorLosses
-        or { Lost = 0, Defended = 0 }
+        or { Lost = 0, Defended = 0, Pending = {} }
     local record = brain.RedQueenExtractorLosses
     record.Lost = record.Lost + 1
-    if not position then
+    if position then
+        record.Pending = record.Pending or {}
+        table.insert(record.Pending, { position[1], position[2], position[3] })
+    end
+end
+
+-- Answer the pending losses against the defences that exist now.
+--
+-- The defence set moves slowly compared with the sampling interval, so asking
+-- one state line later is the same question; asking it on the destruction path
+-- was not the same match.
+local function ResolvePending(brain, defences)
+    local record = brain and brain.RedQueenExtractorLosses
+    local pending = record and record.Pending
+    if not pending then
         return
     end
-    local units = DefenceStructures(brain)
-    for _, unit in pairs(units) do
-        if Alive(unit) and Covers(unit, position) then
-            record.Defended = record.Defended + 1
-            return
+    for index = table.getn(pending), 1, -1 do
+        local position = pending[index]
+        local covered = false
+        for _, unit in pairs(defences) do
+            if Alive(unit) and Covers(unit, position) then
+                covered = true
+            end
         end
+        if covered then
+            record.Defended = record.Defended + 1
+        end
+        table.remove(pending, index)
     end
 end
 
@@ -135,24 +163,42 @@ function LossSummary(brain)
         or { Lost = 0, Defended = 0 }
 end
 
--- How much of what the army holds is even eligible for a defence.
+-- How much of the map could ever receive a defence.
 --
 -- `FortificationBuilders.GetLocation` resolves only for a registered base
--- manager, and refuses the job outright when the alert is anchored outside its
--- radius. Ground beyond every base is therefore not under-defended -- no
--- fortification builder can be offered it at all.
-function BaseSpan(brain)
+-- manager and refuses the job outright when the alert is anchored outside its
+-- radius. Deposits beyond every base are therefore not under-defended -- no
+-- fortification builder can be offered them at all.
+--
+-- Measured against the map's own mass markers rather than the extractors
+-- currently standing on them. Two reasons, one of them the hard-won one:
+--
+--  * it is the base placement that is being judged, and a count of surviving
+--    extractors moves with the very losses this is meant to explain;
+--  * the first version asked the brain for its extractors, and
+--    `GetListOfUnits(STRUCTURE * MASSEXTRACTION)` perturbs the simulation.
+--    Bisected against one cell over five matches: with every query removed the
+--    match reproduced the baseline 74/74, with the defence query alone 74/74,
+--    with the manager walk alone 74/74, and with the extractor query 68 samples
+--    diverging at 32 -- reproducibly, and identically on a re-run. The same
+--    call for `STRUCTURE * DEFENSE` is clean, so it is not the call but the
+--    units it asks for. The mechanism is not understood; it is avoided.
+--
+-- The markers are read once when the world model is built, so this costs no
+-- engine query at all.
+function BaseSpan(brain, world)
     local span = { Bases = 0, Inside = 0, Outside = 0 }
-    if not brain or not brain.GetListOfUnits or not categories then
+    if not brain then
         return span
     end
     local spots = {}
     for _, manager in pairs(brain.BuilderManagers or {}) do
         local engineerManager = manager and manager.EngineerManager
         if engineerManager and engineerManager.GetLocationCoords then
-            local resolved, coords = pcall(
-                engineerManager.GetLocationCoords, engineerManager)
-            if resolved and coords then
+            -- Called directly: BuilderManager:GetLocationCoords is
+            -- `return self.Location` and cannot raise.
+            local coords = engineerManager:GetLocationCoords()
+            if coords then
                 span.Bases = span.Bases + 1
                 table.insert(spots, {
                     Position = coords,
@@ -164,24 +210,44 @@ function BaseSpan(brain)
             end
         end
     end
-    local extractors = brain:GetListOfUnits(
-        categories.STRUCTURE * categories.MASSEXTRACTION, false) or {}
-    for _, extractor in pairs(extractors) do
-        if Alive(extractor) and extractor.GetPosition then
-            local position = extractor:GetPosition()
-            local covered = false
-            for _, spot in pairs(spots) do
-                local distance = DistanceSquared(position, spot.Position)
-                if distance and distance <= spot.Radius * spot.Radius then
-                    covered = true
+    local clusters = world and world.MassClusters
+    if not clusters then
+        return span
+    end
+    for _, cluster in pairs(clusters) do
+        for _, marker in pairs(cluster.Markers or {}) do
+            local position = marker.Position or marker.position
+            if position then
+                local covered = false
+                for _, spot in pairs(spots) do
+                    local distance = DistanceSquared(position, spot.Position)
+                    if distance and distance <= spot.Radius * spot.Radius then
+                        covered = true
+                    end
                 end
-            end
-            if covered then
-                span.Inside = span.Inside + 1
-            else
-                span.Outside = span.Outside + 1
+                if covered then
+                    span.Inside = span.Inside + 1
+                else
+                    span.Outside = span.Outside + 1
+                end
             end
         end
     end
     return span
+end
+
+-- Everything the state line needs, from one pass over each list.
+--
+-- Diagnostics calls this and nothing else, so the number of engine queries this
+-- module makes is fixed at two per state line regardless of how many extractors
+-- died in between.
+function Report(brain, alert, world)
+    local defences = DefenceStructures(brain)
+    local summary = SummariseDefences(defences, alert)
+    ResolvePending(brain, defences)
+    return {
+        Cover = summary,
+        Loss = LossSummary(brain),
+        Span = BaseSpan(brain, world),
+    }
 end

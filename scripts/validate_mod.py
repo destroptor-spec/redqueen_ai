@@ -907,6 +907,34 @@ if "math.max(40, radius)" in fortification:
 coverage = (ROOT / "lua/AI/RedQueen/DefenseCoverage.lua").read_text(encoding="utf-8")
 if "WeaponRange" not in coverage or "MaxRadius" not in coverage:
     fail("DefenseCoverage must measure reach from the blueprint's weapon radius")
+# The destruction path must stay pure. Querying the brain there perturbed the
+# simulation in one cell of eighteen, reproducibly, and a measurement that
+# changes the match it measures is worthless.
+record_body = re.search(
+    r"function RecordExtractorLoss\(brain, position\)(.*?)\nend", coverage, re.S)
+if not record_body:
+    fail("DefenseCoverage.RecordExtractorLoss must exist")
+elif re.search(r"GetListOfUnits|DefenceStructures", record_body.group(1)):
+    fail(
+        "RecordExtractorLoss runs on the unit-destruction path and must not query "
+        "the brain there; resolve coverage from the list the state line fetches"
+    )
+# GetListOfUnits(STRUCTURE * MASSEXTRACTION) perturbs the simulation. Bisected
+# against one cell over five matches: every query removed reproduced the
+# baseline 74/74, the defence query alone 74/74, the base-manager walk alone
+# 74/74, and the extractor query diverged at sample 32, reproducibly. The same
+# call for STRUCTURE * DEFENSE is clean, so it is the units asked for and not
+# the call. The span is read from the map's markers instead.
+coverage_code = "\n".join(
+    line for line in coverage.splitlines() if not line.lstrip().startswith("--"))
+if "categories.MASSEXTRACTION" in coverage_code:
+    fail(
+        "DefenseCoverage must not query the brain for extractors; that query "
+        "perturbs the simulation. Read the span from the world model's mass "
+        "markers, which cost no engine call"
+    )
+if "DefenseCoverage.Report(self.Brain" not in diagnostics_source:
+    fail("Diagnostics must read coverage through the single Report entry point")
 director_source = (ROOT / "lua/AI/RedQueen/StrategyDirector.lua").read_text(
     encoding="utf-8")
 if "DefenseCoverage.RecordExtractorLoss" not in director_source:

@@ -170,9 +170,8 @@ Diagnostics = ClassSimple {
 
         -- Defaults to "none" for a domain no builder has evaluated yet, so the
         -- field is present from the first sample rather than appearing later.
-        local cover = DefenseCoverage.Summarise(self.Brain, alert)
-        local mexLoss = DefenseCoverage.LossSummary(self.Brain)
-        local span = DefenseCoverage.BaseSpan(self.Brain)
+        local coverage = DefenseCoverage.Report(self.Brain, alert, world)
+        local cover, mexLoss, span = coverage.Cover, coverage.Loss, coverage.Span
         local placement = self.Brain.RedQueenPlacement
             or { Attempts = 0, Gated = 0, Open = 0 }
         local survival = EngineerSurvival.Summary(self.Brain)

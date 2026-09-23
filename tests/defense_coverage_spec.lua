@@ -93,19 +93,64 @@ assert(idle.Total == 4 and idle.Covering == 0 and idle.Nearest == 0,
     "an inactive alert reports holdings without a coverage verdict")
 
 -- Extractor losses, with whether anything could have shot the attacker.
+--
+-- The recording itself must make NO engine call. It runs on the unit-destruction
+-- path, and the first version asked the brain for its defence structures there:
+-- that perturbed the simulation, reproducibly, in one cell of eighteen. A brain
+-- whose GetListOfUnits raises proves the call is gone.
+local tripwire = {
+    GetListOfUnits = function()
+        error("RecordExtractorLoss must not query the brain on the destruction path")
+    end,
+}
+environment.RecordExtractorLoss(tripwire, { 1, 0, 1 })
+assert(tripwire.RedQueenExtractorLosses.Lost == 1,
+    "the loss is still counted without touching the engine")
+
 environment.RecordExtractorLoss(brain, { 200, 0, 200 })
 environment.RecordExtractorLoss(brain, { 5, 0, 5 })
-local losses = environment.LossSummary(brain)
-assert(losses.Lost == 2, "both losses counted, got " .. losses.Lost)
-assert(losses.Defended == 1,
-    "only the one inside a gun's reach was defended, got " .. losses.Defended)
+-- Unresolved until the next state line, which is where the defence list is
+-- fetched anyway.
+assert(environment.LossSummary(brain).Defended == 0,
+    "coverage of a loss is not answered on the destruction path")
+local report = environment.Report(brain, { Active = false })
+assert(report.Loss.Lost == 2, "both losses counted, got " .. report.Loss.Lost)
+assert(report.Loss.Defended == 1,
+    "only the one inside a gun's reach was defended, got " .. report.Loss.Defended)
+-- Resolving twice must not count the same loss again.
+local again = environment.Report(brain, { Active = false })
+assert(again.Loss.Defended == 1,
+    "a resolved loss is not re-counted, got " .. again.Loss.Defended)
 
--- Fortifiable span: ground outside every base manager cannot be offered a
--- fortification builder at all, so it is not "under-defended" but unreachable.
-local extractors = {
-    { GetPosition = function() return { 0, 0, 0 } end },
-    { GetPosition = function() return { 30, 0, 0 } end },
-    { GetPosition = function() return { 400, 0, 400 } end },
+-- Report is the single entry point, so the module's engine queries per state
+-- line stay fixed no matter how many extractors died in between.
+local queries = 0
+local counting = {
+    GetListOfUnits = function(_, category)
+        queries = queries + 1
+        if category.Name == "STRUCTURE*DEFENSE" then return defences end
+        return {}
+    end,
+}
+for _ = 1, 5 do environment.RecordExtractorLoss(counting, { 5, 0, 5 }) end
+environment.Report(counting, { Active = false })
+assert(queries == 1,
+    "one query per state line regardless of losses, got " .. queries)
+
+-- Fortifiable span: deposits outside every base manager cannot be offered a
+-- fortification builder at all, so they are unreachable rather than
+-- under-defended.
+--
+-- Measured from the map's mass markers, never from a unit query:
+-- GetListOfUnits(STRUCTURE * MASSEXTRACTION) perturbs the simulation, bisected
+-- over five matches on one cell. The same call for STRUCTURE * DEFENSE is
+-- clean. A brain whose GetListOfUnits raises when asked for anything but
+-- defences proves the extractor query is gone.
+local world = {
+    MassClusters = {
+        { Markers = { { Position = { 0, 0, 0 } }, { Position = { 30, 0, 0 } } } },
+        { Markers = { { position = { 400, 0, 400 } } } },   -- lowercase, as markers come
+    },
 }
 local spanBrain = {
     BuilderManagers = {
@@ -115,14 +160,38 @@ local spanBrain = {
         } },
     },
     GetListOfUnits = function(_, category)
-        if category.Name == "STRUCTURE*MASSEXTRACTION" then return extractors end
+        if category.Name ~= "STRUCTURE*DEFENSE" then
+            error("BaseSpan must not query units; it reads the map's markers")
+        end
         return {}
     end,
 }
-local span = environment.BaseSpan(spanBrain)
+local span = environment.BaseSpan(spanBrain, world)
 assert(span.Bases == 1, "one registered base, got " .. span.Bases)
 assert(span.Inside == 2 and span.Outside == 1,
-    "two extractors inside the base radius and one beyond every base, got "
+    "two deposits inside the base radius and one beyond every base, got "
         .. span.Inside .. "/" .. span.Outside)
+
+-- No world model yet (the brain is built before the map is read): report the
+-- bases and no verdict, rather than raising inside a diagnostic.
+local early = environment.BaseSpan(spanBrain, nil)
+assert(early.Bases == 1 and early.Inside == 0 and early.Outside == 0,
+    "an absent world model yields bases without a span")
+
+-- And the whole report still makes exactly one unit query.
+local reportQueries = 0
+local reportBrain = {
+    BuilderManagers = spanBrain.BuilderManagers,
+    GetListOfUnits = function(_, category)
+        reportQueries = reportQueries + 1
+        if category.Name ~= "STRUCTURE*DEFENSE" then
+            error("Report must query defences and nothing else")
+        end
+        return defences
+    end,
+}
+environment.Report(reportBrain, { Active = false }, world)
+assert(reportQueries == 1,
+    "one unit query per state line, got " .. reportQueries)
 
 print("Red Queen defence coverage contracts passed")
