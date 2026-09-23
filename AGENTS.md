@@ -184,6 +184,23 @@ A single match is one sample. Seed alone has flipped an outcome on the same map,
 
 Every mechanism must be visible in a match log, and it is worth adding the log line *before* the run rather than after. Two mechanisms once ran a full 21-cell matrix leaving no trace: forward-base cover, which logged at `Logger.Debug` (off in behavioural runs) and stood down for 86% of bases behind a Tech 3 filter, and native engineer suppression, which was inferable only by noticing that held engineers tracked their target exactly. Outcomes cannot attribute a change; only mechanism figures can. `Logger.Debug` is for interactive work — a figure a matrix has to read belongs in the periodic state line, with a contract asserting it is reported.
 
+### Where results live
+
+`run-matrix.sh` writes every log and manifest to `/tmp`, which does not survive a reboot. Anything a conclusion rests on belongs in **`docs/balance/data/`** before the machine goes down:
+
+| file | what it holds |
+| --- | --- |
+| `matrix-results.csv` | one row per cell per payload — the end-of-match value of every instrumented figure |
+| `defence-coverage-series.csv` | per-game-minute series where a figure needs its shape, not just its endpoint |
+| `manifests/` | the launch manifests. This is what keeps a result attributable to an exact tree, and it is the cheapest thing here to lose |
+| `raw-logs.tar.gz`, `earlier-runs.tar.gz` | the full logs, compressed |
+| `tooling/` | the matrix drivers and the paired-comparison script |
+| `payloads.json`, `README.md` | payload hash to what that payload changed, and how to read the rest |
+
+Extract the per-cell figures when the matrix lands, not later: a conclusion recorded in a document with its evidence left in `/tmp` cannot be rechecked, and re-running costs hours. Record the payload hash with the numbers — `docs/balance/README.md` maps hashes to changes, and a figure without one cannot be compared against anything.
+
+Compare a cell against itself across payloads, at that pair's common horizon. Cells are observed for 28–95 game minutes, deterministically but unequally, so a cross-cell comparison of final values measures match length as much as policy.
+
 Bundling several changes into one run is acceptable only when each is separately observable that way. Otherwise one dominant regression masks everything: an engineer ceiling that cut factory production reduced two cells to 6 factories and 89-128 peak mass, and made the establishment and tiering changes shipped alongside it unmeasurable.
 
 ## Coding Style & Naming Conventions

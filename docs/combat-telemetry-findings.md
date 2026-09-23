@@ -520,3 +520,138 @@ measured per blueprint.
 | defensive arrival | real (1.2-37%), deficit does not discriminate |
 | **exchange rate** | **the only clean discriminator found** |
 | gunship output share | strongest mechanism feeding it |
+
+# Implementation experiment: T2 gunships follow counter demand
+
+The resumed implementation uses `84555d4` as its starting point. The earlier
+readiness experiment remains outside the checkout. The concentration result
+does not justify adding a global gathering rule or a new land-front system in
+this experiment.
+
+The intervention is confined to `ShouldBuildT2Air`: its dominance builder must
+pass the same doctrine, affordability and fleet-quota decision as the explicit
+gunship counter builder. Previously, after `StrategyDirector` abandoned a
+gunship response, this sibling could continue replacing gunships simply
+because air tier remained T2. The explicit counter, other domains, factory
+upgrades and platoon plans retain their existing behavior.
+
+`airdominance=counter/doctrine/quota/tier-or-stall/none` in the periodic state
+reports the last evaluation of this condition. It is eligibility telemetry,
+not a construction-start counter. Completed output and losses still come from
+`combat-production`, and the plan attribution from `combat-plans`.
+
+The hypothesis is that respecting the counter's exit and quota reduces
+unrequested gunship replacement, leaving resources for more useful output.
+The falsifier is that gunship output does not materially change, or its lost
+mass simply moves into equally costly land attrition without improving the
+matched outcomes. Lost winning cells count as regressions. The principal cost
+is fewer gunships against enemies with weak anti-air; the existing positive
+counter path must continue to work.
+
+Contracts cover an active counter, a full quota, reopening below quota,
+Balanced/AirDefense rejection, stall rejection, and leaving T2 dominance after
+T3 access. The runtime comparison uses all twelve established cells, including
+all seven wins, at `income=1.00`, two concurrent games at most.
+
+Two interpretation limits remain important when evaluating it. A blueprint's
+100% lifetime loss rate does not establish a 0:1 trade: kills by those attackers
+were not measured. Also, the exchange-rate separation above is for the selected
+six cells, not the whole baseline: the Sentry Point UEF baseline wins at about
+0.81 mass K/L. Neither total K/L nor completed-unit counts alone identify the
+responsible policy; the intervention and its displaced production must be read
+together.
+
+## Global gate rejected; scope follows the measured profile
+
+Four cells completed on global-gate payload
+`0d6826b23f2020f7b94a1998864589bd5622608b279aaab4d48d2e5617e562f3`:
+
+| cell | baseline | global gate | baseline / candidate mass K/L |
+| --- | --- | --- | --- |
+| Isis 8675309 | defeat | **victory** | 0.423 / 1.469 |
+| Isis 31337 | defeat | defeat | 0.667 / 0.890 |
+| Syrtis 8675309 | defeat | defeat | 0.590 / 0.376 |
+| Sentry Point 2071971 Aeon | **victory** | defeat | 1.399 / 1.315 |
+
+The remaining queue was stopped; the two already-running cells completed and
+were analyzed normally. No completed match was truncated. The global policy
+is not retained.
+
+Isis 8675309 supplies a completed mechanism example: T2 Specters fall from
+47 to 18 completions, T3 Harbingers rise from 23 to 55, and one Galactic
+Colossus completes where none did in the control. `GunshipHuntAI` loses 4,050
+mass in the control and has no recorded losses in the candidate. This supports
+the spending hypothesis on this cell; the other cells show why it cannot yet
+be generalized.
+
+The candidate now assigns `DemandDrivenGunships` only to `LandLarge` through
+the existing profile selection. Small land, mixed and naval profiles use their
+original T2 dominance condition, reported as `airdominance=legacy`. This is a
+measured scope restriction, not a claim that size alone explains combat losses.
+The scoped twelve-cell verification uses payload
+`e1f97d29559e15aa4882af430e24b35dbf1292903275677ba1b64a45d251d724`.
+
+## Scoped result: retain, 8W/4L with all seven previous wins preserved
+
+All twelve cells completed. The current extractor-scope control is **7W/5L**;
+the scoped gunship change finishes **8W/4L**. Fields of Isis, seed 8675309,
+changes from defeat to victory. No winning control changes to defeat.
+
+All opponents below are Cybran stock Adaptive, with strict 1v1 `income=1.00`.
+The reference logs are `/tmp/rq-m-mexscope-<case>.log`; the candidate logs are
+`/tmp/rq-m-combat-airland-<case>.log`. Each has its launch manifest and patch.
+
+| case | map | RQ faction | control → scoped | mass K/L control → scoped |
+| --- | --- | --- | --- | --- |
+| isis-8675309-aeon | SCMP_015 | Aeon | defeat → **victory** | 0.423 → 1.469 |
+| isis-31337-aeon | SCMP_015 | Aeon | defeat → defeat | 0.667 → 0.890 |
+| syrtis-8675309-aeon | SCMP_017 | Aeon | defeat → defeat | 0.590 → 0.376 |
+| syrtis-31337-aeon | SCMP_017 | Aeon | defeat → defeat | 0.540 → 0.928 |
+| small-2071971-aeon | SCMP_018 | Aeon | victory → victory | 1.399 → 1.399 |
+| small-31337-aeon | SCMP_018 | Aeon | victory → victory | 1.123 → 1.123 |
+| small-2071971-uef | SCMP_018 | UEF | victory → victory | 0.806 → 0.806 |
+| naval-2071971-aeon | SCMP_037 | Aeon | victory → victory | 2.258 → 2.258 |
+| naval-2071971-cybran | SCMP_037 | Cybran | victory → victory | 2.768 → 2.768 |
+| naval-2071971-sera | SCMP_037 | Seraphim | victory → victory | 2.294 → 2.294 |
+| naval-31337-sera | SCMP_037 | Seraphim | victory → victory | 1.085 → 1.085 |
+| naval-8675309-sera | SCMP_037 | Seraphim | defeat → defeat | 0.326 → 0.326 |
+
+All eight cells outside `LandLarge` reproduce their control's complete
+contestant `JsonStats`, ignoring generated army names and the unused human
+slot. This is stronger than outcome agreement for the tested controls, but it
+does not establish balance on untested maps or factions.
+
+The scoped Isis win reproduces the global experiment's 18 Specters, 55
+Harbingers and one completed Colossus. The other large-land cells also reduce
+T2 gunship completions: Isis 31337 from 28 to 9, Syrtis 8675309 from 42 to 15,
+and Syrtis 31337 from 59 to 12. The doctrine condition opens and closes in all
+four large-land logs. The fleet-quota boundary is contract-tested; these logs
+do not contain a sampled `airdominance=quota` refusal.
+
+**The retained change has a measured cost.** Syrtis 8675309 loses with worse
+mass K/L, and its T3 Harbinger completions fall from 25 to zero. Fewer gunships
+does not reliably become stronger land output. Whole-match production counts
+also cover different match durations, so they describe the resulting army
+composition rather than proving the marginal value of each saved gunship.
+
+Verification: `./scripts/validate.sh` and `git diff --check` pass. Every match
+passes `scripts/analyze-log.py`, starts one Red Queen brain, and reports zero
+Red Queen Lua or scheduler failures. All twelve manifests have the scoped
+payload hash above, and their file hashes match the retained Lua tree. Native
+FAF advisory failures remain separately reported by the analyzer. The runner
+completed its queue; a host process scan found no remaining game processes.
+Audit and production comparisons are recorded in
+`/tmp/rq-combat-20260919/resumed/airland-audit.json` and
+`/tmp/rq-combat-20260919/resumed/airland-comparison.json`.
+
+This closes the existing twelve-cell comparison, not the broader release
+matrix. Large-land behavior here covers Aeon against Cybran on two maps and
+two seeds; mixed terrain, other large-land factions, team games, Sweepwing and
+Crossfire remain unverified for this change.
+
+The next investigation should trace the first production divergence in the
+remaining Syrtis losses: counter activation/exit, actual air support, and what
+factories produce after the dominance builder stands down. The regression in
+land completion is a concrete lead. The current concentration metric does not
+justify a global gathering rule, and this result does not settle the value of
+local pressure or defense coverage on open maps.

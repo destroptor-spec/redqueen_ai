@@ -190,6 +190,54 @@ user's go-ahead before launch.
 
 ## Required match matrix
 
+### The matrix is deterministic, and that cuts both ways
+
+Two control runs of the same eight cases, same payload, reproduced every cell:
+8/8 outcomes and mass K/L identical to two decimal places.
+
+So a single sample per cell is **conclusive** for that exact map, seed, faction
+and payload. There is no run-to-run noise to average away, and any difference
+between two arms is causal.
+
+It is also chaotic. Changing one builder's priority by 35 points flipped four of
+eight cells while leaving the record unchanged at 4W/4L, and across two such
+arms seven of the eight cells were won by *some* configuration. A small timing
+change cascades into a different match.
+
+Both facts together mean the danger is not noise but **overfitting**: a policy
+tuned until eight fixed cells go green has been fitted to eight seeds. The
+gunship gate is the worked example -- 8W/4L on the twelve recorded cases, then
+five of six losses on cases it had never seen. Judge a candidate on cases it was
+not tuned against, and prefer more seeds per map and faction over more maps.
+
+### Protecting recorded wins
+
+`docs/balance/airland-reference.json` records the completed 8W/4L strict 1v1
+reference, including settings, outcomes, payloads, log hashes and contestant
+statistics hashes. After running those same cases on a candidate, check them:
+
+```bash
+python3 scripts/check-balance.py \
+    --reference docs/balance/airland-reference.json \
+    --output /tmp/rq-balance-comparison.json \
+    /tmp/rq-m-<candidate-prefix>-*.log
+```
+
+The command runs `analyze-log.py` on each log before interpreting its result.
+Exit 0 means every case is complete and every reference win is retained; exit
+1 identifies lost winning cases even if other gains keep the total unchanged;
+exit 2 rejects invalid evidence. Missing/duplicate cases, changed factions,
+starts, victory settings, income, scouting mode or native FAF Lua version, mixed candidate payloads,
+unfinished matches and Red Queen failures cannot pass. Mass K/L changes and
+exact contestant-statistics agreement are reported separately.
+
+This checks the recorded cases, not unseen seeds or long-term win probability.
+Preselect additional paired cases when extending a policy's scope. Keep the
+old reference when a candidate loses a protected win; update it only after
+reviewing the complete paired results and their production costs.
+
+### Broader release coverage
+
 | Area | Required cases |
 | --- | --- |
 | Factions | UEF, Aeon, Cybran, Seraphim |
