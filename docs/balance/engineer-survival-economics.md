@@ -810,3 +810,65 @@ held, 6.69 able to reach the alert, 36% of alert samples with zero coverage, and
 
 `basespan` needs re-measuring across the matrix under the new definition, and
 the eighteenth cell can now be included.
+
+---
+
+# Measurement 1, re-run on the neutral payload (2026-09-23)
+
+Payload `24df7ae613f5`, 18 cells. **All 18 reproduce the baseline exactly** on
+sample count, peak claim and final claim; 0 Red Queen Lua or scheduler failures.
+The eighteenth cell, excluded from the earlier report, is included here.
+
+## Defences exist; they cannot reach the fighting
+
+Over **692 alert samples across all 18 cells**:
+
+| | |
+| --- | ---: |
+| mean defence structures held | **27.6** |
+| mean able to reach the alert | **6.84** |
+| alert samples with **zero** coverage | **228 of 692 (33%)** |
+| median distance, nearest gun to the alert | 12 |
+| extractors lost | 564 |
+| **lost with any friendly weapon in range** | **157 (27.8%)** |
+
+**72% of extractors died with nothing able to shoot what killed them.** The
+figures reproduce the earlier run closely — 27.0 to 27.6 guns, 6.69 to 6.84
+covering, 28.9% to 27.8% defended — the small differences being the restored
+cell, which is the check that the seventeen clean cells really were clean.
+
+A median nearest-gun distance of 12 against a mean coverage of 6.84 of 27.6
+confirms the distribution is bimodal: an alert at the base is answered, an
+alert anywhere else is not.
+
+## Most of the map can never be fortified
+
+Deposits inside versus outside every base manager radius, measured from the
+map's markers:
+
+| | |
+| --- | ---: |
+| mean bases per match | **2.8** |
+| deposits inside a base radius | 258 |
+| **deposits outside every base** | **570 (69%)** |
+
+Per map: Fields of Isis 59–64% outside, Syrtis Major 69–83%. Syrtis is both the
+larger map and the one where retention is worst.
+
+Two to four base managers, each covering a radius of at least 40, against maps
+of 44 and 48 deposits. **About seven deposits in ten are ground where
+`FortificationBuilders.GetLocation` returns nil and no defence can be requested
+at all** — not under-defended, unreachable.
+
+## The holding problem, in order of size
+
+1. **Unfortifiable ground — 69% of deposits.** No builder can be offered the
+   job. Fixed by where base managers exist, not by defence policy.
+2. **Uncovered ground inside a base — 33% of alerts answered by nothing.** A
+   tier's need is met by any structure of that tier anywhere in the radius, and
+   `BuildClose` puts it beside what is already there.
+3. **Gun count — 27.6 held.** The only one the present demand controls, and the
+   one with the least evidence of being short.
+
+Measurement 2, the factory eligibility counterfactual, remains unbuilt and
+deliberately unbundled from any of these.

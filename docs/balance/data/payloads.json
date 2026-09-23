@@ -3,5 +3,6 @@
   "lever1": "withdrawal writes no exclusion (cbf11975e7e8)",
   "guardoff": "route guard disarmed, refusals still counted (1f80dcd5aa3d)",
   "mexplace": "placement counterfactual probe (acc05419c5d5)",
-  "defcover": "defence coverage, losses and fortifiable span (592e88deaadc)"
+  "defcover": "defence coverage, losses and fortifiable span (592e88deaadc)",
+  "24df7ae613f5": "defence coverage, neutral (map-marker span, no extractor query)"
 }

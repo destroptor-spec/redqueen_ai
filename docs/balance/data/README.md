@@ -38,7 +38,16 @@ Cells were observed for 28–95 game minutes, deterministically but unequally, s
 a cell against itself across payloads, at that pair's common horizon. The
 paired-comparison script in `tooling/` does this.
 
-## Known limitation in the coverage payload
+## Superseded: the first coverage payload
+
+`592e88deaadc` perturbed one cell of eighteen and its `basespan` counted
+surviving extractors rather than the map's deposits. Both are fixed in
+`24df7ae613f5`, whose 18 cells reproduce the baseline exactly; its series is
+what `defence-coverage-series.csv` now holds, and its logs are in
+`raw-logs-covfinal.tar.gz`. The earlier logs remain in `raw-logs.tar.gz` for
+the bisect record.
+
+## Resolved: the first coverage payload's neutrality
 
 `592e88deaadc` is not fully behaviour-neutral. Seventeen of eighteen cells
 reproduce the baseline exactly; `syrtis-424242-uef` matches for 32 samples and
@@ -47,9 +56,10 @@ divergence **68/68 samples identically**, so this is a deterministic effect of
 the change and not run-to-run variation — the simulation's determinism itself
 holds.
 
-That cell is excluded from every coverage figure reported. The cause is not yet
-identified; the candidates are the calls `DefenseCoverage` makes into engine
-state — `GetListOfUnits` during a unit-destroyed callback, and the
-`pcall(GetLocationCoords)` in `BaseSpan` — one of which is evidently not the
-pure query it was assumed to be. **Resolve this before trusting the module in a
-payload that also changes a decision.**
+Resolved. Bisected over six matches on that cell: the cause is
+`GetListOfUnits(STRUCTURE * MASSEXTRACTION)`. The same call for
+`STRUCTURE * DEFENSE` is clean, so it is the units asked for and not the call,
+and the mechanism remains unexplained. Both earlier candidates — the
+unit-destroyed callback and the `pcall` — were tested and were not the cause.
+`BaseSpan` now reads the map's mass markers instead, and a contract fails on
+`categories.MASSEXTRACTION` appearing in the module.
