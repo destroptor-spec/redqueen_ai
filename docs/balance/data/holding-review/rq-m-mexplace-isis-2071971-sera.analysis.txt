@@ -1,0 +1,58 @@
+Red Queen lines: 745
+Brains started: 1
+Income contracts: 1
+State samples: 44
+Defense alerts raised: 3
+Assistance: 167 helper assignments, 69 releases, 4 commander assignments; summed per-army peak helpers=4
+Extractor upgrades: 8 native start attempts blocked; gate samples={'expanding': 9, 'stall-risk': 17, 'upgrading': 4, 'under-attack': 8, 'none': 6}
+Pressure: 4 held, 2 yielded, 38 idle of 44 samples (33.3% yielded where anything was sent)
+  primary slot:   {'Pressure': 4, 'Raid': 40}
+  secondary slot: {'Defend': 32}
+Engineers by tier: peak T1=32 T2=13 T3=10; 35/44 samples had a Tech 2 engineer
+Army census: peak owned=39, peak pooled=12, peak available=5
+  units Red Queen cannot command (owned-pooled): mean 10.6, peak 32
+  held by Red Queen itself: order mean 2.3 peak 11, garrison mean 0.1 peak 2
+Directed platoons: 16 formed under a Red Queen plan, 71 aims issued
+  aims by objective: {'Raid': 71}
+Objective changes: 7
+      2  Defend/DefenseAlert -> Defend/LocalDefense [Secondary]
+      2  Defend/LocalDefense -> Defend/DefenseAlert [Secondary]
+      1  none/none -> Pressure/Offensive [Primary]
+      1  Pressure/Offensive -> Raid/Offensive [Primary]
+      1  none/none -> Defend/DefenseAlert [Secondary]
+Objective changes refused: 0
+Tier policy changes: 5
+Forward bases: 4 started, 1 established, 44 blocked
+Commitment holds: 29
+Economy stagnation reports: 0
+Endgame investment under alert: 4/31 alert samples kept a non-zero experimental weight
+Alert samples by qualifying arm: air 2, combined 1, surface 28
+Peak units dispatched per layer: L0, A3, W0, M4, H0 over 44 samples
+Engine Lua failures: 1
+Red Queen Lua failures: 0
+Red Queen scheduler failures: 0
+Unattributed Lua failures: 1
+Post-defeat Lua failures: 0 attributed, 1 in FAF code (advisory)
+Invalid manager locations: 0 attributed, 0 in FAF code (advisory) (0 after first defeat)
+
+Forward base blockers:
+     26  defense-alert
+      3  negative-mass-trend
+      3  construction-active
+      3  cooldown
+      3  map-cap
+      3  stall-risk
+      2  no-idle-engineer
+      1  low-energy-storage
+
+End-of-game army stats:
+  army                                 built$    lost$    kill$    K/L   exp
+  FAF_Destroptor (Human)                   0k       0k       0k   0.00   0/0
+  Zan-Iavow (AI: Rush) (AI)              304k     148k      86k   0.58   0/1
+  Thel-Ylliuhesh (AI: Rush) (AI)         444k      87k     113k   1.30   1/0
+  (exp = experimentals built/lost; K/L is destroyed mass over lost mass)
+
+Failures: 0 distinct, 0 occurrences
+
+Unattributed engine failures (advisory, not gated):
+      1x  warning: Error running lua script: ...\andreas\.faforever\gamedata\lua.nxN\lua\platoon.lua(N): attempt to call method `PlatoonDisband' (a nil value)

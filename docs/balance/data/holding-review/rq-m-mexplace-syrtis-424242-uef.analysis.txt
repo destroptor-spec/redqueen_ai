@@ -1,0 +1,56 @@
+Red Queen lines: 1534
+Brains started: 1
+Income contracts: 1
+State samples: 74
+Defense alerts raised: 16
+Assistance: 267 helper assignments, 143 releases, 5 commander assignments; summed per-army peak helpers=7
+Extractor upgrades: 18 native start attempts blocked; gate samples={'expanding': 14, 'under-attack': 6, 'upgrading': 5, 'stall-risk': 21, 'started': 1, 'none': 27}
+Pressure: 6 held, 1 yielded, 67 idle of 74 samples (14.3% yielded where anything was sent)
+  primary slot:   {'Pressure': 4, 'Raid': 70}
+  secondary slot: {'Defend': 62}
+Engineers by tier: peak T1=31 T2=16 T3=17; 60/74 samples had a Tech 2 engineer
+Army census: peak owned=55, peak pooled=12, peak available=8
+  units Red Queen cannot command (owned-pooled): mean 28.6, peak 49
+  held by Red Queen itself: order mean 2.1 peak 6, garrison mean 0.1 peak 2
+Directed platoons: 36 formed under a Red Queen plan, 174 aims issued
+  aims by objective: {'Raid': 174}
+Objective changes: 25
+      9  none/none -> Defend/DefenseAlert [Secondary]
+      7  Defend/LocalDefense -> Defend/DefenseAlert [Secondary]
+      5  Defend/DefenseAlert -> Defend/LocalDefense [Secondary]
+      2  none/none -> Defend/LocalDefense [Secondary]
+      1  none/none -> Pressure/Offensive [Primary]
+      1  Pressure/Offensive -> Raid/Offensive [Primary]
+Objective changes refused: 0
+Tier policy changes: 5
+Forward bases: 3 started, 1 established, 74 blocked
+Commitment holds: 82
+Economy stagnation reports: 7
+Endgame investment under alert: 25/60 alert samples kept a non-zero experimental weight
+Alert samples by qualifying arm: air 11, combined 5, surface 44
+Peak units dispatched per layer: L0, A5, W0, M0, H0 over 74 samples
+Engine Lua failures: 0
+Red Queen Lua failures: 0
+Red Queen scheduler failures: 0
+Unattributed Lua failures: 0
+Post-defeat Lua failures: 0 attributed, 0 in FAF code (advisory)
+Invalid manager locations: 0 attributed, 0 in FAF code (advisory) (0 after first defeat)
+
+Forward base blockers:
+     45  map-cap
+     12  construction-active
+      5  defense-alert
+      4  negative-mass-trend
+      4  stall-risk
+      2  no-idle-engineer
+      1  low-mass-storage
+      1  cooldown
+
+End-of-game army stats:
+  army                                 built$    lost$    kill$    K/L   exp
+  FAF_Destroptor (Human)                   0k       0k       0k   0.00   0/0
+  Porter (AI: Rush) (AI)                 691k     453k     441k   0.97   2/16
+  Zimm (AI: Rush) (AI)                   948k     447k     443k   0.99   4/16
+  (exp = experimentals built/lost; K/L is destroyed mass over lost mass)
+
+Failures: 0 distinct, 0 occurrences

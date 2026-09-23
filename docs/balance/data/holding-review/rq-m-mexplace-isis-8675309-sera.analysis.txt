@@ -1,0 +1,60 @@
+Red Queen lines: 747
+Brains started: 1
+Income contracts: 1
+State samples: 50
+Defense alerts raised: 6
+Assistance: 144 helper assignments, 82 releases, 1 commander assignments; summed per-army peak helpers=5
+Extractor upgrades: 13 native start attempts blocked; gate samples={'expanding': 7, 'stall-risk': 10, 'upgrading': 8, 'started': 1, 'under-attack': 12, 'none': 12}
+Pressure: 12 held, 2 yielded, 36 idle of 50 samples (14.3% yielded where anything was sent)
+  primary slot:   {'Pressure': 4, 'Raid': 46}
+  secondary slot: {'Defend': 40}
+Engineers by tier: peak T1=24 T2=14 T3=12; 41/50 samples had a Tech 2 engineer
+Army census: peak owned=31, peak pooled=16, peak available=9
+  units Red Queen cannot command (owned-pooled): mean 11.0, peak 22
+  held by Red Queen itself: order mean 3.5 peak 14, garrison mean 0.0 peak 2
+Directed platoons: 13 formed under a Red Queen plan, 31 aims issued
+  aims by objective: {'Pressure': 1, 'Raid': 31}
+Objective changes: 9
+      5  none/none -> Defend/DefenseAlert [Secondary]
+      1  none/none -> Pressure/Offensive [Primary]
+      1  Pressure/Offensive -> Raid/Offensive [Primary]
+      1  Defend/DefenseAlert -> Defend/LocalDefense [Secondary]
+      1  Defend/LocalDefense -> Defend/DefenseAlert [Secondary]
+Objective changes refused: 0
+Tier policy changes: 6
+Forward bases: 2 started, 1 established, 50 blocked
+Commitment holds: 26
+Economy stagnation reports: 3
+Endgame investment under alert: 15/40 alert samples kept a non-zero experimental weight
+Alert samples by qualifying arm: combined 4, surface 36
+Peak units dispatched per layer: L0, A5, W0, M19, H0 over 50 samples
+Engine Lua failures: 3
+Red Queen Lua failures: 0
+Red Queen scheduler failures: 0
+Unattributed Lua failures: 3
+Post-defeat Lua failures: 0 attributed, 3 in FAF code (advisory)
+Invalid manager locations: 0 attributed, 0 in FAF code (advisory) (0 after first defeat)
+
+Forward base blockers:
+     34  defense-alert
+      5  map-cap
+      2  no-idle-engineer
+      2  stall-risk
+      2  low-mass-storage
+      1  negative-mass-trend
+      1  negative-energy-trend
+      1  low-mass-income
+      1  construction-active
+      1  cooldown
+
+End-of-game army stats:
+  army                                 built$    lost$    kill$    K/L   exp
+  FAF_Destroptor (Human)                   0k       0k       0k   0.00   0/0
+  Oum-Ullehesh (AI: Rush) (AI)           363k     354k     183k   0.52   0/10
+  Zan-Uyalthow (AI: Rush) (AI)           759k     184k     329k   1.79   2/1
+  (exp = experimentals built/lost; K/L is destroyed mass over lost mass)
+
+Failures: 0 distinct, 0 occurrences
+
+Unattributed engine failures (advisory, not gated):
+      3x  warning: Error running lua script: get as number expected but got nil

@@ -1,0 +1,55 @@
+Red Queen lines: 1110
+Brains started: 1
+Income contracts: 1
+State samples: 59
+Defense alerts raised: 13
+Assistance: 260 helper assignments, 132 releases, 5 commander assignments; summed per-army peak helpers=3
+Extractor upgrades: 8 native start attempts blocked; gate samples={'expanding': 9, 'stall-risk': 12, 'under-attack': 8, 'upgrading': 10, 'started': 1, 'none': 19}
+Pressure: 2 held, 2 yielded, 55 idle of 59 samples (50.0% yielded where anything was sent)
+  primary slot:   {'Pressure': 4, 'Raid': 55}
+  secondary slot: {'Defend': 49}
+Engineers by tier: peak T1=34 T2=14 T3=15; 45/59 samples had a Tech 2 engineer
+Army census: peak owned=82, peak pooled=11, peak available=7
+  units Red Queen cannot command (owned-pooled): mean 49.8, peak 78
+  held by Red Queen itself: order mean 2.6 peak 9, garrison mean 0.1 peak 2
+Directed platoons: 50 formed under a Red Queen plan, 129 aims issued
+  aims by objective: {'Raid': 129}
+Objective changes: 22
+      7  none/none -> Defend/DefenseAlert [Secondary]
+      7  Defend/DefenseAlert -> Defend/LocalDefense [Secondary]
+      6  Defend/LocalDefense -> Defend/DefenseAlert [Secondary]
+      1  none/none -> Pressure/Offensive [Primary]
+      1  Pressure/Offensive -> Raid/Offensive [Primary]
+Objective changes refused: 0
+Tier policy changes: 5
+Forward bases: 2 started, 2 established, 59 blocked
+Commitment holds: 47
+Economy stagnation reports: 2
+Endgame investment under alert: 23/47 alert samples kept a non-zero experimental weight
+Alert samples by qualifying arm: air 7, combined 3, surface 37
+Peak units dispatched per layer: L4, A0, W0, M1, H3 over 59 samples
+Engine Lua failures: 1
+Red Queen Lua failures: 0
+Red Queen scheduler failures: 0
+Unattributed Lua failures: 1
+Post-defeat Lua failures: 0 attributed, 1 in FAF code (advisory)
+Invalid manager locations: 0 attributed, 0 in FAF code (advisory) (0 after first defeat)
+
+Forward base blockers:
+     48  map-cap
+      4  negative-mass-trend
+      4  defense-alert
+      2  no-idle-engineer
+      1  stall-risk
+
+End-of-game army stats:
+  army                                 built$    lost$    kill$    K/L   exp
+  FAF_Destroptor (Human)                   0k       0k       0k   0.00   0/0
+  Jables (AI: Rush) (AI)                 636k     385k     249k   0.65   2/21
+  Jables (AI: Rush) (AI)                 767k     256k     303k   1.18   5/2
+  (exp = experimentals built/lost; K/L is destroyed mass over lost mass)
+
+Failures: 0 distinct, 0 occurrences
+
+Unattributed engine failures (advisory, not gated):
+      1x  warning: Error running lua script: ...\andreas\.faforever\gamedata\lua.nxN\lua\platoon.lua(N): attempt to call field `SetupEngineerCallbacks' (a nil value)

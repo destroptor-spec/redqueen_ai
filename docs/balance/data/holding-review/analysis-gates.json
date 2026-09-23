@@ -1,0 +1,74 @@
+[
+  {
+    "log": "/tmp/rq-m-mexplace-isis-2071971-aeon.log",
+    "exit": 0
+  },
+  {
+    "log": "/tmp/rq-m-mexplace-isis-2071971-sera.log",
+    "exit": 0
+  },
+  {
+    "log": "/tmp/rq-m-mexplace-isis-2071971-uef.log",
+    "exit": 0
+  },
+  {
+    "log": "/tmp/rq-m-mexplace-isis-424242-aeon.log",
+    "exit": 0
+  },
+  {
+    "log": "/tmp/rq-m-mexplace-isis-424242-sera.log",
+    "exit": 0
+  },
+  {
+    "log": "/tmp/rq-m-mexplace-isis-424242-uef.log",
+    "exit": 0
+  },
+  {
+    "log": "/tmp/rq-m-mexplace-isis-8675309-aeon.log",
+    "exit": 0
+  },
+  {
+    "log": "/tmp/rq-m-mexplace-isis-8675309-sera.log",
+    "exit": 0
+  },
+  {
+    "log": "/tmp/rq-m-mexplace-isis-8675309-uef.log",
+    "exit": 0
+  },
+  {
+    "log": "/tmp/rq-m-mexplace-syrtis-2071971-aeon.log",
+    "exit": 0
+  },
+  {
+    "log": "/tmp/rq-m-mexplace-syrtis-2071971-sera.log",
+    "exit": 0
+  },
+  {
+    "log": "/tmp/rq-m-mexplace-syrtis-2071971-uef.log",
+    "exit": 0
+  },
+  {
+    "log": "/tmp/rq-m-mexplace-syrtis-424242-aeon.log",
+    "exit": 0
+  },
+  {
+    "log": "/tmp/rq-m-mexplace-syrtis-424242-sera.log",
+    "exit": 0
+  },
+  {
+    "log": "/tmp/rq-m-mexplace-syrtis-424242-uef.log",
+    "exit": 0
+  },
+  {
+    "log": "/tmp/rq-m-mexplace-syrtis-8675309-aeon.log",
+    "exit": 0
+  },
+  {
+    "log": "/tmp/rq-m-mexplace-syrtis-8675309-sera.log",
+    "exit": 0
+  },
+  {
+    "log": "/tmp/rq-m-mexplace-syrtis-8675309-uef.log",
+    "exit": 0
+  }
+]
