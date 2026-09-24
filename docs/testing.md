@@ -39,7 +39,7 @@ For an isolated command-line check, make a copy of `Game.prefs` in FAF's prefere
 
 ```lua
 active_mods = {
-    ['7f4a8d2e-2d63-4e71-9c51-5ed0ee000009'] = true
+    ['7f4a8d2e-2d63-4e71-9c51-5ed0ee000010'] = true
 }
 ```
 

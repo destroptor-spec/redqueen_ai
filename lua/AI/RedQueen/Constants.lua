@@ -1,5 +1,5 @@
 ModPath = "/mods/TheRedQueen"
-Version = "V9"
+Version = "V10"
 PersonalityKey = "redqueen"
 LogPrefix = "[RedQueen]"
 
