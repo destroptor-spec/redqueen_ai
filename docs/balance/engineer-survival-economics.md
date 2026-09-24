@@ -1266,3 +1266,61 @@ off with the floor.
 The shield-by-tier `watch` field is kept regardless. Reported as a single total,
 it could not show 6.4 Tech 2 shields standing beside 7.2 Tech 3 ones, and that
 split is the only reason the tier-scoping can be said to have worked at all.
+
+---
+
+# The team layout is not the surplus regime (2026-09-24)
+
+Piloted one 2v2v2 cell on Saltrock Colony before committing a matrix, to check
+whether a team game reproduces the economic surplus seen against humans. Shape
+confirmed from the log: `allies=2 enemies=4 deficit=2 income=1.20`, six slots
+filled, one Red Queen army against stock Adaptive allies and opponents.
+
+| | both stores >=95% | mass store mean |
+| --- | ---: | ---: |
+| mirror 1v1 | 4% | 0.21 |
+| **2v2v2 team** | **2%** | **0.07** |
+| vs humans | **46–62%** | — |
+
+The team layout is **more** mass-starved, not less, and the experimental target
+never left zero. A team matrix cannot answer the shield or experimental
+question, so it was not run. One cell, six minutes, eighteen cells saved.
+
+## What the human float actually was
+
+The premise behind testing shields and experimentals in a surplus regime was
+that Red Queen had spare economy against humans. It did not have spare economy —
+it had unspent economy, which is a different defect. While both stores stood at
+or above 95%:
+
+| | army 3 | army 4 |
+| --- | ---: | ---: |
+| factories held | 26.3 | 27.7 |
+| factories *wanted* | 23.1 | 23.3 |
+| **idle engineers** | **18.7 of 40.0** | **15.2 of 41.5** |
+| assistance active | 2.7 | 2.0 |
+
+More factories than it asked for, full stores, and roughly **40% of its
+engineers doing nothing**. That is not breathing room to spend on experimentals;
+it is a failure to issue work. Opening the experimental gate would not have
+helped, because the engineers that would build them were already idle.
+
+## Idle engineers are present in every regime
+
+| | idle share | engineers held |
+| --- | ---: | ---: |
+| mirror 1v1 (18 cells) | **32.4%** | 29.9 |
+| 2v2v2 team pilot | 22.1% | 15.8 |
+| vs humans, army 3 | **44.4%** | 40.7 |
+| vs humans, army 4 | 34.9% | 42.2 |
+| vs humans, game 2 | 26.5% | 42.3 |
+
+Between a fifth and a half of the engineer corps is idle at any moment, and the
+share grows with the number of engineers held. In the mirror matrix that is
+about ten idle engineers every sample, in an economy whose mass storage averages
+0.21.
+
+This is the better lead, and unlike shields and experimentals it is **testable
+in the regime we can run**: it is present at 32% in the matrix, larger at 44%
+against humans, and it explains the float directly — an army cannot spend what
+its engineers are not working on.
