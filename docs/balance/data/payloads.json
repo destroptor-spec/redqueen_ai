@@ -9,5 +9,7 @@
   "c28ba99ffec7": "forward-base registration figure (fwdreg=), neutral",
   "f799868c7df8": "ReleaseEngineer surfaces its pcall error (diagnostic)",
   "d16f0c19dc2a": "forward-base recall fixed: native PlatoonDisband guard",
-  "701798836fab": "anti-air divisor 10 -> 5; not adopted, delivered no guns"
+  "701798836fab": "anti-air divisor 10 -> 5; not adopted, delivered no guns",
+  "8781d01046da": "standing anti-air floor, tier-blind (superseded)",
+  "b189beae5f17": "standing anti-air floor, tier-scoped; ADOPTED"
 }

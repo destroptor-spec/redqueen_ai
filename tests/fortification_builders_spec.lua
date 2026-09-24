@@ -34,7 +34,7 @@ function import(path)
     -- The radius floor is shared with DefenseCoverage so the measurement cannot
     -- drift from the extent the builder actually uses.
     if path == "/mods/TheRedQueen/lua/AI/RedQueen/Constants.lua" then
-        return { Policy = { FortificationMinimumRadius = 40 } }
+        return { Policy = { FortificationMinimumRadius = 40, StandingAntiAirPerBase = 6 } }
     end
     return path
 end
@@ -111,6 +111,47 @@ local smd = builders["Red Queen Emergency Strategic Missile Defense"]
 local tml = builders["Red Queen Emergency Tactical Missile T3 Engineer"]
 assert(smd.BuilderConditions[1][1](brain, "MAIN"), "mature emergency bases must request strategic missile defense")
 assert(tml.BuilderConditions[1][1](brain, "MAIN"), "mature emergency bases must request tactical missiles")
+
+-- Anti-air is standing infrastructure, not a reaction. With no alert at all, a
+-- base must still request it, while every other role stays silent.
+--
+-- Across eighteen mirror cells only 12% of active alerts qualified on air
+-- against 63% on surface, so an alert-keyed anti-air target is zero for most of
+-- a match and cannot accumulate between raids -- 3.8 SAM beside 17.9 point
+-- defences, and one air experimental killing both Red Queen armies in a human
+-- match.
+do
+    local alert = brain.RedQueenModules.Strategy.ProductionDemand.DefenseAlert
+    local restore = { Active = alert.Active, Targets = alert.Targets }
+    alert.Active = false
+    local t3AntiAir = builders["Red Queen Emergency T3 AA"]
+    local t3Ground = builders["Red Queen Emergency T3 Point Defense"]
+        or builders["Red Queen Emergency T3 Sentry"]
+    assert(t3AntiAir.BuilderConditions[1][1](brain, "MAIN"),
+        "a quiet base must still hold anti-air")
+    assert(not t3Ground.BuilderConditions[1][1](brain, "MAIN"),
+        "but a quiet base must not build point defence: only anti-air stands by default")
+
+    -- Flak must not satisfy a SAM's floor. Tech 2 anti-air counts toward the
+    -- Tech 2 need and not the Tech 3 one, exactly as point defence already
+    -- works -- the first version of this floor was tier-blind and cheap flak
+    -- crowded SAM out, 3.9 to 7.8 while SAM fell 3.8 to 2.8.
+    brain.GetNumUnitsAroundPoint = function(_, category)
+        return category.Keys.TECH3 and 0 or 8
+    end
+    assert(t3AntiAir.BuilderConditions[1][1](brain, "MAIN"),
+        "eight flak must not satisfy the Tech 3 anti-air floor")
+    brain.GetNumUnitsAroundPoint = function() return 0 end
+
+    -- The floor is a floor, not a cap: an air alert still raises it.
+    alert.Active = true
+    alert.Targets = { AntiAir = 8 }
+    brain.GetNumUnitsAroundPoint = function() return 6 end
+    assert(t3AntiAir.BuilderConditions[1][1](brain, "MAIN"),
+        "an alert above the standing floor must still raise the target")
+    brain.GetNumUnitsAroundPoint = function() return 0 end
+    alert.Active, alert.Targets = restore.Active, restore.Targets
+end
 
 brain.RedQueenModules.Strategy.ProductionDemand.DefenseAlert.AnchorPosition = { 200, 0, 200 }
 local t2Ground = builders["Red Queen Emergency T2 Point Defense"]

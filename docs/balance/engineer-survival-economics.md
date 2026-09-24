@@ -1146,3 +1146,59 @@ it does not get a second chance.
 That is a larger policy change than a constant, and it belongs in its own run
 with the AA counts read before the outcome — the counts are what say whether it
 delivered, and this run shows an outcome number alone would not have.
+
+---
+
+# Standing anti-air: adopted (2026-09-24)
+
+Payload `b189beae5f17` against `d16f0c19dc2a`, 18 cells, all clean.
+
+Anti-air was built only while air was already attacking the base — 63% of active
+alerts qualify on surface and 12% on air — so it could never accumulate between
+raids. `NeedsDefense` now takes a `standing` target that an alert can raise but
+not lower, and anti-air is the only role that passes one
+(`StandingAntiAirPerBase = 6`). Every other role passes nothing, so their
+behaviour is bit-identical: no alert, no defence.
+
+## Built in two steps, because the first was wrong
+
+The floor was first written against a tier-blind category and reproduced the
+defect this file already records for point defence: cheap flak filled the floor
+and the Tech 3 builder saw it satisfied.
+
+| peak per match | control | tier-blind | tier-scoped |
+| --- | ---: | ---: | ---: |
+| flak (T2 AA) | 3.9 | 7.8 | **11.3** |
+| SAM (T3 AA) | 3.8 | **2.8** | **9.5** |
+| total anti-air | 14.2 | 17.2 | **27.3** |
+| point defences | 17.9 | 16.8 | 19.0 |
+
+`AntiAirCategory(tier)` now mirrors `GroundDefenseCategory(tier)`: a tier's need
+is measured in structures of that tier or better. Flak is not SAM against an air
+experimental.
+
+## The outcome
+
+| | control | standing AA |
+| --- | ---: | ---: |
+| **mean mass K/L** | **1.002** | **1.085** |
+| **cells with K/L >= 1.0** | **8** | **10** of 18 |
+| mean peak claim | 24.0 | 24.3 |
+| mean final claim | 15.0 | 15.7 |
+| mean claim retention | 0.627 | 0.639 |
+| defences covering the alert | 5.55 | **8.41** |
+| **extractors lost** | **515** | **407** |
+
+Mass K/L predicts the match outcome in every cell it has been checked against,
+and the count at or above 1.0 moves 8 to 10 — two cells' worth of record. K/L is
+better in 11 cells and worse in 7; retention is better in 9 and worse in 9, so
+the per-cell picture is not decisive and the aggregate is what carries this.
+
+What makes it credible rather than a lucky draw is that the mechanism figures
+move with it: the guns are actually built, coverage at the alert rises 52%, and
+**21% fewer extractors are lost**. Every rejected change in this document moved
+an outcome number without a mechanism behind it, or a mechanism without an
+outcome. This is the first that moves both.
+
+**Adopted.** It is also the only change since the extractor alert scope that
+improves the predictor rather than merely leaving it intact.

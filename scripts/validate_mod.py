@@ -898,6 +898,13 @@ diagnostics_source = (ROOT / "lua/AI/RedQueen/Diagnostics.lua").read_text(
 # count reports as fully defended.
 fortification = (ROOT / "lua/AI/RedQueen/FortificationBuilders.lua").read_text(
     encoding="utf-8")
+# Tier-blind anti-air lets cheap flak satisfy a floor meant to buy SAM, which is
+# the same defect this file already records for point defence.
+if "AntiAirCategory" not in fortification:
+    fail(
+        "anti-air need must be measured in structures of that tier or better, "
+        "as ground defence already is; flak is not SAM"
+    )
 if "math.max(40, radius)" in fortification:
     fail(
         "FortificationBuilders must take its radius floor from "

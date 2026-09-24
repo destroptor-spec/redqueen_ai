@@ -420,6 +420,11 @@ Policy = {
     -- walked it. A first estimate between those, to be calibrated.
     -- The floor FortificationBuilders applies to a base manager radius, shared
     -- so the coverage measurement uses the same extent the builder does.
+    -- Anti-air a base holds whether or not it is under attack. Air is the one
+    -- arm that qualifies almost no alerts (12% of 658) while being the arm that
+    -- ends a base outright, so keying it on an alert built 3.8 SAM beside 17.9
+    -- point defences and left a single air experimental unopposed.
+    StandingAntiAirPerBase = 6,
     FortificationMinimumRadius = 40,
     EngineerSurvivalThreatFloor = 8,
     -- Anything this close to our own start is home construction and is never
