@@ -1010,3 +1010,77 @@ times in the two matrices. Every "recall" line in every log is a **failure**;
 there is no successful-recall line anywhere. A mechanism that has never once
 succeeded, logged only as a warning, is the exact shape of the defects this
 project has repeatedly found by reading its own logs.
+
+---
+
+# The forward-base recall has never worked (2026-09-24)
+
+Payload `d16f0c19dc2a` against `c28ba99ffec7`, 18 cells, all clean.
+
+## The defect
+
+`ReleaseEngineer` ended `return pcall(function() ... end)`, keeping the status
+and discarding the error. Surfacing it took one line and named the bug at once:
+
+```
+productionmanager.lua(191): attempt to call method `PlatoonDisband' (a nil value)
+```
+
+A disbanded platoon leaves its handle on the unit. `PlatoonHandle` stays
+non-nil while every method on it is nil, so `platoon:PlatoonDisband()` guarded
+only by `platoon and not platoon.ArmyPool` raises. `lua/platoon.lua` guards this
+in **68 places** with `PlatoonExists(handle)` *and* the method's presence; Red
+Queen had neither.
+
+The cost was not the lost recall. The caller's failure path is `return`, so the
+record is never retired and the base stays `ForwardBaseActive`, pinning the one
+forward-base slot for the rest of the match. That is what the
+`construction-active` blocks were, and it also explains why raising the cap
+achieved nothing: more slots, each pinned the same way.
+
+## The fix works
+
+| | control | fixed |
+| --- | ---: | ---: |
+| recall failures | **182** | **0** |
+| `construction-active` blocks | 179 | **115** |
+| forward bases started | 47 | 49 |
+| established | 15 | 17 |
+
+## The outcome is a wash
+
+| | control | fixed |
+| --- | ---: | ---: |
+| mean peak claim | 24.0 | 24.0 |
+| mean final claim | 15.8 | **14.8** |
+| mean claim retention | 0.663 | **0.623** |
+| alert samples with zero coverage | 36% | **27%** |
+| defences covering the alert | 6.27 | 5.87 |
+| extractors lost | 416 | **516** |
+
+Retention better in **9** cells, worse in **9**, none unchanged, with swings in
+both directions far larger than the mean shift (0.95 → 0.43 one way, 0.22 → 0.57
+the other). Match length changed in all 18. That is the signature of a change
+that perturbs every trajectory without a direction, not of a regression.
+
+**No win.** Established forward bases rose by two across eighteen matches, and
+the bases that do establish are still overrun — which is the same conclusion the
+cap experiment reached from the other side.
+
+## Kept anyway, and why
+
+This is a correctness defect rather than a tuning choice: calling a method on a
+stale handle is wrong by any standard, native guards it in 68 places, and while
+it stands the forward-base recall **cannot succeed once in a match**. Any future
+work on forward bases would be built on a mechanism that never runs.
+
+The honest ledger: the defect is removed and the mechanism now functions; the
+match record is not improved and mean retention is slightly down inside a 9-9
+split. Both halves are recorded so a later reader can revisit the decision
+rather than rediscover the bug.
+
+The diagnostic half stands on its own regardless: `ReleaseEngineer` returns its
+error, the recall warning carries `reason=`, and contracts fail if either is
+discarded again. A mechanism that failed 182 times in a matrix while logging
+only a warning is exactly the shape this project keeps finding, and the reason
+it kept hiding was that the error was thrown away at the point of failure.

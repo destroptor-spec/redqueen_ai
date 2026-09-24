@@ -1,0 +1,595 @@
+[
+  {
+    "type": "Human",
+    "general": {
+      "lastupdatetick": 37941,
+      "score": 2087810,
+      "currentcap": 2000,
+      "lost": {
+        "mass": 49171.0015625,
+        "count": 54,
+        "energy": 2004288.025
+      },
+      "kills": {
+        "mass": 694699.05,
+        "count": 1297,
+        "energy": 23777144
+      },
+      "currentunits": 517,
+      "built": {
+        "mass": 919258,
+        "count": 609,
+        "energy": 19629280
+      }
+    },
+    "Defeated": 3807.04001464844,
+    "units": {
+      "air": {
+        "lost": 7,
+        "kills": 415,
+        "built": 32
+      },
+      "tech3": {
+        "lost": 14,
+        "kills": 295,
+        "built": 142
+      },
+      "experimental": {
+        "lost": 1,
+        "kills": 4,
+        "built": 11
+      },
+      "tech2": {
+        "lost": 7,
+        "kills": 436,
+        "built": 186
+      },
+      "tech1": {
+        "lost": 32,
+        "kills": 560,
+        "built": 269
+      },
+      "transportation": {
+        "lost": 0,
+        "kills": 14,
+        "built": 1
+      },
+      "land": {
+        "lost": 24,
+        "kills": 635,
+        "built": 105
+      },
+      "cdr": {
+        "lost": 0,
+        "kills": 2,
+        "built": 1
+      },
+      "structures": {
+        "lost": 23,
+        "kills": 281,
+        "built": 481
+      },
+      "sacu": {
+        "lost": 0,
+        "kills": 2,
+        "built": 0
+      },
+      "naval": {
+        "lost": 0,
+        "kills": 0,
+        "built": 0
+      },
+      "engineer": {
+        "lost": 24,
+        "kills": 125,
+        "built": 91
+      }
+    },
+    "blueprints": {
+      "uaa0310": {
+        "lost": 0,
+        "kills": 1,
+        "built": 2
+      },
+      "ura0401": {
+        "lost": 0,
+        "kills": 1,
+        "built": 1
+      },
+      "url0402": {
+        "lost": 0,
+        "kills": 0,
+        "built": 6
+      },
+      "xrl0403": {
+        "lost": 0,
+        "kills": 0,
+        "built": 1
+      },
+      "url0401": {
+        "lost": 0,
+        "kills": 1,
+        "built": 0
+      },
+      "url0001": {
+        "lost": 0,
+        "kills": 1,
+        "built": 0
+      },
+      "xab2307": {
+        "lost": 0,
+        "kills": 1,
+        "built": 0
+      },
+      "xab1401": {
+        "lost": 1,
+        "kills": 0,
+        "built": 1
+      },
+      "ual0001": {
+        "kills": 1,
+        "built": 1,
+        "lost": 0,
+        "lowest_health": 11000
+      }
+    },
+    "name": "Destroptor",
+    "faction": 2,
+    "resources": {
+      "massin": {
+        "total": 988682.025,
+        "reclaimed": 28039.022265625,
+        "reclaimRate": 0,
+        "rate": 55.09375
+      },
+      "energyout": {
+        "total": 41908764,
+        "rate": 2813.06000976563,
+        "excess": 6930301
+      },
+      "storage": {
+        "storedEnergy": 844000,
+        "maxEnergy": 844000,
+        "maxMass": 43170,
+        "storedMass": 43170
+      },
+      "energyin": {
+        "total": 56038376,
+        "reclaimed": 756.051440429688,
+        "reclaimRate": 0,
+        "rate": 3152
+      },
+      "massout": {
+        "total": 829249.0875,
+        "rate": 49.025,
+        "excess": 53971.0109375
+      }
+    }
+  },
+  {
+    "type": "Human",
+    "general": {
+      "lastupdatetick": 35101,
+      "score": 1709312,
+      "currentcap": 1000,
+      "lost": {
+        "mass": 687736,
+        "count": 1069,
+        "energy": 12113504
+      },
+      "kills": {
+        "mass": 292264,
+        "count": 886,
+        "energy": 4309223
+      },
+      "currentunits": 0,
+      "built": {
+        "mass": 722557,
+        "count": 1000,
+        "energy": 7141780
+      }
+    },
+    "Defeated": -1,
+    "units": {
+      "air": {
+        "lost": 188,
+        "kills": 277,
+        "built": 2
+      },
+      "tech3": {
+        "lost": 385,
+        "kills": 278,
+        "built": 379
+      },
+      "experimental": {
+        "lost": 0,
+        "kills": 1,
+        "built": 0
+      },
+      "tech2": {
+        "lost": 282,
+        "kills": 304,
+        "built": 203
+      },
+      "tech1": {
+        "lost": 401,
+        "kills": 303,
+        "built": 417
+      },
+      "transportation": {
+        "lost": 1,
+        "kills": 1,
+        "built": 1
+      },
+      "land": {
+        "lost": 359,
+        "kills": 609,
+        "built": 356
+      },
+      "cdr": {
+        "lost": 1,
+        "kills": 0,
+        "built": 1
+      },
+      "structures": {
+        "lost": 533,
+        "kills": 0,
+        "built": 657
+      },
+      "sacu": {
+        "lost": 13,
+        "kills": 0,
+        "built": 12
+      },
+      "naval": {
+        "lost": 0,
+        "kills": 0,
+        "built": 0
+      },
+      "engineer": {
+        "lost": 315,
+        "kills": 22,
+        "built": 126
+      }
+    },
+    "blueprints": {
+      "xrl0403": {
+        "lost": 0,
+        "kills": 1,
+        "built": 0
+      },
+      "xab1401": {
+        "lost": 0,
+        "kills": 1,
+        "built": 0
+      },
+      "uel0001": {
+        "kills": 0,
+        "built": 1,
+        "lost": 1,
+        "lowest_health": 0
+      }
+    },
+    "name": "Snider",
+    "faction": 1,
+    "resources": {
+      "massin": {
+        "total": 1073608.075,
+        "reclaimed": 43625.074609375,
+        "reclaimRate": 0,
+        "rate": 0
+      },
+      "energyout": {
+        "total": 47156616,
+        "rate": 0,
+        "excess": 5390073.05
+      },
+      "storage": {
+        "storedEnergy": 100,
+        "maxEnergy": 100,
+        "maxMass": 0,
+        "storedMass": 0
+      },
+      "energyin": {
+        "total": 53431896,
+        "reclaimed": 7663.02622070313,
+        "reclaimRate": 0,
+        "rate": 0
+      },
+      "massout": {
+        "total": 1060794.0125,
+        "rate": 0,
+        "excess": 5.06986103057861
+      }
+    }
+  },
+  {
+    "type": "AI",
+    "general": {
+      "lastupdatetick": 37941,
+      "score": 1230816,
+      "currentcap": 2000,
+      "lost": {
+        "mass": 574107.04375,
+        "count": 1155,
+        "energy": 14093748
+      },
+      "kills": {
+        "mass": 53387.079296875,
+        "count": 125,
+        "energy": 5568412.05
+      },
+      "currentunits": 309,
+      "built": {
+        "mass": 786287,
+        "count": 1609,
+        "energy": 10589753
+      }
+    },
+    "Defeated": 3802.06000976563,
+    "units": {
+      "air": {
+        "lost": 428,
+        "kills": 5,
+        "built": 470
+      },
+      "tech3": {
+        "lost": 427,
+        "kills": 15,
+        "built": 574
+      },
+      "experimental": {
+        "lost": 3,
+        "kills": 0,
+        "built": 2
+      },
+      "tech2": {
+        "lost": 258,
+        "kills": 34,
+        "built": 372
+      },
+      "tech1": {
+        "lost": 466,
+        "kills": 75,
+        "built": 660
+      },
+      "transportation": {
+        "lost": 6,
+        "kills": 1,
+        "built": 9
+      },
+      "land": {
+        "lost": 636,
+        "kills": 49,
+        "built": 846
+      },
+      "cdr": {
+        "lost": 1,
+        "kills": 1,
+        "built": 1
+      },
+      "structures": {
+        "lost": 97,
+        "kills": 71,
+        "built": 365
+      },
+      "sacu": {
+        "lost": 2,
+        "kills": 0,
+        "built": 6
+      },
+      "naval": {
+        "lost": 0,
+        "kills": 0,
+        "built": 0
+      },
+      "engineer": {
+        "lost": 55,
+        "kills": 35,
+        "built": 94
+      }
+    },
+    "blueprints": {
+      "url0001": {
+        "kills": 0,
+        "built": 1,
+        "lost": 1,
+        "lowest_health": 0
+      },
+      "ura0401": {
+        "lost": 1,
+        "kills": 0,
+        "built": 0
+      },
+      "xrl0403": {
+        "lost": 1,
+        "kills": 0,
+        "built": 2
+      },
+      "uel0001": {
+        "lost": 0,
+        "kills": 1,
+        "built": 0
+      },
+      "url0401": {
+        "lost": 1,
+        "kills": 0,
+        "built": 0
+      }
+    },
+    "name": "Kijanka (AI: The Red Queen)",
+    "faction": 3,
+    "resources": {
+      "massin": {
+        "total": 985431.0125,
+        "reclaimed": 15655.016796875,
+        "reclaimRate": 0,
+        "rate": 32.05
+      },
+      "energyout": {
+        "total": 31245066,
+        "rate": 730,
+        "excess": 3313592
+      },
+      "storage": {
+        "storedEnergy": 1519.00111083984,
+        "maxEnergy": 2100,
+        "maxMass": 16730,
+        "storedMass": 16730
+      },
+      "energyin": {
+        "total": 35520896,
+        "reclaimed": 22047.0826171875,
+        "reclaimRate": 0,
+        "rate": 688
+      },
+      "massout": {
+        "total": 889677.04375,
+        "rate": 0.08125,
+        "excess": 74496.09140625
+      }
+    }
+  },
+  {
+    "type": "AI",
+    "general": {
+      "lastupdatetick": 37501,
+      "score": 742616,
+      "currentcap": 1000,
+      "lost": {
+        "mass": 565939.0875,
+        "count": 1241,
+        "energy": 15769033
+      },
+      "kills": {
+        "mass": 31542.0859375,
+        "count": 98,
+        "energy": 1269728.025
+      },
+      "currentunits": 0,
+      "built": {
+        "mass": 493336,
+        "count": 1274,
+        "energy": 8322920
+      }
+    },
+    "Defeated": -1,
+    "units": {
+      "air": {
+        "lost": 277,
+        "kills": 8,
+        "built": 273
+      },
+      "tech3": {
+        "lost": 187,
+        "kills": 24,
+        "built": 171
+      },
+      "experimental": {
+        "lost": 3,
+        "kills": 0,
+        "built": 0
+      },
+      "tech2": {
+        "lost": 528,
+        "kills": 12,
+        "built": 527
+      },
+      "tech1": {
+        "lost": 522,
+        "kills": 62,
+        "built": 575
+      },
+      "transportation": {
+        "lost": 12,
+        "kills": 0,
+        "built": 8
+      },
+      "land": {
+        "lost": 667,
+        "kills": 59,
+        "built": 667
+      },
+      "cdr": {
+        "lost": 1,
+        "kills": 0,
+        "built": 1
+      },
+      "structures": {
+        "lost": 331,
+        "kills": 33,
+        "built": 406
+      },
+      "sacu": {
+        "lost": 0,
+        "kills": 0,
+        "built": 0
+      },
+      "naval": {
+        "lost": 0,
+        "kills": 0,
+        "built": 0
+      },
+      "engineer": {
+        "lost": 112,
+        "kills": 24,
+        "built": 93
+      }
+    },
+    "blueprints": {
+      "ual0001": {
+        "kills": 0,
+        "built": 1,
+        "lost": 1,
+        "lowest_health": 0
+      },
+      "ual0401": {
+        "lost": 1,
+        "kills": 0,
+        "built": 0
+      },
+      "xab2307": {
+        "lost": 1,
+        "kills": 0,
+        "built": 0
+      },
+      "uaa0310": {
+        "lost": 1,
+        "kills": 0,
+        "built": 0
+      }
+    },
+    "name": "Ranga (AI: The Red Queen)",
+    "faction": 2,
+    "resources": {
+      "massin": {
+        "total": 1002581.04375,
+        "reclaimed": 8275.017578125,
+        "reclaimRate": 0,
+        "rate": 0
+      },
+      "energyout": {
+        "total": 17903228,
+        "rate": 0,
+        "excess": 1454005.075
+      },
+      "storage": {
+        "storedEnergy": 100,
+        "maxEnergy": 100,
+        "maxMass": 0,
+        "storedMass": 0
+      },
+      "energyin": {
+        "total": 19508136,
+        "reclaimed": 7243.00791015625,
+        "reclaimRate": 0,
+        "rate": 0
+      },
+      "massout": {
+        "total": 590071.0625,
+        "rate": 0,
+        "excess": 257141.0734375
+      }
+    }
+  }
+]

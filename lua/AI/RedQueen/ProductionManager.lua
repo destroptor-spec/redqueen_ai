@@ -162,11 +162,19 @@ local MotionLayers = {
 -- own work. A retreat wants it: the hook defers that poll until the unit is
 -- home, and native picks it up from there. A caller that is about to issue its
 -- own order does not -- the poll lands fifty ticks later and replaces it.
+-- Returns `released, failure`. The failure is the error pcall caught, and it is
+-- returned rather than discarded because it was discarded: every "forward base
+-- recall" line in thirty-six recorded matches is a failure -- 182 and 212 in
+-- the last two matrices, with no successful recall anywhere -- and no log said
+-- why, because the only thing kept from the pcall was the boolean.
+--
+-- Every caller uses this in boolean context, so the extra return is inert for
+-- them and available to the one that reports.
 local function ReleaseEngineer(engineer, home, resume)
     if resume == nil then
         resume = true
     end
-    return pcall(function()
+    local released, failure = pcall(function()
         if home then
             engineer.RedQueenRetreatPosition = { home[1], home[2], home[3] }
         end
@@ -178,8 +186,31 @@ local function ReleaseEngineer(engineer, home, resume)
             end
         end
         engineer.ProcessBuildDone = nil
+        -- Native's own guard, which this was missing. A disbanded platoon
+        -- leaves its handle on the unit, so `PlatoonHandle` stays non-nil while
+        -- the platoon is gone and every method on it is nil. Calling it raised,
+        -- pcall swallowed the error, and the caller saw a bare false:
+        --
+        --   productionmanager.lua(191): attempt to call method
+        --   `PlatoonDisband' (a nil value)
+        --
+        -- That is every "forward base recall failed" line in thirty-six
+        -- recorded matches -- 182 and 212 in the last two matrices, with no
+        -- successful recall anywhere. Worse than losing the recall: the caller
+        -- returns without retiring the record, so the base stays
+        -- ForwardBaseActive and pins the single forward-base slot for the rest
+        -- of the match, which is what 179 `construction-active` blocks are.
+        --
+        -- lua/platoon.lua guards this in 68 places as
+        --   eng.PlatoonHandle and aiBrain:PlatoonExists(eng.PlatoonHandle)
+        --       and eng.PlatoonHandle.PlatoonDisband
         local platoon = engineer.PlatoonHandle
-        if platoon and not platoon.ArmyPool then
+        local brain = engineer.GetAIBrain and engineer:GetAIBrain() or nil
+        local platoonLive = platoon
+            and platoon.PlatoonDisband
+            and (not brain or not brain.PlatoonExists
+                or brain:PlatoonExists(platoon))
+        if platoonLive and not platoon.ArmyPool then
             platoon:PlatoonDisband()
         end
         -- Disband calls TaskFinished/DelayAssign and may create a new native
@@ -199,6 +230,7 @@ local function ReleaseEngineer(engineer, home, resume)
             manager:DelayAssign(engineer, 50)
         end
     end)
+    return released, failure
 end
 
 local function UnitTravelLayer(unit)
@@ -2340,9 +2372,17 @@ ProductionManager = ClassSimple {
     RecallForwardBaseEngineer = function(self, record)
         local engineer = record and record.Engineer
         if not engineer or not IsAlive(engineer) then
+            if record then
+                record.RecallFailure = "no-engineer"
+            end
             return false
         end
-        return ReleaseEngineer(engineer, self.World and self.World.StartPosition)
+        local released, failure = ReleaseEngineer(
+            engineer, self.World and self.World.StartPosition)
+        if not released and record then
+            record.RecallFailure = tostring(failure)
+        end
+        return released
     end,
 
     -- Keep the commander home, and put it to work while it is there.
@@ -2933,7 +2973,11 @@ ProductionManager = ClassSimple {
                     or "no-factory"
                 if recall then
                     if not self:RecallForwardBaseEngineer(active) then
-                        Logger.Warning(self.Brain, "forward base recall failed name=" .. active.Name)
+                        Logger.Warning(self.Brain, string.format(
+                            "forward base recall failed name=%s reason=%s",
+                            active.Name,
+                            tostring(active.RecallFailure or "unreported")
+                        ))
                         return
                     end
                 end

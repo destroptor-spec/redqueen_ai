@@ -958,6 +958,22 @@ if "GetNumCategoryFactories" not in production_source:
 if "fwdreg=%d/%d/%d/%d" not in diagnostics_source:
     fail("the periodic state line must report fwdreg=")
 
+# A recall that fails must say why. Every recall line in 36 recorded matches is
+# a failure and none carried a reason, because ReleaseEngineer kept only the
+# boolean from its pcall and threw the error away.
+# A platoon handle outlives its platoon, so every method on it can be nil.
+# Disbanding without the guard raised inside ReleaseEngineer's pcall and turned
+# every forward-base recall in 36 matches into a silent false.
+if "platoon.PlatoonDisband" not in production_source:
+    fail(
+        "ReleaseEngineer must check PlatoonDisband exists before calling it; a "
+        "disbanded platoon leaves its handle on the unit"
+    )
+if "return released, failure" not in production_source:
+    fail("ReleaseEngineer must return the error pcall caught, not discard it")
+if "forward base recall failed name=%s reason=%s" not in production_source:
+    fail("the forward-base recall warning must carry the failure reason")
+
 placement_hook = (ROOT / "hook/lua/AI/aibuildstructures.lua").read_text(encoding="utf-8")
 if "NativeAIExecuteBuildStructure(aiBrain" not in placement_hook:
     fail("the placement hook must call through to the native implementation")

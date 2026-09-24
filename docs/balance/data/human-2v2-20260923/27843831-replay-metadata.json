@@ -1,0 +1,31 @@
+{
+  "compression": null,
+  "host": "Destroptor",
+  "uid": 27843831,
+  "title": "dudebro",
+  "mapname": "adaptive_kusoge.v0003",
+  "options": null,
+  "teams": {
+    "2=[174691, 182692]": [
+      "Destroptor",
+      "Snider"
+    ]
+  },
+  "complete": true,
+  "recorder": "Destroptor",
+  "state": "CLOSED",
+  "game_type": "UNKNOWN",
+  "featured_mod": "faf",
+  "max_players": 16,
+  "num_players": 2,
+  "sim_mods": {
+    "7f4a8d2e-2d63-4e71-9c51-5ed0ee000009": "The Red Queen"
+  },
+  "featured_mod_versions": {},
+  "version_info": {
+    "lobby": "dfaf-2026.7.1"
+  },
+  "game_end": 1790202554.166,
+  "time": 0.0,
+  "launched_at": 1790198356.805
+}

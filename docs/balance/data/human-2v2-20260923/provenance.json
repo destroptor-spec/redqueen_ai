@@ -1,0 +1,30 @@
+{
+  "payload_sha256": null,
+  "payload_note": "Normal FAF client launches have no matrix manifest. V9/UID is known; exact historical Lua payload is not established.",
+  "files": [
+    {
+      "source": "/home/andreas/.faforever/logs/game_27843240.log",
+      "sha256": "59cd4737f5409a3584c3b2af452a6689f86bc8bfe2040b49633c82b612b63416",
+      "bytes": 1132724,
+      "mtime_utc": "2026-09-23T21:18:13.561053+00:00"
+    },
+    {
+      "source": "/home/andreas/.faforever/replays/27843240-Destroptor.fafreplay",
+      "sha256": "f4ce2a656eada17864244d1d051fed1b6e6c7cd3ec0d36da98ffcd886e2a3a53",
+      "bytes": 195519,
+      "mtime_utc": "2026-09-23T21:17:46.530075+00:00"
+    },
+    {
+      "source": "/home/andreas/.faforever/logs/game_27843831.log",
+      "sha256": "86f595c5b1aa1590f4b7d68e4e69e5fe55c4efce10c03472461f87205e25d890",
+      "bytes": 770371,
+      "mtime_utc": "2026-09-23T22:29:41.667926+00:00"
+    },
+    {
+      "source": "/home/andreas/.faforever/replays/27843831-Destroptor.fafreplay",
+      "sha256": "cca92e257b49293f95809463a85840f195d9a25696424d4c6ab797764f855be0",
+      "bytes": 99485,
+      "mtime_utc": "2026-09-23T22:29:14.175944+00:00"
+    }
+  ]
+}

@@ -6,5 +6,7 @@
   "defcover": "defence coverage, losses and fortifiable span (592e88deaadc)",
   "24df7ae613f5": "defence coverage, neutral (map-marker span, no extractor query)",
   "513b620b866b": "forward-base cap moved one step (1 -> 2 bases); not adopted",
-  "c28ba99ffec7": "forward-base registration figure (fwdreg=), neutral"
+  "c28ba99ffec7": "forward-base registration figure (fwdreg=), neutral",
+  "f799868c7df8": "ReleaseEngineer surfaces its pcall error (diagnostic)",
+  "d16f0c19dc2a": "forward-base recall fixed: native PlatoonDisband guard"
 }

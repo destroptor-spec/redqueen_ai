@@ -1988,6 +1988,21 @@ local function retreatRun(units, ownThreat, configure)
     return recalled, manager
 end
 
+-- A platoon handle outlives its platoon. `PlatoonHandle` stays non-nil while
+-- every method on it is nil, so disbanding it unguarded raises -- which is what
+-- turned every forward-base recall in thirty-six matches into a silent false,
+-- and left the base pinned as active for the rest of the match.
+do
+    local stale = retreatUnit(99, { 900, 0, 900 })
+    stale.PlatoonHandle = {}          -- disbanded: no PlatoonDisband method
+    retreatThreatAt = { [900] = 90 }
+    local recalled = retreatRun({ stale }, 0)
+    assert(recalled == 1,
+        "a stale platoon handle must not stop the recall, got " .. recalled)
+    assert(stale.RedQueenRetreatPosition,
+        "and the engineer must still be sent home")
+end
+
 -- Standing in danger far from home: pulled out, and the ground remembered so
 -- the replacement is not posted straight back to it.
 retreatThreatAt = { [900] = 90 }
