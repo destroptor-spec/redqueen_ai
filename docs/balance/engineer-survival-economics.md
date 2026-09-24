@@ -1084,3 +1084,65 @@ error, the recall warning carries `reason=`, and contracts fail if either is
 discarded again. A mechanism that failed 182 times in a matrix while logging
 only a warning is exactly the shape this project keeps finding, and the reason
 it kept hiding was that the error was thrown away at the point of failure.
+
+---
+
+# Anti-air: the divisor was not the constraint (2026-09-24)
+
+Reported from a human match: a single air experimental killed both Red Queen
+armies, and Red Queen builds too few SAM and flak.
+
+Confirmed in the mirror matrix. Peak per match: **3.9 flak, 3.8 SAM** against
+**17.9 point defences**, while the opponent builds **222 air units a match** and
+Red Queen loses 246 of its own 281.
+
+## The wrong lever, and why it looked right
+
+`Targets.AntiAir = max(2, min(8, ceil(air / 10)))`. At the observed air threat
+of 20–40 that asks for 2–4 guns, which matched the 3.9 measured almost exactly.
+The ceiling of 8 never bound; the divisor appeared to. Halved it to 5, which
+doubles the ask across the whole observed range.
+
+| | control | divisor 5 |
+| --- | ---: | ---: |
+| flak (T2 AA) peak | 3.9 | **3.9** |
+| SAM (T3 AA) peak | 3.8 | **3.6** |
+| point defences peak | 17.9 | 18.1 |
+| mean claim retention | 0.605 | 0.594 |
+
+Nothing moved. The match between "target 2–4" and "built 3.9" was coincidence,
+not causation — the same mistake as reading the forward-base cap off the
+obviously-named constant.
+
+**Not adopted.** Preserved as `antiair-divisor.patch`.
+
+## What actually gates anti-air
+
+`NeedsDefense` requires an **active alert anchored inside a base radius**, and
+`Targets.AntiAir` is zero whenever that alert carries no air component. Across
+898 samples:
+
+| | |
+| --- | ---: |
+| alerts active | 658 (73%) |
+| qualified by **surface** | 414 (**63%**) |
+| qualified by **combined** | 166 (25%) |
+| qualified by **air** | 78 (**12%**) |
+
+So anti-air is built only while air is already attacking the base, which is a
+minority of the time, and it cannot accumulate between raids. Doubling the rate
+of a target that is usually zero changes nothing.
+
+Point defence does not have this problem because surface qualifies 63% of
+alerts — which is exactly why 17.9 point defences stand beside 3.8 SAM.
+
+## The change this points at
+
+Anti-air has to be **standing infrastructure with a floor independent of
+alerts**, not a reaction to a raid in progress. A base that waits for an air
+alert to build SAM has already taken the raid, and against an air experimental
+it does not get a second chance.
+
+That is a larger policy change than a constant, and it belongs in its own run
+with the AA counts read before the outcome — the counts are what say whether it
+delivered, and this run shows an outcome number alone would not have.

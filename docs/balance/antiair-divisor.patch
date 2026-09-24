@@ -1,0 +1,24 @@
+diff --git a/lua/AI/RedQueen/StrategyDirector.lua b/lua/AI/RedQueen/StrategyDirector.lua
+index 2ebe3e4..d63ee33 100644
+--- a/lua/AI/RedQueen/StrategyDirector.lua
++++ b/lua/AI/RedQueen/StrategyDirector.lua
+@@ -1077,7 +1077,18 @@ StrategyDirector = ClassSimple {
+                         -- so these are unchanged there.
+                         Ground = surfaceThreat > 0
+                             and math.max(4, math.min(12, math.ceil(surfaceThreat / 12))) or 0,
+-                        AntiAir = air > 0 and math.max(2, math.min(8, math.ceil(air / 10))) or 0,
++                        -- Air is answered at half the threat per gun that
++                        -- ground is, because the arm that kills a base outright
++                        -- is air. Measured across eighteen mirror cells: the
++                        -- opponent builds 222 air units a match and Red Queen
++                        -- holds 3.9 flak and 3.8 SAM at peak against 17.9 point
++                        -- defences. The ceiling of 8 was never the constraint --
++                        -- with observed air threat of 20 to 40, `air / 10` asks
++                        -- for 2 to 4, which is exactly what gets built.
++                        --
++                        -- Reported from a human match: a single air experimental
++                        -- killed both Red Queen armies.
++                        AntiAir = air > 0 and math.max(2, math.min(8, math.ceil(air / 5))) or 0,
+                         Shields = (ratio >= 2 or cluster.DistanceToAnchor <= 60) and 2 or 1,
+                         StrategicMissileDefense = 1,
+                         TacticalMissiles = surfaceThreat > 0 and 2 or 0,

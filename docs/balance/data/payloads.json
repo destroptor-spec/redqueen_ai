@@ -8,5 +8,6 @@
   "513b620b866b": "forward-base cap moved one step (1 -> 2 bases); not adopted",
   "c28ba99ffec7": "forward-base registration figure (fwdreg=), neutral",
   "f799868c7df8": "ReleaseEngineer surfaces its pcall error (diagnostic)",
-  "d16f0c19dc2a": "forward-base recall fixed: native PlatoonDisband guard"
+  "d16f0c19dc2a": "forward-base recall fixed: native PlatoonDisband guard",
+  "701798836fab": "anti-air divisor 10 -> 5; not adopted, delivered no guns"
 }
