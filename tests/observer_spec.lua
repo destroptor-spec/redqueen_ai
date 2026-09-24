@@ -162,7 +162,7 @@ Run(function()
         PointDefense = { 1, 0, 0 },
         AntiAir = { 0, 0, 0 },
         AntiMissile = 0,
-        Shields = 0,
+        Shields = { 0, 0, 0 },
         MissileLaunchers = 1,
         Artillery = 0,
         Extractors = { 9, 2, 0 },
@@ -176,7 +176,7 @@ Run(function()
     local line = observer.Format(facts)
     assert(string.find(line, "^watch t=512 "), "the line must open with its kind and time: " .. line)
     assert(string.find(line, "acu=assisting/14/100", 1, true), line)
-    assert(string.find(line, "def=pd1/0/0,aa0/0/0,tmd0,sh0,tml1,arty0", 1, true), line)
+    assert(string.find(line, "def=pd1/0/0,aa0/0/0,tmd0,sh0/0/0,tml1,arty0", 1, true), line)
     assert(string.find(line, "mex=9/2/0", 1, true), line)
     assert(string.find(line, "eng=3/11", 1, true), line)
     assert(string.find(line, "units=12/0/0/0 enemy=19/2/0/0", 1, true), line)

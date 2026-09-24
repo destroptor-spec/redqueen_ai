@@ -13,7 +13,7 @@ WATCHER = Path(__file__).resolve().parents[1] / "scripts" / "watch-match.py"
 def watch_line(t, **overrides):
     fields = dict(
         acu="assisting", distance=10, health=100,
-        pd=(0, 0, 0), aa=(0, 0, 0), tmd=0, sh=0, tml=0, arty=0,
+        pd=(0, 0, 0), aa=(0, 0, 0), tmd=0, sh=(0, 0, 0), tml=0, arty=0,
         mex=(4, 0, 0), idle=0, eng=8,
         units=(10, 0, 0, 0), enemy=(10, 0, 0, 0), stored=(0.5, 0.5),
     )
@@ -22,7 +22,8 @@ def watch_line(t, **overrides):
         f"info: [RedQueen][INFO][army=2] watch t={t} "
         f"acu={fields['acu']}/{fields['distance']}/{fields['health']} "
         f"def=pd{'/'.join(map(str, fields['pd']))},aa{'/'.join(map(str, fields['aa']))},"
-        f"tmd{fields['tmd']},sh{fields['sh']},tml{fields['tml']},arty{fields['arty']} "
+        f"tmd{fields['tmd']},sh{'/'.join(map(str, fields['sh']))},"
+        f"tml{fields['tml']},arty{fields['arty']} "
         f"mex={'/'.join(map(str, fields['mex']))} eng={fields['idle']}/{fields['eng']} "
         f"units={'/'.join(map(str, fields['units']))} "
         f"enemy={'/'.join(map(str, fields['enemy']))} "

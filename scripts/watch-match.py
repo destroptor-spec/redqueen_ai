@@ -26,7 +26,7 @@ from pathlib import Path
 WATCH = re.compile(
     r"\[RedQueen\]\[INFO\]\[army=(\d+)\] watch "
     r"t=(\d+) acu=(\w+)/(\d+)/(\d+) "
-    r"def=pd(\d+)/(\d+)/(\d+),aa(\d+)/(\d+)/(\d+),tmd(\d+),sh(\d+),tml(\d+),arty(\d+) "
+    r"def=pd(\d+)/(\d+)/(\d+),aa(\d+)/(\d+)/(\d+),tmd(\d+),sh(\d+)/(\d+)/(\d+),tml(\d+),arty(\d+) "
     r"mex=(\d+)/(\d+)/(\d+) eng=(\d+)/(\d+) "
     r"units=(\d+)/(\d+)/(\d+)/(\d+) enemy=(\d+)/(\d+)/(\d+)/(\d+) "
     r"store=([\d.]+)/([\d.]+)"
@@ -211,7 +211,7 @@ class Army:
             f" {'/'.join(map(str, sample['eng_tiers']))}) "
             f"pd {sample['pd'][0]}/{sample['pd'][1]}/{sample['pd'][2]} "
             f"aa {sample['aa'][0]}/{sample['aa'][1]}/{sample['aa'][2]} "
-            f"sh{sample['shields']} "
+            f"sh{'/'.join(str(v) for v in sample['shields'])} "
             f"acu {sample['acu']:<9.9} {sample['acu_distance']:3d}u {sample['acu_health']:3d}% "
             f"army {ours:5.0f} v {theirs:5.0f} ({ratio:4.2f})"
         )
@@ -230,17 +230,20 @@ def parse_watch(match: re.Match) -> dict:
         "pd": (number(6), number(7), number(8)),
         "aa": (number(9), number(10), number(11)),
         "tmd": number(12),
-        "shields": number(13),
-        "tml": number(14),
-        "artillery": number(15),
-        "mex": (number(16), number(17), number(18)),
-        "mex_total": number(16) + number(17) + number(18),
-        "idle_engineers": number(19),
-        "engineers": number(20),
-        "units": (number(21), number(22), number(23), number(24)),
-        "enemy": (number(25), number(26), number(27), number(28)),
-        "mass_stored": float(match.group(29)),
-        "energy_stored": float(match.group(30)),
+        # Shields carry a tier split, as point defence and anti-air already do:
+        # a Tech 2 shield is not the Tech 3 one the need asked for.
+        "shields": (number(13), number(14), number(15)),
+        "shields_total": number(13) + number(14) + number(15),
+        "tml": number(16),
+        "artillery": number(17),
+        "mex": (number(18), number(19), number(20)),
+        "mex_total": number(18) + number(19) + number(20),
+        "idle_engineers": number(21),
+        "engineers": number(22),
+        "units": (number(23), number(24), number(25), number(26)),
+        "enemy": (number(27), number(28), number(29), number(30)),
+        "mass_stored": float(match.group(31)),
+        "energy_stored": float(match.group(32)),
     }
 
 

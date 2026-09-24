@@ -1202,3 +1202,67 @@ outcome. This is the first that moves both.
 
 **Adopted.** It is also the only change since the extractor alert scope that
 improves the predictor rather than merely leaving it intact.
+
+---
+
+# Standing shields: delivered, and not adopted (2026-09-24)
+
+Payload `2d5b4aa18e3c` against `b189beae5f17`, 18 cells, all clean.
+
+Shields carried both defects anti-air had: alert-gated, so only built while the
+base was already being hit, and tier-blind, so a Tech 2 shield satisfied a Tech
+3 need — the **third** appearance of that bug in this file, after Tech 1 point
+defences answering a Ground target and flak answering a SAM floor. The alert
+target is 1 or 2 per base, which cannot cover 19 point defences and 27 anti-air.
+
+Applied the same fix as anti-air: `ShieldCategory(tier)` plus
+`StandingShieldsPerBase = 3`.
+
+## The structures arrived
+
+| peak per match | control | standing shields |
+| --- | ---: | ---: |
+| shields | 9.0 | **13.6** (6.4 T2 + **7.2 T3**) |
+| flak | 11.3 | 11.9 |
+| SAM | 9.5 | 9.5 |
+| point defences | 19.0 | 18.4 |
+
+No crowding this time — SAM held at 9.5, which is what the tier-scoping is for.
+
+## The outcome went the wrong way
+
+| | control | standing shields |
+| --- | ---: | ---: |
+| **mean mass K/L** | **1.085** | **1.015** |
+| cells with K/L >= 1.0 | 10 | 10 of 18 |
+| mean claim retention | 0.617 | 0.591 |
+| extractors lost | 436 | **468** |
+
+K/L better in 7 cells and worse in 11. The mechanism delivered and the match got
+worse, which is the opposite of the anti-air result and the reason that one was
+adopted and this one is not.
+
+**Not adopted.** Preserved as `standing-shields.patch`.
+
+## Why, and what it does not settle
+
+Shields are expensive and the mirror matrix is mass-starved — storage averages
+0.21 and both stores are full in 4% of samples. Mass spent on shields is mass
+not spent on army, and point defences dipped with them. Anti-air paid for itself
+because it answers an arm that was reaching the base unopposed; a shield adds no
+damage, only durability, and durability bought at the cost of the army that has
+to win the exchange is a poor trade in a starved economy.
+
+This does **not** settle shields against human opponents, where Red Queen floats
+both stores 46–62% of the match. The same argument that makes shields a bad buy
+here — no spare mass — is absent there. It sits with the experimental question:
+right in a regime the matrix cannot represent.
+
+Two parts were bundled and only the pair was tested. The tier-scoping alone is a
+correctness fix that spends nothing by itself, since the alert target stays at 1
+or 2; it is separable and untested, and worth its own run before being written
+off with the floor.
+
+The shield-by-tier `watch` field is kept regardless. Reported as a single total,
+it could not show 6.4 Tech 2 shields standing beside 7.2 Tech 3 ones, and that
+split is the only reason the tier-scoping can be said to have worked at all.

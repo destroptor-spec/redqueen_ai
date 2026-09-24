@@ -1,0 +1,63 @@
+diff --git a/lua/AI/RedQueen/Constants.lua b/lua/AI/RedQueen/Constants.lua
+index 4f7b421..1a2f00e 100644
+--- a/lua/AI/RedQueen/Constants.lua
++++ b/lua/AI/RedQueen/Constants.lua
+@@ -425,6 +425,11 @@ Policy = {
+     -- ends a base outright, so keying it on an alert built 3.8 SAM beside 17.9
+     -- point defences and left a single air experimental unopposed.
+     StandingAntiAirPerBase = 6,
++    -- Shields a base holds whether or not it is under attack. The alert target
++    -- is 1 or 2 -- `(ratio >= 2 or DistanceToAnchor <= 60) and 2 or 1` -- which
++    -- cannot cover 19 point defences and 27 anti-air, and like anti-air it is
++    -- only asked for while the base is already being hit.
++    StandingShieldsPerBase = 3,
+     FortificationMinimumRadius = 40,
+     EngineerSurvivalThreatFloor = 8,
+     -- Anything this close to our own start is home construction and is never
+diff --git a/lua/AI/RedQueen/FortificationBuilders.lua b/lua/AI/RedQueen/FortificationBuilders.lua
+index 647a6ba..a5685f9 100644
+--- a/lua/AI/RedQueen/FortificationBuilders.lua
++++ b/lua/AI/RedQueen/FortificationBuilders.lua
+@@ -170,13 +170,31 @@ local function NeedsT2AntiAir(aiBrain, locationType)
+         )
+ end
+ 
++-- What counts toward a tier's shield need, on the same rule as ground and air.
++--
++-- A Tech 2 shield is not a Tech 3 shield: it carries a fraction of the hitpoints
++-- and a smaller radius, so letting one satisfy a Tech 3 need is the defect this
++-- file records twice already -- four Tech 1 point defences answering a Ground
++-- target of four, and cheap flak answering a SAM floor.
++local function ShieldCategory(tier)
++    local shield = categories.STRUCTURE * categories.SHIELD
++    if tier >= 3 then
++        return shield * categories.TECH3
++    end
++    if tier >= 2 then
++        return shield * (categories.TECH2 + categories.TECH3)
++    end
++    return shield
++end
++
+ local function NeedsT3Shield(aiBrain, locationType)
+     return HasEngineer(aiBrain, locationType, 3)
+         and NeedsDefense(
+             aiBrain,
+             locationType,
+             "Shields",
+-            categories.STRUCTURE * categories.SHIELD
++            ShieldCategory(3),
++            Constants.Policy.StandingShieldsPerBase
+         )
+ end
+ 
+@@ -187,7 +205,8 @@ local function NeedsT2Shield(aiBrain, locationType)
+             aiBrain,
+             locationType,
+             "Shields",
+-            categories.STRUCTURE * categories.SHIELD
++            ShieldCategory(2),
++            Constants.Policy.StandingShieldsPerBase
+         )
+ end
+ 

@@ -124,6 +124,10 @@ function Collect(brain, modules)
     local pd1, pd2, pd3 = Tiers(brain, structure * categories.DEFENSE * categories.DIRECTFIRE)
     local aa1, aa2, aa3 = Tiers(brain, structure * categories.DEFENSE * categories.ANTIAIR)
     local mex1, mex2, mex3 = Tiers(brain, structure * categories.MASSEXTRACTION)
+    -- Shields by tier. Reported as a single total until now, which cannot show
+    -- a Tech 2 shield standing in for the Tech 3 one the need asked for -- the
+    -- defect that cost SAM its count while the anti-air floor was tier-blind.
+    local sh1, sh2, sh3 = Tiers(brain, structure * categories.SHIELD)
     local own1, own2, own3 = Tiers(brain, CombatUnits)
 
     local enemy1, enemy2, enemy3, enemyExperimental = 0, 0, 0, 0
@@ -146,7 +150,7 @@ function Collect(brain, modules)
         PointDefense = { pd1, pd2, pd3 },
         AntiAir = { aa1, aa2, aa3 },
         AntiMissile = Count(brain, structure * categories.DEFENSE * categories.ANTIMISSILE),
-        Shields = Count(brain, structure * categories.SHIELD),
+        Shields = { sh1, sh2, sh3 },
         MissileLaunchers = Count(brain, structure * categories.TACTICALMISSILEPLATFORM),
         Artillery = Count(brain, structure * categories.ARTILLERY),
         Extractors = { mex1, mex2, mex3 },
@@ -162,7 +166,7 @@ end
 function Format(facts)
     local commander = facts.Commander
     return string.format(
-        "watch t=%d acu=%s/%.0f/%.0f def=pd%d/%d/%d,aa%d/%d/%d,tmd%d,sh%d,tml%d,arty%d"
+        "watch t=%d acu=%s/%.0f/%.0f def=pd%d/%d/%d,aa%d/%d/%d,tmd%d,sh%d/%d/%d,tml%d,arty%d"
             .. " mex=%d/%d/%d eng=%d/%d units=%d/%d/%d/%d enemy=%d/%d/%d/%d store=%.2f/%.2f",
         facts.Time,
         commander.State,
@@ -171,7 +175,9 @@ function Format(facts)
         facts.PointDefense[1], facts.PointDefense[2], facts.PointDefense[3],
         facts.AntiAir[1], facts.AntiAir[2], facts.AntiAir[3],
         facts.AntiMissile,
-        facts.Shields,
+        facts.Shields[1],
+        facts.Shields[2],
+        facts.Shields[3],
         facts.MissileLaunchers,
         facts.Artillery,
         facts.Extractors[1], facts.Extractors[2], facts.Extractors[3],
