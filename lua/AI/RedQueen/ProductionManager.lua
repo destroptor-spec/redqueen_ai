@@ -2183,12 +2183,61 @@ ProductionManager = ClassSimple {
         return sites
     end,
 
+    -- What native counts for a forward base, beside what Red Queen counts.
+    --
+    -- Every destruction logs `manager=no factory=yes`: the base manager is gone
+    -- while a factory still stands. Native's DeadBaseMonitor deletes any
+    -- non-MAIN manager with no engineers AND no factories *registered to that
+    -- manager*, every five seconds. Red Queen's own FindForwardBaseFactory
+    -- searches spatially -- any allied factory within ForwardBaseSiteRadius --
+    -- so the two disagree exactly when the factory was never put on the
+    -- manager's books. Registered counts are the figure that separates
+    -- "the enemy killed it" from "nobody registered it", and neither is in a
+    -- log today.
+    --
+    -- Both counts are EntityCategoryCount over the manager's own list, so this
+    -- costs no brain-wide unit sweep.
+    -- What native has on one base manager's books.
+    RegisteredCountsFor = function(self, name)
+        local counts = { Factories = 0, Engineers = 0 }
+        local manager = (self.Brain.BuilderManagers or {})[name]
+        local factoryManager = manager and manager.FactoryManager
+        if factoryManager and factoryManager.GetNumCategoryFactories then
+            counts.Factories =
+                factoryManager:GetNumCategoryFactories(categories.ALLUNITS) or 0
+        end
+        local engineerManager = manager and manager.EngineerManager
+        if engineerManager and engineerManager.GetNumCategoryUnits then
+            counts.Engineers = engineerManager:GetNumCategoryUnits(
+                "Engineers", categories.ALLUNITS) or 0
+        end
+        return counts
+    end,
+
+    ForwardBaseRegistration = function(self)
+        local summary = { Bases = 0, Factories = 0, Spatial = 0, Engineers = 0 }
+        local managers = self.Brain.BuilderManagers or {}
+        for _, base in pairs(self.ForwardBases or {}) do
+            if base.State == "Established" then
+                summary.Bases = summary.Bases + 1
+                if base.FactoryPresent then
+                    summary.Spatial = summary.Spatial + 1
+                end
+                local counts = self:RegisteredCountsFor(base.Name)
+                summary.Factories = summary.Factories + counts.Factories
+                summary.Engineers = summary.Engineers + counts.Engineers
+            end
+        end
+        return summary
+    end,
+
     RevalidateEstablishedForwardBases = function(self)
         local tick = GetGameTick()
         for _, base in pairs(self.ForwardBases) do
             if base.State == "Established" then
                 local managerPresent = HasExpansionBase(self.Brain, base.Name)
                 local factory = self:FindForwardBaseFactory(base)
+                local registered = self:RegisteredCountsFor(base.Name)
                 base.ManagerPresent = managerPresent
                 base.FactoryPresent = factory ~= nil
                 if managerPresent and factory then
@@ -2200,11 +2249,24 @@ ProductionManager = ClassSimple {
                         self.ForwardBaseClaims[base.SiteName] = nil
                     end
                     Logger.Info(self.Brain, string.format(
-                        "forward base destroyed name=%s site=%s manager=%s factory=%s",
+                        "forward base destroyed name=%s site=%s manager=%s factory=%s "
+                            .. "pbm=%s registry=%s regfac=%d regeng=%d",
                         base.Name,
                         base.SiteName,
                         managerPresent and "yes" or "no",
-                        factory and "yes" or "no"
+                        factory and "yes" or "no",
+                        -- Which half of HasExpansionBase answered no. The
+                        -- canary destroyed a base holding 2 registered
+                        -- factories and 4 engineers, so native's
+                        -- DeadBaseMonitor -- which reaps only at zero of both
+                        -- -- cannot be what removed it. Without these, the next
+                        -- guess is as blind as the last two.
+                        self.Brain.HasPlatoonList and "yes" or "no",
+                        (self.Brain.BuilderManagers
+                            and self.Brain.BuilderManagers[base.Name] ~= nil)
+                            and "present" or "missing",
+                        registered.Factories,
+                        registered.Engineers
                     ))
                 end
             end

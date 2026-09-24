@@ -947,3 +947,66 @@ So the holding problem's largest term is not "too few base managers" but "base
 managers cannot survive where the deposits are", and stepping the cap further
 would only add corpses. The next question is why 31 of 47 starts fail and why
 12 of 15 establishments die — both already logged, neither yet read.
+
+---
+
+# Why forward bases die (2026-09-24)
+
+Payload `c28ba99ffec7`, 18 cells, **all 18 identical to control** — the figure is
+free. `fwdreg=<bases>/<registered factories>/<factories found nearby>/<registered engineers>`
+reports what native has on a forward base's books beside what Red Queen finds
+standing near it.
+
+## Two hypotheses died on the canary
+
+**The factory is never registered.** Wrong. Registered factories are not zero and
+frequently *exceed* the spatial count. `fwdreg=1/2/1/10` is typical: two
+factories on the books, one within Red Queen's search radius, ten engineers.
+
+**Native's `DeadBaseMonitor` reaps a live base.** Also wrong as stated. It reaps
+only at zero engineers *and* zero factories, and the canary's base held 2
+factories and 4–6 engineers one minute before it died.
+
+## What the destruction line says
+
+| | count |
+| --- | ---: |
+| `pbm=no` (registry branch taken) | 12 of 12 |
+| `registry=missing` | 10 |
+| `registry=present`, spatial search found no factory | 2 |
+
+The PBM branch of `HasExpansionBase` is never taken, so that is not the bug.
+
+In ten of twelve the manager really was removed. Native reaps an empty manager,
+so the base had lost every engineer and every factory first — and the canary
+shows it holding six engineers and two factories **one minute earlier**. A
+forward base is not decaying; it is being overrun inside a single minute.
+
+## A flaw in this instrument, stated plainly
+
+`regfac` and `regeng` on the destruction line read from
+`BuilderManagers[base.Name]`, which by then is gone, so they report `0/0`
+tautologically whenever `registry=missing`. They carry no information in exactly
+the case that matters. The pre-death state has to come from the periodic
+`fwdreg` sample instead, which is how the one-minute figure above was obtained.
+If this is pursued, sample the counts *before* the revalidation, not after.
+
+The two `registry=present` cases are the inverse: the manager holds a registered
+factory while Red Queen's spatial search finds none, and the base is marked
+destroyed although it is alive. Not a radius mismatch — Red Queen passes
+`ExpansionRadius = ForwardBaseSiteRadius`, so both are 60 — more likely a stale
+entry in the manager's `FactoryList`. Two of twelve, worth fixing, not the
+main term.
+
+## Where this points
+
+Forward bases are lost the same way extractors are: overrun, quickly, on ground
+nothing defends. Every mechanism examined for a bookkeeping explanation has come
+back negative, which is itself the result — there is no cheap fix here, and base
+count cannot be bought while the ground is not held.
+
+The one unexamined thread is `forward base recall failed`, logged 182 and 212
+times in the two matrices. Every "recall" line in every log is a **failure**;
+there is no successful-recall line anywhere. A mechanism that has never once
+succeeded, logged only as a warning, is the exact shape of the defects this
+project has repeatedly found by reading its own logs.

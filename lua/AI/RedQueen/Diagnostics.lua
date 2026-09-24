@@ -172,6 +172,9 @@ Diagnostics = ClassSimple {
         -- field is present from the first sample rather than appearing later.
         local coverage = DefenseCoverage.Report(self.Brain, alert, world)
         local cover, mexLoss, span = coverage.Cover, coverage.Loss, coverage.Span
+        local fwdreg = modules.Production.ForwardBaseRegistration
+            and modules.Production:ForwardBaseRegistration()
+            or { Bases = 0, Factories = 0, Spatial = 0, Engineers = 0 }
         local placement = self.Brain.RedQueenPlacement
             or { Attempts = 0, Gated = 0, Open = 0 }
         local survival = EngineerSurvival.Summary(self.Brain)
@@ -183,7 +186,7 @@ Diagnostics = ClassSimple {
         }
 
         Logger.Info(self.Brain, string.format(
-            "state objective=%s primary=%s/%d secondary=%s/%d pressure=%s claim=%.0f/%.0f%s eco=%s mass=%.1f energy=%.1f factories=%d/%d intel=%d doctrine=%s focus=%s weights=A=%d,T2=%d,T3=%d,X=%d,N=%d ready=%.2f slots=%d reason=%s landloss=%d/%.0f airloss=%d/%.0f airdrop=%s alert=%s/%.1f/%.2f/%s/%.0f/%.0f momentum=%.0f/%.0f/%s tiers=L%d,A%d,N%d forward=%d/%s/%s exp=%s/%d/%d eng=%d/%d/%d engtier=%d/%d/%d cover=%d/%d engpolicy=%d/%d mex=%d/%d defcover=%d/%d/%.0f mexloss=%d/%d basespan=%d/%d/%d mexplace=%d/%d/%d engsurvival=%d/%d/%d/%d/%d/%d scout=%d/%d/%d scoutorders=%d/%d scouts=%d scoutfraction=%.3f/%.3f dispatch=L%d,A%d,W%d,M%d,H%d army=%d/%d/%d held=%d/%d/%d directed=%d/%d assist=%d/%d/%d acuassist=%d mexgate=%s/%d techgate=L%s/%s,A%s/%s,N%s/%s",
+            "state objective=%s primary=%s/%d secondary=%s/%d pressure=%s claim=%.0f/%.0f%s eco=%s mass=%.1f energy=%.1f factories=%d/%d intel=%d doctrine=%s focus=%s weights=A=%d,T2=%d,T3=%d,X=%d,N=%d ready=%.2f slots=%d reason=%s landloss=%d/%.0f airloss=%d/%.0f airdrop=%s alert=%s/%.1f/%.2f/%s/%.0f/%.0f momentum=%.0f/%.0f/%s tiers=L%d,A%d,N%d forward=%d/%s/%s fwdreg=%d/%d/%d/%d exp=%s/%d/%d eng=%d/%d/%d engtier=%d/%d/%d cover=%d/%d engpolicy=%d/%d mex=%d/%d defcover=%d/%d/%.0f mexloss=%d/%d basespan=%d/%d/%d mexplace=%d/%d/%d engsurvival=%d/%d/%d/%d/%d/%d scout=%d/%d/%d scoutorders=%d/%d scouts=%d scoutfraction=%.3f/%.3f dispatch=L%d,A%d,W%d,M%d,H%d army=%d/%d/%d held=%d/%d/%d directed=%d/%d assist=%d/%d/%d acuassist=%d mexgate=%s/%d techgate=L%s/%s,A%s/%s,N%s/%s",
             tostring(objective.Type or "none"),
             primary and tostring(primary.Type) or "none",
             slotDispatch.Primary or 0,
@@ -234,6 +237,13 @@ Diagnostics = ClassSimple {
             tostring(forward.BlockReason
                 or modules.Production.LastForwardBaseBlockReason
                 or "none"),
+            -- Established forward bases, factories native has registered to
+            -- them, factories Red Queen finds standing near them, and engineers
+            -- registered. Native's DeadBaseMonitor reaps a manager with no
+            -- registered engineers AND no registered factories, so registered
+            -- reading zero while spatial reads more is a base that is alive on
+            -- the ground and dead on the books.
+            fwdreg.Bases, fwdreg.Factories, fwdreg.Spatial, fwdreg.Engineers,
             choice,
             owned,
             demand.DesiredExperimentals or 0,

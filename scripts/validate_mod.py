@@ -946,6 +946,18 @@ for field in ("defcover=%d/%d/%.0f", "mexloss=%d/%d", "basespan=%d/%d/%d"):
     if field not in diagnostics_source:
         fail("the periodic state line must report " + field.split("=")[0])
 
+# Every forward-base destruction logs manager=no factory=yes: the manager is
+# reaped while a factory stands. Native's DeadBaseMonitor counts only what is
+# registered to that manager, while Red Queen counts what is nearby, so the two
+# figures must both be reported or the difference cannot be seen.
+if "GetNumCategoryFactories" not in production_source:
+    fail(
+        "ForwardBaseRegistration must report what native has registered to a "
+        "forward base, not only what Red Queen finds standing near it"
+    )
+if "fwdreg=%d/%d/%d/%d" not in diagnostics_source:
+    fail("the periodic state line must report fwdreg=")
+
 placement_hook = (ROOT / "hook/lua/AI/aibuildstructures.lua").read_text(encoding="utf-8")
 if "NativeAIExecuteBuildStructure(aiBrain" not in placement_hook:
     fail("the placement hook must call through to the native implementation")

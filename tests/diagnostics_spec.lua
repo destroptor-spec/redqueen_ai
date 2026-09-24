@@ -278,6 +278,12 @@ logged = {}
 local reporter = Create(brain, modules)
 modules.Production.AssistSummary = { Active = 2, Assigned = 7, Released = 5 }
 modules.Production.CommanderAssists = 3
+-- Established forward bases, what native has registered to them, and what Red
+-- Queen finds standing near them. A base alive on the ground and dead on the
+-- books is reaped by native's DeadBaseMonitor within five seconds.
+modules.Production.ForwardBaseRegistration = function()
+    return { Bases = 2, Factories = 0, Spatial = 2, Engineers = 1 }
+end
 modules.Production.CoreUpgrade = { State = "under-attack" }
 brain.RedQueenExtractorBlocks = 4
 brain.RedQueenPlacement = { Attempts = 40, Gated = 12, Open = 31 }
@@ -333,6 +339,9 @@ assert(string.find(state, "eng=1/7/2", 1, true),
 -- for a full 21-cell matrix without appearing in any log: cover stood down for
 -- 86% of bases behind a Tech 3 filter, and suppression pinned two armies to 3
 -- engineers. Neither was visible in an outcome, only in a mechanism figure.
+assert(string.find(state, "fwdreg=2/0/2/1", 1, true),
+    "the state line must report forward bases, registered factories, factories "
+        .. "standing near them and registered engineers: " .. state)
 assert(string.find(state, "cover=2/9", 1, true),
     "the state line must report sites covered and units committed: " .. state)
 assert(string.find(state, "engpolicy=3/18", 1, true),
