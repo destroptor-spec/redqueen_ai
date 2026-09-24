@@ -1,0 +1,247 @@
+game,army,line,preceding_watch_t,message
+27843831,3,1154,,forward base blocked reason=no-idle-engineer
+27843831,4,1158,,forward base blocked reason=no-idle-engineer
+27843831,3,1200,9,forward base blocked reason=no-idle-engineer
+27843831,4,1202,9,forward base blocked reason=no-idle-engineer
+27843831,3,1227,69,forward base blocked reason=stall-risk
+27843831,4,1229,69,forward base blocked reason=negative-mass-trend
+27843831,3,1258,129,forward base blocked reason=low-mass-storage
+27843831,4,1259,129,forward base blocked reason=negative-mass-trend
+27843831,3,1307,189,forward base blocked reason=negative-mass-trend
+27843831,4,1309,189,forward base blocked reason=negative-mass-trend
+27843831,3,1370,249,forward base blocked reason=low-mass-storage
+27843831,4,1372,249,forward base blocked reason=low-mass-storage
+27843831,3,1430,309,forward base blocked reason=stall-risk
+27843831,4,1432,309,forward base blocked reason=negative-mass-trend
+27843831,4,1466,369,forward base started name=RQFB_4_1 site=MassCluster20 tech=1 queued=6 layer=Hover routeThreat=0.0 coverage=0.15 effective=0.0 limit=0.0 first=T1GroundDefense needs=2pd/1aa/0sh
+27843831,3,1489,369,forward base blocked reason=stall-risk
+27843831,4,1491,369,forward base blocked reason=construction-active
+27843831,3,1549,429,forward base started name=RQFB_3_1 site=MassCluster8 tech=1 queued=6 layer=Amphibious routeThreat=0.0 coverage=0.46 effective=0.0 limit=6.2 first=T1GroundDefense needs=2pd/1aa/0sh
+27843831,4,1550,429,forward base blocked reason=construction-active
+27843831,3,1557,429,forward base blocked reason=construction-active
+27843831,4,1607,489,production expansion type=T1LandFactory factories=8 desired=11 deficit=0 engineer=3145731 idle=no building=no
+27843831,4,1615,489,forward base blocked reason=construction-active
+27843831,3,1619,489,forward base failed name=RQFB_3_1 site=MassCluster8 reason=route-unsafe queued=6 elapsed=65s routeThreat=0.0 nowThreat=24.1 limit=0.0
+27843831,3,1620,489,forward base blocked reason=cooldown
+27843831,4,1678,549,forward base blocked reason=construction-active
+27843831,3,1682,549,forward base blocked reason=negative-mass-trend
+27843831,4,1739,609,forward base blocked reason=construction-active
+27843831,3,1742,609,forward base blocked reason=stall-risk
+27843831,4,1798,669,forward base garrison released site=RQFB_4_1 reason=escort-overwhelmed units=0 losses=1 strength=5
+27843831,3,1799,669,forward base started name=RQFB_3_2 site=MassCluster15 tech=2 queued=12 layer=Amphibious routeThreat=0.0 coverage=0.40 effective=0.0 limit=11.8 first=T1GroundDefense needs=4pd/2aa/1sh
+27843831,4,1824,669,forward base blocked reason=construction-active
+27843831,3,1827,669,forward base blocked reason=construction-active
+27843831,4,1889,729,production expansion type=T1AirFactory factories=10 desired=16 deficit=0 engineer=3145868 idle=no building=no
+27843831,4,1890,729,forward base blocked reason=construction-active
+27843831,3,1892,729,forward base blocked reason=construction-active
+27843831,4,1949,789,production expansion type=T1AirFactory factories=10 desired=22 deficit=0 engineer=3145824 idle=no building=no
+27843831,4,1950,789,forward base blocked reason=construction-active
+27843831,3,1954,789,forward base blocked reason=construction-active
+27843831,4,1995,849,production expansion type=T1AirFactory factories=12 desired=19 deficit=0 engineer=3145820 idle=no building=no
+27843831,4,2006,849,forward base garrison released site=RQFB_4_1 reason=escort-overwhelmed units=2 losses=2 strength=10
+27843831,4,2015,849,production expansion type=T1AirFactory factories=12 desired=20 deficit=0 engineer=3145733 idle=no building=no
+27843831,4,2016,849,forward base blocked reason=construction-active
+27843831,3,2020,849,forward base blocked reason=construction-active
+27843831,3,2044,909,forward base failed name=RQFB_3_2 site=MassCluster15 reason=route-unsafe queued=12 elapsed=225s routeThreat=0.0 nowThreat=15.7 limit=0.0
+27843831,3,2055,909,forward base started name=RQFB_3_3 site=MassCluster33 tech=1 queued=6 layer=Amphibious routeThreat=0.0 coverage=0.40 effective=0.0 limit=32.1 first=T1GroundDefense needs=2pd/1aa/0sh
+27843831,4,2062,909,production expansion type=T1AirFactory factories=13 desired=22 deficit=0 engineer=3145737 idle=no building=no
+27843831,4,2086,909,production expansion type=T1AirFactory factories=13 desired=22 deficit=0 engineer=3145740 idle=no building=no
+27843831,4,2087,909,forward base blocked reason=construction-active
+27843831,3,2093,909,forward base blocked reason=construction-active
+27843831,4,2133,969,production expansion type=T1LandFactory factories=13 desired=22 deficit=0 engineer=3145733 idle=no building=no
+27843831,4,2150,969,production expansion type=T1LandFactory factories=13 desired=22 deficit=0 engineer=3145737 idle=no building=no
+27843831,4,2151,969,forward base blocked reason=construction-active
+27843831,3,2153,969,forward base blocked reason=construction-active
+27843831,4,2187,1029,production expansion type=T1LandFactory factories=13 desired=24 deficit=0 engineer=3145733 idle=no building=no
+27843831,4,2206,1029,production expansion type=T1LandFactory factories=14 desired=24 deficit=0 engineer=3145737 idle=no building=no
+27843831,4,2207,1029,forward base blocked reason=construction-active
+27843831,3,2218,1029,forward base blocked reason=construction-active
+27843831,3,2261,1089,production expansion type=T1AirFactory factories=21 desired=24 deficit=0 engineer=2097286 idle=no building=no
+27843831,3,2265,1089,forward base failed name=RQFB_3_3 site=MassCluster33 reason=route-unsafe queued=6 elapsed=185s routeThreat=0.0 nowThreat=28.1 limit=1.5
+27843831,4,2266,1089,production expansion type=T1AirFactory factories=14 desired=24 deficit=0 engineer=3145733 idle=no building=no
+27843831,3,2289,1089,forward base started name=RQFB_3_4 site=MassCluster32 tech=2 queued=12 layer=Amphibious routeThreat=0.0 coverage=0.67 effective=0.0 limit=3.0 first=T1GroundDefense needs=4pd/2aa/1sh
+27843831,4,2291,1089,production expansion type=T1LandFactory factories=14 desired=24 deficit=0 engineer=3145740 idle=no building=no
+27843831,4,2293,1089,forward base blocked reason=construction-active
+27843831,3,2298,1089,forward base blocked reason=construction-active
+27843831,3,2332,1149,production expansion type=T1AirFactory factories=20 desired=24 deficit=0 engineer=2097157 idle=no building=no
+27843831,4,2348,1149,production expansion type=T1LandFactory factories=14 desired=24 deficit=0 engineer=3145733 idle=no building=no
+27843831,3,2379,1149,production expansion type=T1AirFactory factories=19 desired=20 deficit=0 engineer=2097159 idle=no building=no
+27843831,4,2412,1149,production expansion type=T1LandFactory factories=14 desired=24 deficit=0 engineer=3145731 idle=no building=no
+27843831,4,2414,1149,forward base blocked reason=construction-active
+27843831,4,2417,1149,forward base garrison released site=RQFB_4_1 reason=escort-overwhelmed units=0 losses=3 strength=10
+27843831,3,2419,1149,forward base blocked reason=construction-active
+27843831,3,2469,1209,production expansion type=T1AirFactory factories=20 desired=21 deficit=0 engineer=2097164 idle=no building=no
+27843831,4,2504,1209,production expansion type=T1LandFactory factories=16 desired=24 deficit=0 engineer=3145733 idle=no building=no
+27843831,4,2541,1209,production expansion type=T1LandFactory factories=17 desired=24 deficit=0 engineer=3145731 idle=no building=no
+27843831,4,2543,1209,forward base blocked reason=construction-active
+27843831,4,2544,1209,forward base garrison released site=RQFB_4_1 reason=escort-outmatched units=0 losses=0 strength=10
+27843831,3,2546,1209,forward base blocked reason=construction-active
+27843831,4,2580,1269,forward base garrison released site=RQFB_4_1 reason=escort-overwhelmed units=0 losses=1 strength=10
+27843831,3,2582,1269,production expansion type=T1LandFactory factories=21 desired=24 deficit=0 engineer=2097159 idle=no building=no
+27843831,4,2592,1269,forward base failed name=RQFB_4_1 site=MassCluster20 reason=no-factory queued=6 elapsed=900s routeThreat=0.0 nowThreat=64.6 limit=123.2
+27843831,4,2593,1269,forward base started name=RQFB_4_2 site=MassCluster16 tech=1 queued=6 layer=Hover routeThreat=0.0 coverage=0.50 effective=0.0 limit=0.0 first=T1GroundDefense needs=2pd/1aa/0sh
+27843831,4,2604,1269,production expansion type=T1LandFactory factories=19 desired=24 deficit=0 engineer=3145740 idle=no building=no
+27843831,3,2634,1269,production expansion type=T1LandFactory factories=22 desired=23 deficit=0 engineer=2097155 idle=no building=no
+27843831,4,2637,1269,production expansion type=T1AirFactory factories=21 desired=24 deficit=0 engineer=3145752 idle=no building=no
+27843831,4,2639,1269,forward base blocked reason=construction-active
+27843831,3,2644,1269,forward base blocked reason=construction-active
+27843831,4,2687,1329,production expansion type=T1AirFactory factories=21 desired=24 deficit=0 engineer=3145760 idle=no building=no
+27843831,4,2730,1329,production expansion type=T1AirFactory factories=22 desired=24 deficit=0 engineer=3145740 idle=no building=no
+27843831,4,2732,1329,forward base blocked reason=construction-active
+27843831,3,2737,1329,forward base blocked reason=construction-active
+27843831,4,2824,1389,forward base blocked reason=construction-active
+27843831,3,2828,1389,forward base blocked reason=construction-active
+27843831,3,2864,1449,production expansion type=T1AirFactory factories=22 desired=23 deficit=0 engineer=2097159 idle=no building=no
+27843831,3,2898,1449,production expansion type=T1AirFactory factories=23 desired=24 deficit=0 engineer=2097155 idle=no building=no
+27843831,4,2901,1449,forward base blocked reason=construction-active
+27843831,3,2904,1449,forward base blocked reason=construction-active
+27843831,4,2976,1509,forward base garrison released site=RQFB_4_2 reason=escort-overwhelmed units=1 losses=1 strength=10
+27843831,3,3015,1509,forward base garrison released site=RQFB_3_4 reason=escort-overwhelmed units=2 losses=2 strength=29
+27843831,4,3032,1509,forward base blocked reason=construction-active
+27843831,3,3044,1509,forward base blocked reason=construction-active
+27843831,4,3112,1569,forward base blocked reason=construction-active
+27843831,4,3113,1569,forward base garrison released site=RQFB_4_2 reason=escort-overwhelmed units=1 losses=1 strength=10
+27843831,3,3116,1569,forward base blocked reason=construction-active
+27843831,4,3184,1629,forward base blocked reason=construction-active
+27843831,3,3187,1629,forward base blocked reason=construction-active
+27843831,3,3238,1689,forward base garrison released site=RQFB_3_4 reason=escort-overwhelmed units=2 losses=2 strength=29
+27843831,4,3259,1689,forward base blocked reason=construction-active
+27843831,3,3262,1689,forward base blocked reason=construction-active
+27843831,4,3329,1749,forward base blocked reason=construction-active
+27843831,3,3332,1749,forward base blocked reason=construction-active
+27843831,4,3434,1809,forward base blocked reason=construction-active
+27843831,3,3436,1809,forward base blocked reason=construction-active
+27843831,4,3471,1869,forward base recall failed name=RQFB_4_2
+27843831,4,3477,1869,forward base recall failed name=RQFB_4_2
+27843831,4,3486,1869,forward base recall failed name=RQFB_4_2
+27843831,4,3492,1869,forward base blocked reason=construction-active
+27843831,3,3495,1869,forward base blocked reason=construction-active
+27843831,4,3534,1929,forward base recall failed name=RQFB_4_2
+27843831,3,3566,1929,forward base garrison released site=RQFB_3_4 reason=escort-overwhelmed units=0 losses=1 strength=29
+27843831,4,3583,1929,forward base recall failed name=RQFB_4_2
+27843831,4,3609,1929,forward base recall failed name=RQFB_4_2
+27843831,4,3641,1929,forward base blocked reason=construction-active
+27843831,3,3650,1929,forward base blocked reason=construction-active
+27843831,4,3689,1989,forward base recall failed name=RQFB_4_2
+27843831,4,3696,1989,forward base recall failed name=RQFB_4_2
+27843831,4,3707,1989,forward base recall failed name=RQFB_4_2
+27843831,3,3711,1989,forward base failed name=RQFB_3_4 site=MassCluster32 reason=no-factory queued=12 elapsed=900s routeThreat=0.0 nowThreat=0.0 limit=4.7
+27843831,4,3712,1989,forward base blocked reason=construction-active
+27843831,4,3715,1989,forward base garrison released site=RQFB_4_2 reason=escort-outmatched units=0 losses=0 strength=23
+27843831,3,3716,1989,forward base started name=RQFB_3_5 site=MassCluster16 tech=2 queued=12 layer=Amphibious routeThreat=0.0 coverage=0.34 effective=0.0 limit=0.0 first=T1GroundDefense needs=4pd/2aa/1sh
+27843831,3,3755,2049,forward base blocked reason=construction-active
+27843831,4,3757,2049,forward base recall failed name=RQFB_4_2
+27843831,4,3768,2049,forward base recall failed name=RQFB_4_2
+27843831,3,3781,2049,forward base garrison released site=RQFB_3_5 reason=escort-outmatched units=2 losses=0 strength=29
+27843831,3,3784,2049,forward base failed name=RQFB_3_5 site=MassCluster16 reason=route-unsafe queued=12 elapsed=45s routeThreat=0.0 nowThreat=44.3 limit=0.0
+27843831,4,3785,2049,forward base recall failed name=RQFB_4_2
+27843831,4,3792,2049,forward base blocked reason=construction-active
+27843831,3,3830,2109,forward base blocked reason=cooldown
+27843831,4,3832,2109,forward base recall failed name=RQFB_4_2
+27843831,3,3835,2109,production expansion type=T1AirFactory factories=23 desired=24 deficit=0 engineer=2097159 idle=no building=no
+27843831,4,3847,2109,forward base garrison released site=RQFB_4_2 reason=escort-outmatched units=0 losses=0 strength=0
+27843831,3,3855,2109,production expansion type=T1LandFactory factories=23 desired=24 deficit=0 engineer=2097164 idle=no building=no
+27843831,4,3865,2109,forward base blocked reason=construction-active
+27843831,4,3868,2109,forward base garrison released site=RQFB_4_2 reason=escort-outmatched units=0 losses=0 strength=0
+27843831,3,3880,2109,forward base started name=RQFB_3_6 site=MassCluster11 tech=1 queued=6 layer=Amphibious routeThreat=5.4 coverage=0.43 effective=5.4 limit=106.7 first=T1GroundDefense needs=2pd/1aa/0sh
+27843831,3,3935,2169,forward base blocked reason=construction-active
+27843831,4,3937,2169,forward base recall failed name=RQFB_4_2
+27843831,4,3957,2169,forward base failed name=RQFB_4_2 site=MassCluster16 reason=no-factory queued=6 elapsed=900s routeThreat=0.0 nowThreat=18.4 limit=0.0
+27843831,4,3958,2169,forward base started name=RQFB_4_3 site=MassCluster11 tech=2 queued=12 layer=Hover routeThreat=0.0 coverage=0.39 effective=0.0 limit=0.0 first=T1GroundDefense needs=4pd/2aa/1sh
+27843831,3,3964,2169,production expansion type=T1LandFactory factories=23 desired=24 deficit=0 engineer=2097159 idle=no building=no
+27843831,4,4002,2169,forward base blocked reason=construction-active
+27843831,3,4033,2229,forward base blocked reason=construction-active
+27843831,3,4055,2229,forward base recall failed name=RQFB_3_6
+27843831,4,4059,2229,forward base blocked reason=construction-active
+27843831,3,4094,2289,forward base recall failed name=RQFB_3_6
+27843831,3,4095,2289,forward base blocked reason=construction-active
+27843831,3,4115,2289,forward base recall failed name=RQFB_3_6
+27843831,3,4132,2289,forward base recall failed name=RQFB_3_6
+27843831,4,4136,2289,forward base blocked reason=construction-active
+27843831,3,4169,2349,forward base recall failed name=RQFB_3_6
+27843831,3,4170,2349,forward base blocked reason=construction-active
+27843831,3,4181,2349,forward base recall failed name=RQFB_3_6
+27843831,3,4191,2349,forward base recall failed name=RQFB_3_6
+27843831,4,4201,2349,forward base blocked reason=construction-active
+27843831,3,4249,2409,forward base recall failed name=RQFB_3_6
+27843831,3,4250,2409,forward base blocked reason=construction-active
+27843831,3,4264,2409,forward base recall failed name=RQFB_3_6
+27843831,4,4281,2409,forward base blocked reason=construction-active
+27843831,3,4309,2469,forward base blocked reason=construction-active
+27843831,4,4311,2469,forward base failed name=RQFB_4_3 site=MassCluster11 reason=route-unsafe queued=12 elapsed=285s routeThreat=0.0 nowThreat=159.8 limit=153.1
+27843831,4,4330,2469,forward base started name=RQFB_4_4 site=MassCluster8 tech=2 queued=12 layer=Hover routeThreat=0.0 coverage=0.28 effective=0.0 limit=47.5 first=T1GroundDefense needs=4pd/2aa/1sh
+27843831,4,4370,2469,forward base blocked reason=construction-active
+27843831,3,4404,2529,forward base blocked reason=construction-active
+27843831,3,4439,2529,forward base recall failed name=RQFB_3_6
+27843831,4,4447,2529,forward base blocked reason=construction-active
+27843831,3,4448,2529,forward base garrison released site=RQFB_3_6 reason=escort-overwhelmed units=0 losses=1 strength=315
+27843831,3,4481,2589,forward base recall failed name=RQFB_3_6
+27843831,3,4482,2589,forward base blocked reason=construction-active
+27843831,3,4502,2589,forward base recall failed name=RQFB_3_6
+27843831,4,4524,2589,forward base failed name=RQFB_4_4 site=MassCluster8 reason=route-unsafe queued=12 elapsed=125s routeThreat=0.0 nowThreat=177.4 limit=39.3
+27843831,3,4525,2589,forward base recall failed name=RQFB_3_6
+27843831,4,4531,2589,forward base blocked reason=negative-energy-trend
+27843831,3,4567,2649,forward base blocked reason=construction-active
+27843831,4,4570,2649,forward base started name=RQFB_4_5 site=MassCluster3 tech=1 queued=6 layer=Hover routeThreat=0.0 coverage=0.54 effective=0.0 limit=0.0 first=T1GroundDefense needs=2pd/1aa/0sh
+27843831,3,4579,2649,forward base recall failed name=RQFB_3_6
+27843831,4,4587,2649,forward base failed name=RQFB_4_5 site=MassCluster3 reason=manager-lost queued=6 elapsed=20s routeThreat=0.0 nowThreat=0.0 limit=0.0
+27843831,3,4592,2649,forward base recall failed name=RQFB_3_6
+27843831,4,4598,2649,forward base blocked reason=cooldown
+27843831,3,4631,2709,forward base recall failed name=RQFB_3_6
+27843831,3,4632,2709,forward base blocked reason=construction-active
+27843831,4,4658,2709,forward base blocked reason=cooldown
+27843831,3,4689,2769,forward base blocked reason=construction-active
+27843831,4,4695,2769,forward base started name=RQFB_4_6 site=MassCluster11 tech=1 queued=6 layer=Hover routeThreat=0.0 coverage=0.32 effective=0.0 limit=34.8 first=T1GroundDefense needs=2pd/1aa/0sh
+27843831,3,4718,2769,forward base recall failed name=RQFB_3_6
+27843831,4,4755,2769,forward base blocked reason=construction-active
+27843831,3,4789,2829,forward base recall failed name=RQFB_3_6
+27843831,3,4790,2829,forward base blocked reason=construction-active
+27843831,3,4800,2829,forward base recall failed name=RQFB_3_6
+27843831,4,4814,2829,forward base blocked reason=construction-active
+27843831,3,4847,2889,forward base recall failed name=RQFB_3_6
+27843831,3,4848,2889,forward base blocked reason=construction-active
+27843831,3,4857,2889,forward base recall failed name=RQFB_3_6
+27843831,3,4896,2889,forward base recall failed name=RQFB_3_6
+27843831,4,4902,2889,forward base recall failed name=RQFB_4_6
+27843831,4,4903,2889,forward base blocked reason=construction-active
+27843831,3,4932,2949,forward base recall failed name=RQFB_3_6
+27843831,3,4933,2949,forward base blocked reason=construction-active
+27843831,3,4941,2949,forward base recall failed name=RQFB_3_6
+27843831,3,4948,2949,forward base recall failed name=RQFB_3_6
+27843831,4,4952,2949,forward base blocked reason=construction-active
+27843831,3,4983,3009,forward base blocked reason=construction-active
+27843831,4,5006,3009,forward base blocked reason=construction-active
+27843831,3,5010,3009,forward base failed name=RQFB_3_6 site=MassCluster11 reason=no-factory queued=6 elapsed=900s routeThreat=5.4 nowThreat=0.0 limit=36.5
+27843831,3,5011,3009,forward base started name=RQFB_3_7 site=MassCluster16 tech=2 queued=12 layer=Amphibious routeThreat=0.0 coverage=0.41 effective=0.0 limit=12.1 first=T1GroundDefense needs=4pd/2aa/1sh
+27843831,3,5048,3069,forward base blocked reason=construction-active
+27843831,3,5081,3069,forward base failed name=RQFB_3_7 site=MassCluster16 reason=manager-lost queued=12 elapsed=20s routeThreat=0.0 nowThreat=0.0 limit=18.2
+27843831,4,5128,3069,forward base blocked reason=construction-active
+27843831,3,5166,3129,forward base blocked reason=cooldown
+27843831,4,5185,3129,forward base blocked reason=construction-active
+27843831,3,5187,3129,forward base started name=RQFB_3_8 site=MassCluster32 tech=3 queued=19 layer=Amphibious routeThreat=0.0 coverage=0.40 effective=0.0 limit=212.9 first=T1GroundDefense needs=5pd/2aa/1sh
+27843831,3,5229,3189,forward base blocked reason=construction-active
+27843831,4,5274,3189,forward base blocked reason=construction-active
+27843831,3,5276,3189,forward base failed name=RQFB_3_8 site=MassCluster32 reason=manager-lost queued=19 elapsed=60s routeThreat=0.0 nowThreat=0.0 limit=39.2
+27843831,3,5313,3249,forward base blocked reason=cooldown
+27843831,4,5344,3249,forward base garrison released site=RQFB_4_6 reason=escort-overwhelmed units=1 losses=1 strength=282
+27843831,4,5408,3249,forward base blocked reason=construction-active
+27843831,3,5475,3309,forward base blocked reason=defense-alert
+27843831,4,5518,3309,forward base blocked reason=construction-active
+27843831,3,5559,3369,forward base blocked reason=defense-alert
+27843831,4,5577,3369,forward base blocked reason=construction-active
+27843831,3,5610,3429,forward base blocked reason=defense-alert
+27843831,4,5621,3429,forward base garrison released site=RQFB_4_6 reason=escort-overwhelmed units=0 losses=1 strength=282
+27843831,4,5686,3429,forward base blocked reason=construction-active
+27843831,3,5726,3489,forward base blocked reason=defense-alert
+27843831,4,5751,3489,forward base blocked reason=construction-active
+27843831,3,5783,3549,forward base blocked reason=defense-alert
+27843831,4,5799,3549,forward base blocked reason=construction-active
+27843831,3,5831,3609,forward base blocked reason=defense-alert
+27843831,4,5847,3609,production expansion type=T1AirFactory factories=23 desired=24 deficit=0 engineer=3145743 idle=no building=no
+27843831,4,5858,3609,forward base blocked reason=construction-active
+27843831,3,5890,3669,forward base blocked reason=defense-alert
+27843831,4,5895,3669,production expansion type=T1AirFactory factories=17 desired=24 deficit=0 engineer=3145755 idle=no building=no
+27843831,4,5896,3669,forward base failed name=RQFB_4_6 site=MassCluster11 reason=no-factory queued=6 elapsed=900s routeThreat=0.0 nowThreat=29.7 limit=65.5
+27843831,4,5954,3669,production expansion type=T1AirFactory factories=11 desired=24 deficit=0 engineer=3145751 idle=no building=no
+27843831,4,5960,3669,forward base blocked reason=defense-alert
+27843831,3,6000,3729,forward base blocked reason=defense-alert

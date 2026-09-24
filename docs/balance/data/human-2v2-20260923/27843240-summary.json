@@ -1,0 +1,84 @@
+{
+  "game": "27843240",
+  "contracts": [
+    "income contract allies=2 enemies=2 deficit=0 income=1.00",
+    "match-contract army=2 name=ARMY_2 faction=1 side=ally start=298.5,455.5 income=1.00",
+    "match-contract army=4 name=ARMY_12 faction=1 side=ally start=473.5,453.5",
+    "match-contract army=1 name=ARMY_1 faction=1 side=enemy start=213.5,56.5",
+    "match-contract army=3 name=ARMY_11 faction=1 side=enemy start=38.5,58.5",
+    "started version=V9 faction=1 victory=Assassination",
+    "income contract allies=2 enemies=2 deficit=0 income=1.00",
+    "match-contract army=2 name=ARMY_2 faction=1 side=ally start=298.5,455.5 income=1.00",
+    "match-contract army=4 name=ARMY_12 faction=1 side=ally start=473.5,453.5 income=1.00",
+    "match-contract army=1 name=ARMY_1 faction=1 side=enemy start=213.5,56.5",
+    "match-contract army=3 name=ARMY_11 faction=1 side=enemy start=38.5,58.5",
+    "started version=V9 faction=1 victory=Assassination"
+  ],
+  "outcomes": [
+    "2\tdefeat -10",
+    "4\tdefeat -10",
+    "1\tvictory 10",
+    "3\tvictory 10"
+  ],
+  "armies": {
+    "2": {
+      "samples": 95,
+      "last_watch_seconds": 5649,
+      "modes": {
+        "Opening": 4,
+        "Balanced": 62,
+        "Recover": 24,
+        "ExpandProduction": 5
+      },
+      "peak_mex": 23,
+      "final_mex": 8,
+      "peak_mass_per_tick": 53.3,
+      "final_mass_per_tick": 33.9,
+      "alert_samples": 74,
+      "alert_zero_coverage": 10,
+      "alert_mean_defences": 48.86486486486486,
+      "alert_mean_covering": 8.216216216216216,
+      "last_mexloss_lost_defended": "34/7",
+      "forward_started": 3,
+      "forward_established": 2,
+      "forward_destroyed": 2,
+      "forward_failures": {
+        "manager-lost": 1
+      },
+      "recall_failure_messages": 0,
+      "recall_failure_unique_bases": [],
+      "power_storage_below_3pct_samples": 1
+    },
+    "4": {
+      "samples": 100,
+      "last_watch_seconds": 5949,
+      "modes": {
+        "Opening": 4,
+        "Balanced": 61,
+        "Recover": 30,
+        "ExpandProduction": 5
+      },
+      "peak_mex": 22,
+      "final_mex": 5,
+      "peak_mass_per_tick": 49.4,
+      "final_mass_per_tick": 10.5,
+      "alert_samples": 74,
+      "alert_zero_coverage": 41,
+      "alert_mean_defences": 35.108108108108105,
+      "alert_mean_covering": 1.5135135135135136,
+      "last_mexloss_lost_defended": "34/4",
+      "forward_started": 2,
+      "forward_established": 0,
+      "forward_destroyed": 0,
+      "forward_failures": {
+        "no-factory": 1,
+        "route-unsafe": 1
+      },
+      "recall_failure_messages": 1,
+      "recall_failure_unique_bases": [
+        "RQFB_4_1"
+      ],
+      "power_storage_below_3pct_samples": 4
+    }
+  }
+}

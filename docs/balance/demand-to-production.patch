@@ -1,0 +1,208 @@
+diff --git a/lua/AI/RedQueen/Constants.lua b/lua/AI/RedQueen/Constants.lua
+index 3b6bdd9..a2f99fc 100644
+--- a/lua/AI/RedQueen/Constants.lua
++++ b/lua/AI/RedQueen/Constants.lua
+@@ -252,6 +252,13 @@ Policy = {
+     -- observed fleet of 30 that produced no kills; the transport budget
+     -- diagnostic reports when it engages so it can be tuned from evidence.
+     MaximumTransports = 10,
++    -- Below this many combat units the domain shares are not shaped.
++    --
++    -- demand.Land and demand.Air were computed, clamped and written to the
++    -- state line with no consumer at all -- the same defect demand.Scouts had.
++    -- Shaping an army of three by a 0.40 share is noise, so the gate only
++    -- applies once there is an army to shape.
++    DomainShareMinimumArmy = 10,
+     Tech2MinimumMassIncome = 4,
+     Tech2MinimumEnergyIncome = 60,
+     Tech3MinimumMassIncome = 10,
+diff --git a/lua/AI/RedQueen/CounterBuilders.lua b/lua/AI/RedQueen/CounterBuilders.lua
+index 86ad59d..67c8865 100644
+--- a/lua/AI/RedQueen/CounterBuilders.lua
++++ b/lua/AI/RedQueen/CounterBuilders.lua
+@@ -367,12 +367,63 @@ local function ShouldBuildTechEnergySmall(aiBrain)
+             or aiBrain:GetCurrentUnits(categories.ENGINEER * categories.TECH3) == 0)
+ end
+ 
++-- The share of the combat army this domain already holds, against the share the
++-- director asked for.
++--
++-- `demand.Land` and `demand.Air` were computed, clamped and written to the
++-- periodic state line, and nothing read them -- exactly the state `demand.Scouts`
++-- was in before it got a consumer. demand.Land swings 0.15 to 0.60 by doctrine
++-- and changed nothing. This is the consumer.
++--
++-- Reported rather than silent: without the figures a matrix cannot tell a gate
++-- that never fired from one that fired and did not pay.
++local function DomainDemand(aiBrain, domain)
++    local demand = GetDemand(aiBrain)
++    local want = demand and (domain == "Land" and demand.Land or domain == "Air" and demand.Air)
++    if not want or want <= 0 then
++        return nil
++    end
++    local mobile = categories.MOBILE - categories.ENGINEER - categories.COMMAND
++        - categories.SCOUT - categories.TRANSPORTFOCUS
++    local combat = aiBrain:GetCurrentUnits(mobile * (categories.LAND + categories.AIR))
++    local held = aiBrain:GetCurrentUnits(
++        mobile * (domain == "Land" and categories.LAND or categories.AIR))
++    return want, held, combat
++end
++
++local function RecordDomainShare(aiBrain, domain, held, combat, want)
++    local record = aiBrain.RedQueenDomainShare
++    if not record then
++        record = {}
++        aiBrain.RedQueenDomainShare = record
++    end
++    record[domain] = { Held = held, Combat = combat, Want = want }
++end
++
++-- True when this domain is at or above the share the director asked for, so an
++-- unconditional tier tap should stop adding to it.
++local function AtDomainShare(aiBrain, domain)
++    local want, held, combat = DomainDemand(aiBrain, domain)
++    if not want then
++        return false
++    end
++    RecordDomainShare(aiBrain, domain, held, combat, want)
++    -- An army too small to have a shape is not shaped.
++    if combat < Constants.Policy.DomainShareMinimumArmy then
++        return false
++    end
++    return held >= combat * want
++end
++
+ local function ShouldBuildDominantTier(aiBrain, domain, tier)
+     local demand, economy = GetDemand(aiBrain)
+     local policy = demand and demand.TierPolicy and demand.TierPolicy[domain]
+     return policy
+         and policy.Highest == tier
+         and not economy.StallRisk
++        -- Naval keeps its own demand gate (NavalDominanceMinimumDemand); this
++        -- one answers demand.Land and demand.Air, which had no consumer.
++        and not AtDomainShare(aiBrain, domain)
+ end
+ 
+ local function ShouldBuildT2Land(aiBrain)
+diff --git a/lua/AI/RedQueen/Diagnostics.lua b/lua/AI/RedQueen/Diagnostics.lua
+index e6108a8..b4592f0 100644
+--- a/lua/AI/RedQueen/Diagnostics.lua
++++ b/lua/AI/RedQueen/Diagnostics.lua
+@@ -168,6 +168,16 @@ Diagnostics = ClassSimple {
+ 
+         -- Defaults to "none" for a domain no builder has evaluated yet, so the
+         -- field is present from the first sample rather than appearing later.
++        local domain = self.Brain.RedQueenDomainShare or {}
++        local share = {}
++        for _, name in ipairs({ "Land", "Air" }) do
++            local d = domain[name]
++            share[name] = {
++                Have = (d and d.Combat and d.Combat > 0) and (d.Held / d.Combat) or 0,
++                Want = d and d.Want or 0,
++            }
++        end
++
+         local gate = self.Brain.RedQueenTechGate or {}
+         gate = {
+             Land2 = gate.Land2 or "none", Land3 = gate.Land3 or "none",
+@@ -176,7 +186,7 @@ Diagnostics = ClassSimple {
+         }
+ 
+         Logger.Info(self.Brain, string.format(
+-            "state objective=%s primary=%s/%d secondary=%s/%d pressure=%s claim=%.0f/%.0f%s eco=%s mass=%.1f energy=%.1f factories=%d/%d intel=%d doctrine=%s focus=%s weights=A=%d,T2=%d,T3=%d,X=%d,N=%d ready=%.2f slots=%d reason=%s landloss=%d/%.0f airloss=%d/%.0f airdrop=%s alert=%s/%.1f/%.2f/%s/%.0f/%.0f momentum=%.0f/%.0f/%s tiers=L%d,A%d,N%d forward=%d/%s/%s exp=%s/%d/%d eng=%d/%d/%d engtier=%d/%d/%d cover=%d/%d engpolicy=%d/%d mex=%d/%d scout=%d/%d/%d scoutorders=%d/%d scouts=%d scoutfraction=%.3f/%.3f dispatch=L%d,A%d,W%d,M%d,H%d army=%d/%d/%d held=%d/%d/%d directed=%d/%d assist=%d/%d/%d acuassist=%d mexgate=%s/%d techgate=L%s/%s,A%s/%s,N%s/%s",
++            "state objective=%s primary=%s/%d secondary=%s/%d pressure=%s claim=%.0f/%.0f%s eco=%s mass=%.1f energy=%.1f factories=%d/%d intel=%d doctrine=%s focus=%s weights=A=%d,T2=%d,T3=%d,X=%d,N=%d ready=%.2f slots=%d reason=%s landloss=%d/%.0f airloss=%d/%.0f airdrop=%s alert=%s/%.1f/%.2f/%s/%.0f/%.0f momentum=%.0f/%.0f/%s tiers=L%d,A%d,N%d forward=%d/%s/%s exp=%s/%d/%d eng=%d/%d/%d engtier=%d/%d/%d cover=%d/%d engpolicy=%d/%d mex=%d/%d scout=%d/%d/%d scoutorders=%d/%d scouts=%d scoutfraction=%.3f/%.3f dispatch=L%d,A%d,W%d,M%d,H%d army=%d/%d/%d held=%d/%d/%d directed=%d/%d assist=%d/%d/%d acuassist=%d mexgate=%s/%d domainshare=L%.2f/%.2f,A%.2f/%.2f techgate=L%s/%s,A%s/%s,N%s/%s",
+             tostring(objective.Type or "none"),
+             primary and tostring(primary.Type) or "none",
+             slotDispatch.Primary or 0,
+@@ -317,6 +327,11 @@ Diagnostics = ClassSimple {
+             -- logged matches with nothing in the log to say which one shut it.
+             -- Without this, each candidate repair reads as "no outcome change"
+             -- while the other three still hold the ladder down.
++            -- Held share against the share the director asked for, land then
++            -- air. demand.Land and demand.Air had no consumer at all before
++            -- this; without the figures a matrix cannot tell a gate that never
++            -- fired from one that fired and did not pay.
++            share.Land.Have, share.Land.Want, share.Air.Have, share.Air.Want,
+             gate.Land2, gate.Land3,
+             gate.Air2, gate.Air3,
+             gate.Naval2, gate.Naval3) .. combatTelemetry)
+diff --git a/tests/counter_builders_spec.lua b/tests/counter_builders_spec.lua
+index cfa015e..ed057df 100644
+--- a/tests/counter_builders_spec.lua
++++ b/tests/counter_builders_spec.lua
+@@ -53,6 +53,7 @@ local constants = {
+         StrategicFocusMinimumScore = 35,
+         Tech2MinimumMassIncome = 4,
+         Tech2MinimumEnergyIncome = 60,
++        DomainShareMinimumArmy = 10,
+         Tech3MinimumMassIncome = 10,
+         Tech3MinimumEnergyIncome = 250,
+         ExperimentalMinimumMassIncome = 22,
+@@ -232,6 +233,38 @@ local dominantT3Condition = builders["Red Queen T3 Land Dominance"].BuilderCondi
+ assert(dominantT3Condition(brain), "live T3 access must keep a dominant-tier land queue available")
+ demand.FocusWeights.Tech3 = 0
+ assert(t3Condition(brain), "T3 access must keep upgrading remaining T2 land factories")
++-- demand.Land and demand.Air now reach production.
++--
++-- Both were computed, clamped and written to the state line with no consumer,
++-- exactly as demand.Scouts once was; demand.Land swings 0.15 to 0.60 by
++-- doctrine and changed nothing. The dominance tap fires on tier availability
++-- alone, so this gives it the target it never had.
++local dominantLand = builders["Red Queen T2 Land Dominance"].BuilderConditions[1][1]
++local mobileKey = (categories.MOBILE - categories.ENGINEER - categories.COMMAND
++    - categories.SCOUT - categories.TRANSPORTFOCUS)
++local combatKey = (mobileKey * (categories.LAND + categories.AIR)).Name
++local landKey = (mobileKey * categories.LAND).Name
++demand.TierPolicy.Land.Highest = 2
++demand.Land = 0.40
++unitCounts[combatKey] = 50
++unitCounts[landKey] = 10
++assert(dominantLand(brain), "a domain below its demanded share keeps building")
++unitCounts[landKey] = 20
++assert(not dominantLand(brain), "a domain at its demanded share stops adding to itself")
++-- An army too small to have a shape is not shaped.
++unitCounts[combatKey] = 9
++unitCounts[landKey] = 9
++assert(dominantLand(brain), "below the minimum army the share gate does not apply")
++-- No published demand must not silently stop production.
++unitCounts[combatKey] = 50
++unitCounts[landKey] = 40
++demand.Land = nil
++assert(dominantLand(brain), "an unpublished demand leaves the tap alone")
++demand.Land = 0.40
++unitCounts[combatKey] = 0
++unitCounts[landKey] = 0
++demand.TierPolicy.Land.Highest = 3
++
+ demand.DefenseAlert.Active = true
+ assert(not t3Condition(brain), "defense alerts must pause new factory tech work")
+ 
+diff --git a/tests/diagnostics_spec.lua b/tests/diagnostics_spec.lua
+index ac03a01..4d04c91 100644
+--- a/tests/diagnostics_spec.lua
++++ b/tests/diagnostics_spec.lua
+@@ -280,6 +280,24 @@ assert(string.find(state, "assist=2/7/5 acuassist=3 mexgate=under-attack/4", 1,
+ -- the twelve logged matches with nothing in the log to say which one shut it.
+ -- A domain no builder has evaluated yet reads "none" rather than going absent,
+ -- so the field is greppable from the first sample.
++-- demand.Land and demand.Air had no consumer at all; these are the figures that
++-- say whether the new gate fired. Without them a matrix cannot tell a gate that
++-- never fired from one that fired and did not pay.
++assert(string.find(state, "domainshare=L", 1, true) and string.find(state, ",A", 1, true),
++    "the state line must report held share against demanded share: " .. state)
++brain.RedQueenDomainShare = { Land = { Held = 30, Combat = 50, Want = 0.40 },
++    Air = { Held = 10, Combat = 50, Want = 0.30 } }
++logged = {}
++reporter:Update()
++state = logged[table.getn(logged)]
++assert(string.find(state, "domainshare=L0.60/0.40,A0.20/0.30", 1, true),
++    "held and demanded shares must both reach the state line: " .. state)
++brain.RedQueenDomainShare = nil
++logged = {}
++reporter:Update()
++state = logged[table.getn(logged)]
++assert(string.find(state, "domainshare=L0.00/0.00,A0.00/0.00", 1, true),
++    "an unmeasured domain reads zero rather than going absent: " .. state)
+ assert(string.find(state, "techgate=Lnone/none,Anone/none,Nnone/none", 1, true),
+     "the state line must report the tier-ladder refusal per domain: " .. state)
+ brain.RedQueenTechGate = { Land2 = "ok", Land3 = "energy", Air3 = "alert" }

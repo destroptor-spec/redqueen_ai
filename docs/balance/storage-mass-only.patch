@@ -1,0 +1,548 @@
+diff --git a/lua/AI/RedQueen/MassStorage.lua b/lua/AI/RedQueen/MassStorage.lua
+new file mode 100644
+--- /dev/null
++++ b/lua/AI/RedQueen/MassStorage.lua
+@@ -0,0 +1,191 @@
++-- Candidate: mass-storage jobs require a free extractor edge. No ordinary
++-- placement fallback. Geometry is deliberately limited to the verified 2x2
++-- skirts with equal offsets; modded footprints are refused, not guessed.
++local BaseLifecycle = import("/mods/TheRedQueen/lua/AI/RedQueen/BaseLifecycle.lua")
++local AlertScope = import("/mods/TheRedQueen/lua/AI/RedQueen/AlertScope.lua")
++local Survival = import("/mods/TheRedQueen/lua/AI/RedQueen/EngineerSurvival.lua")
++local Logger = import("/mods/TheRedQueen/lua/AI/RedQueen/Logger.lua")
++local StorageIds = { "ueb1106", "uab1106", "urb1106", "xsb1106" }
++local Radius = 60
++
++local function Ready(brain)
++    local modules = brain and brain.RedQueenModules or {}
++    local economy = modules.Economy and modules.Economy.State
++    return brain and brain.RedQueenLobbyPersonality and not brain.RedQueenCleaned
++        and economy and not economy.StallRisk and not brain.LowEnergyMode
++        and modules.Strategy and modules.Strategy.ProductionDemand
++end
++
++local function OwnExtractor(brain, target)
++    if not target or target.Dead or target:GetArmy() ~= brain:GetArmyIndex()
++        or target:GetFractionComplete() < 1 then return false end
++    local hash = target:GetBlueprint().CategoriesHash or {}
++    return hash.STRUCTURE and hash.MASSEXTRACTION and (hash.TECH2 or hash.TECH3)
++end
++
++local function Near(a, b, radius)
++    local dx, dz = a[1] - b[1], a[3] - b[3]
++    return dx * dx + dz * dz <= radius * radius
++end
++
++local function Base(brain, location)
++    if not location or not BaseLifecycle.Live(brain, location) then return nil end
++    return brain.BuilderManagers[location].EngineerManager
++end
++
++-- Queue-entry identity and platoon ownership release reservations immediately
++-- after cancellation, reassignment, death or queue consumption. No timer can
++-- expire a reservation while an engineer is still travelling to its job.
++local function Reservations(brain)
++    local reservations = brain.RedQueenMassStorageReservations or {}
++    brain.RedQueenMassStorageReservations = reservations
++    for index = table.getn(reservations), 1, -1 do
++        local lease = reservations[index]
++        local engineer = lease.Engineer
++        local data = engineer.BuilderManagerData or {}
++        local live = not engineer.Dead and engineer:GetArmy() == brain:GetArmyIndex()
++            and engineer.PlatoonHandle == lease.Platoon and brain:PlatoonExists(lease.Platoon)
++            and Base(brain, data.LocationType) == lease.Manager
++        local retained = false
++        if live then
++            for _, entry in ipairs(engineer.EngineerBuildQueue or {}) do
++                if entry == lease.Entry and entry[1] == lease.Blueprint and entry[3] == false
++                    and entry[2][1] == lease.Point[1] and entry[2][2] == lease.Point[3]
++                then retained = true; break end
++            end
++        end
++        if not retained then table.remove(reservations, index) end
++    end
++    return reservations
++end
++
++local function Reserved(reservations, point)
++    for _, lease in ipairs(reservations) do
++        if math.abs(lease.Point[1] - point[1]) < 2
++            and math.abs(lease.Point[3] - point[3]) < 2 then return true end
++    end
++    return false
++end
++
++function Positions(storageBlueprint, targetBlueprint, position, size)
++    local storage, target = storageBlueprint.Physics or {}, targetBlueprint.Physics or {}
++    if not size or storage.SkirtSizeX ~= 2 or storage.SkirtSizeZ ~= 2
++        or target.SkirtSizeX ~= 2 or target.SkirtSizeZ ~= 2
++        or storage.SkirtOffsetX ~= target.SkirtOffsetX
++        or storage.SkirtOffsetZ ~= target.SkirtOffsetZ then return {} end
++    local positions = {}
++    for _, offset in ipairs({ { 0, -2 }, { 0, 2 }, { 2, 0 }, { -2, 0 } }) do
++        local x, z = position[1] + offset[1], position[3] + offset[2]
++        if x > 8 and z > 8 and x < size[1] - 8 and z < size[2] - 8 then
++            table.insert(positions, { x, position[2], z })
++        end
++    end
++    return positions
++end
++
++local function FindSite(brain, manager, blueprintId, targets, engineer)
++    -- Read lazily: ScenarioInfo is not available at every module import.
++    local ok, size = pcall(function() return ScenarioInfo.size end)
++    if not ok or not size then return nil end
++    local blueprint = brain:GetUnitBlueprint(blueprintId)
++    local hash = blueprint and blueprint.CategoriesHash or {}
++    if not hash.MASSSTORAGE or not hash.STRUCTURE then return nil end
++    local origin = manager:GetLocationCoords()
++    local demand = brain.RedQueenModules.Strategy.ProductionDemand
++    local sorted = {}
++    for _, target in pairs(targets or {}) do
++        if OwnExtractor(brain, target) and Near(target:GetPosition(), origin, Radius)
++            and not AlertScope.CoversUnit(demand.DefenseAlert, target) then
++            table.insert(sorted, target)
++        end
++    end
++    table.sort(sorted, function(a, b) return a:GetEntityId() < b:GetEntityId() end)
++    local reservations = Reservations(brain)
++    for _, target in ipairs(sorted) do
++        local positions = Positions(blueprint, target:GetBlueprint(), target:GetPosition(), size)
++        for _, point in ipairs(positions) do
++            if not Reserved(reservations, point) and brain:CanBuildStructureAt(blueprintId, point) then
++                local safe = not engineer or Survival.RouteVerdict(brain, engineer, point)
++                if safe then return point, target end
++            end
++        end
++    end
++    return nil
++end
++
++function HasWork(brain, location)
++    if not Ready(brain) then return false end
++    local manager = Base(brain, location)
++    local id = StorageIds[brain:GetFactionIndex()]
++    if not manager or not id then return false end
++    local targets = brain:GetUnitsAroundPoint(
++        categories.STRUCTURE * categories.MASSEXTRACTION * (categories.TECH2 + categories.TECH3),
++        manager:GetLocationCoords(), Radius, "Ally")
++    return FindSite(brain, manager, id, targets, nil) ~= nil
++end
++
++local function Record(brain, reason, queued)
++    local state = brain.RedQueenMassStorage or { Attempts = 0, Queued = 0, Refused = 0 }
++    brain.RedQueenMassStorage = state
++    state.Attempts = state.Attempts + 1
++    state.Queued = state.Queued + (queued and 1 or 0)
++    state.Refused = state.Refused + (queued and 0 or 1)
++    if state.Reason ~= reason then Logger.Info(brain, "mass-storage placement=" .. reason) end
++    state.Reason = reason
++    return queued == true
++end
++
++function TryBuild(brain, engineer, buildingTemplate, targets, enqueue)
++    if not Ready(brain) then return Record(brain, "economy-or-brain", false) end
++    local data = engineer and engineer.BuilderManagerData or {}
++    local manager = Base(brain, data.LocationType)
++    local platoon = engineer and engineer.PlatoonHandle
++    if not engineer or engineer.Dead or engineer:GetArmy() ~= brain:GetArmyIndex()
++        or not manager or data.EngineerManager ~= manager or not platoon
++        or not brain:PlatoonExists(platoon) or Survival.IsRetreating(engineer)
++        or table.getn(engineer.EngineerBuildQueue or {}) > 0 then
++        return Record(brain, "engineer-unavailable", false)
++    end
++    local blueprintId = brain:DecideWhatToBuild(engineer, "MassStorage", buildingTemplate)
++    if not blueprintId or not engineer:CanBuild(blueprintId) then
++        return Record(brain, "not-buildable", false)
++    end
++    local point, target = FindSite(brain, manager, blueprintId, targets, engineer)
++    if not point then return Record(brain, "no-safe-free-edge", false) end
++    -- This call path does not yield. Native owns construction, retries and
++    -- completion; keep its real queue entry so reservations follow that work.
++    enqueue(brain, engineer, blueprintId, { point[1], point[3], 0 }, false)
++    local entry = engineer.EngineerBuildQueue and engineer.EngineerBuildQueue[1]
++    if not entry then return Record(brain, "queue-missing", false) end
++    table.insert(brain.RedQueenMassStorageReservations, {
++        Engineer = engineer, Platoon = platoon, Manager = manager, Entry = entry,
++        Blueprint = blueprintId, Point = point,
++    })
++    Logger.Info(brain, string.format("mass-storage queued target=%d at=%.1f,%.1f",
++        target:GetEntityId(), point[1], point[3]))
++    return Record(brain, "queued", true)
++end
++
++function Report(brain)
++    local state = brain.RedQueenMassStorage or {}
++    local held, completed, adjacent = 0, 0, 0
++    local units = brain.GetListOfUnits and brain:GetListOfUnits(
++        categories.STRUCTURE * categories.MASSSTORAGE, false) or {}
++    for _, unit in pairs(units) do
++        if not unit.Dead and unit:GetArmy() == brain:GetArmyIndex() then
++            held = held + 1
++            if unit:GetFractionComplete() >= 1 then
++                completed = completed + 1
++                for _, target in pairs(unit.AdjacentUnits or {}) do
++                    if OwnExtractor(brain, target) then
++                        adjacent = adjacent + 1
++                        break
++                    end
++                end
++            end
++        end
++    end
++    return string.format(" massstorage=%d/%d/%d/%s massstorageheld=%d/%d/%d",
++        state.Attempts or 0, state.Queued or 0, state.Refused or 0,
++        state.Reason or "none", held, completed, adjacent)
++end
+diff --git a/hook/lua/AI/aibuildstructures.lua b/hook/lua/AI/aibuildstructures.lua
+new file mode 100644
+--- /dev/null
++++ b/hook/lua/AI/aibuildstructures.lua
+@@ -0,0 +1,14 @@
++local NativeAIBuildAdjacency = AIBuildAdjacency
++local MassStorage = import("/mods/TheRedQueen/lua/AI/RedQueen/MassStorage.lua")
++
++AIBuildAdjacency = function(aiBrain, builder, buildingType, closeToBuilder, relative,
++        buildingTemplate, baseTemplate, reference, nearMarkerType)
++    local platoon = builder and builder.PlatoonHandle
++    local construction = platoon and platoon.PlatoonData and platoon.PlatoonData.Construction
++    if aiBrain and aiBrain.RedQueenLobbyPersonality and buildingType == "MassStorage"
++        and construction and construction.RedQueenStrictMassStorage then
++        return MassStorage.TryBuild(aiBrain, builder, buildingTemplate, reference, AddToBuildQueue)
++    end
++    return NativeAIBuildAdjacency(aiBrain, builder, buildingType, closeToBuilder, relative,
++        buildingTemplate, baseTemplate, reference, nearMarkerType)
++end
+diff --git a/tests/mass_storage_spec.lua b/tests/mass_storage_spec.lua
+new file mode 100644
+--- /dev/null
++++ b/tests/mass_storage_spec.lua
+@@ -0,0 +1,220 @@
++local function loadModule(path)
++    local environment = setmetatable({}, { __index = _G })
++    setfenv(assert(loadfile(path)), environment)()
++    return environment
++end
++categories = setmetatable({}, { __index = function() return 1 end })
++ScenarioInfo = { size = { 512, 512 } }
++local routeSafe = true
++local logged = {}
++function import(path)
++    if path == "/mods/TheRedQueen/lua/AI/RedQueen/Constants.lua" then
++        return { Policy = { DefenseAlertWorkRadius = 60 } }
++    elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/BaseLifecycle.lua" then
++        return loadModule("lua/AI/RedQueen/BaseLifecycle.lua")
++    elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/AlertScope.lua" then
++        return loadModule("lua/AI/RedQueen/AlertScope.lua")
++    elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/EngineerSurvival.lua" then
++        return {
++            RouteVerdict = function() return routeSafe, "fixture" end,
++            IsRetreating = function(unit) return unit.Retreating end,
++        }
++    elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/Logger.lua" then
++        return { Info = function(_, message) table.insert(logged, message) end }
++    end
++    error("unexpected import " .. tostring(path))
++end
++local storage = loadModule("lua/AI/RedQueen/MassStorage.lua")
++
++local function blueprint(hash, size)
++    return {
++        CategoriesHash = hash,
++        Physics = { SkirtSizeX = size or 2, SkirtSizeZ = size or 2,
++            SkirtOffsetX = -0.5, SkirtOffsetZ = -0.5 },
++    }
++end
++local storageBP = blueprint({ STRUCTURE = true, MASSSTORAGE = true })
++local function unit(id, bp, position)
++    return {
++        Id = id, Army = 1, Fraction = 1, Blueprint = bp, Position = position,
++        GetArmy = function(self) return self.Army end,
++        GetEntityId = function(self) return self.Id end,
++        GetFractionComplete = function(self) return self.Fraction end,
++        GetBlueprint = function(self) return self.Blueprint end,
++        GetPosition = function(self) return self.Position end,
++    }
++end
++local function fixture()
++    routeSafe = true
++    local manager = { GetLocationCoords = function() return { 100, 0, 120 } end }
++    local mex = unit(42, blueprint({ STRUCTURE = true, MASSEXTRACTION = true, TECH2 = true }),
++        { 100, 0, 120 })
++    local brain = {
++        RedQueenLobbyPersonality = "redqueen",
++        BuilderManagers = { MAIN = { EngineerManager = manager, FactoryManager = {}, PlatoonFormManager = {} } },
++        RedQueenModules = { Economy = { State = { StallRisk = false } },
++            Strategy = { ProductionDemand = {} } },
++        Targets = { mex }, Storages = {}, Blocked = {}, Orders = {},
++        GetArmyIndex = function() return 1 end,
++        GetFactionIndex = function() return 2 end,
++        GetUnitBlueprint = function() return storageBP end,
++        GetUnitsAroundPoint = function(self) return self.Targets end,
++        GetListOfUnits = function(self) return self.Storages end,
++        PlatoonExists = function(_, platoon) return not platoon.Dead end,
++        CanBuildStructureAt = function(self, _, point)
++            return not self.BlockAll and not self.Blocked[point[1] .. ":" .. point[3]]
++        end,
++        DecideWhatToBuild = function(self)
++            if self.CannotDecide then return nil end
++            return "uab1106"
++        end,
++    }
++    local function engineer()
++        local result = unit(10, {}, { 102, 0, 122 })
++        result.BuilderManagerData = { LocationType = "MAIN", EngineerManager = manager }
++        result.PlatoonHandle = { PlatoonData = { Construction = { RedQueenStrictMassStorage = true } } }
++        result.CanBuild = function(self) return not self.CannotBuild end
++        return result
++    end
++    local function enqueue(_, builder, id, point, relative)
++        assert(relative == false, "queue must contain absolute coordinates")
++        local entry = { id, point, relative }
++        builder.EngineerBuildQueue = builder.EngineerBuildQueue or {}
++        table.insert(builder.EngineerBuildQueue, entry)
++        table.insert(brain.Orders, entry)
++    end
++    return brain, mex, engineer, enqueue
++end
++
++-- No engine occupancy yet: the reservation alone must prevent duplicates.
++local brain, mex, engineer, enqueue = fixture()
++assert(storage.HasWork(brain, "MAIN"))
++local owners = {}
++for i = 1, 4 do
++    owners[i] = engineer()
++    assert(storage.TryBuild(brain, owners[i], {}, { mex }, enqueue))
++end
++assert(#brain.Orders == 4 and not storage.HasWork(brain, "MAIN"))
++assert(not storage.TryBuild(brain, engineer(), {}, { mex }, enqueue))
++assert(#brain.Orders == 4, "a full ring must never fall back to ordinary placement")
++local locations = {}
++for _, entry in ipairs(brain.Orders) do
++    local x, z = entry[2][1], entry[2][2]
++    local dx, dz = math.abs(x - 100), math.abs(z - 120)
++    assert((dx == 2 and dz == 0) or (dx == 0 and dz == 2), "order misses the skirt")
++    local key = x .. ":" .. z
++    assert(not locations[key], "concurrent builders claimed the same position")
++    locations[key] = true
++end
++owners[1].EngineerBuildQueue = {}
++assert(storage.HasWork(brain, "MAIN"), "consumed/cancelled queue entry must release reservation")
++assert(storage.TryBuild(brain, engineer(), {}, { mex }, enqueue))
++owners[2].PlatoonHandle = { PlatoonData = {} }
++assert(storage.HasWork(brain, "MAIN"), "a reassigned engineer must release its old job")
++
++for _, release in ipairs({ "entry-replaced", "died", "captured", "manager-replaced" }) do
++    brain, mex, engineer, enqueue = fixture()
++    local owner = engineer()
++    assert(storage.TryBuild(brain, owner, {}, { mex }, enqueue))
++    local oldPoint = brain.Orders[1][2]
++    if release == "entry-replaced" then
++        -- Same content is a different assignment: identity, not coordinates.
++        owner.EngineerBuildQueue = { { "uab1106", { oldPoint[1], oldPoint[2], 0 }, false } }
++    elseif release == "died" then
++        owner.Dead = true
++    elseif release == "captured" then
++        owner.Army = 2
++    else
++        brain.BuilderManagers.MAIN.EngineerManager = {
++            GetLocationCoords = function() return { 100, 0, 120 } end,
++        }
++    end
++    assert(storage.HasWork(brain, "MAIN"))
++    assert(#brain.RedQueenMassStorageReservations == 0, release .. " must release obsolete reservation")
++end
++
++-- Refusal cases must issue zero orders, even though unrelated space is free.
++local cases = {
++    { "blocked", function(b) b.BlockAll = true end },
++    { "no target", function(b) b.Targets = {} end },
++    { "dead", function(_, m) m.Dead = true end },
++    { "unfinished", function(_, m) m.Fraction = 0.9 end },
++    { "allied", function(_, m) m.Army = 2 end },
++    { "T1", function(_, m) m.Blueprint.CategoriesHash.TECH2 = nil end },
++    { "far from base", function(_, m) m.Position = { 300, 0, 300 } end },
++    { "map edge", function(_, m) m.Position = { 2, 0, 2 } end },
++    { "unsupported skirt", function(_, m) m.Blueprint.Physics.SkirtSizeX = 4 end },
++    { "offset mismatch", function(_, m) m.Blueprint.Physics.SkirtOffsetX = 0 end },
++    { "stall", function(b) b.RedQueenModules.Economy.State.StallRisk = true end },
++    { "retired base", function(b) b.BuilderManagers.MAIN.RedQueenRetired = true end },
++    { "local attack", function(b) b.RedQueenModules.Strategy.ProductionDemand.DefenseAlert = {
++        Active = true, AnchorPosition = { 100, 0, 120 } } end },
++}
++for _, case in ipairs(cases) do
++    brain, mex, engineer, enqueue = fixture()
++    case[2](brain, mex)
++    assert(not storage.HasWork(brain, "MAIN"), case[1] .. " must refuse builder eligibility")
++    assert(not storage.TryBuild(brain, engineer(), {}, brain.Targets, enqueue), case[1])
++    assert(#brain.Orders == 0, case[1] .. " must not fall back")
++end
++brain, mex, engineer, enqueue = fixture()
++brain.BuilderManagers.MAIN.EngineerManager.GetLocationCoords = function() return { 2, 0, 2 } end
++mex.Position = { 2, 0, 2 }
++assert(not storage.HasWork(brain, "MAIN"), "edge exclusion must work even when target is local")
++brain, mex, engineer, enqueue = fixture()
++brain.RedQueenModules.Strategy.ProductionDemand.DefenseAlert = {
++    Active = true, AnchorPosition = { 400, 0, 400 } }
++assert(storage.HasWork(brain, "MAIN"), "a distant alert must not suppress safe home storage")
++mex.Blueprint.CategoriesHash.TECH2, mex.Blueprint.CategoriesHash.TECH3 = nil, true
++assert(storage.TryBuild(brain, engineer(), {}, { mex }, enqueue), "T3 extractor remains eligible")
++
++brain, mex, engineer, enqueue = fixture()
++routeSafe = false
++assert(not storage.TryBuild(brain, engineer(), {}, { mex }, enqueue), "unsafe route refused before initial order")
++routeSafe = true
++local builder = engineer()
++builder.Retreating = true
++assert(not storage.TryBuild(brain, builder, {}, { mex }, enqueue))
++builder.Retreating, builder.CannotBuild = false, true
++assert(not storage.TryBuild(brain, builder, {}, { mex }, enqueue))
++builder.CannotBuild = false
++brain.CannotDecide = true
++assert(not storage.TryBuild(brain, builder, {}, { mex }, enqueue))
++brain.CannotDecide = false
++builder.EngineerBuildQueue = { { "unrelated", { 1, 2, 0 }, false } }
++assert(not storage.TryBuild(brain, builder, {}, { mex }, enqueue))
++assert(builder.EngineerBuildQueue[1][1] == "unrelated" and #brain.Orders == 0)
++
++-- Report completed storage separately from the engine's actual adjacency list.
++local adjacent = unit(50, storageBP, { 100, 0, 118 })
++adjacent.AdjacentUnits = { [mex.Id] = mex }
++local remote = unit(51, storageBP, { 200, 0, 220 })
++local unfinished = unit(52, storageBP, { 102, 0, 120 })
++unfinished.Fraction = 0.5
++unfinished.AdjacentUnits = { [mex.Id] = mex }
++brain.Storages = { adjacent, remote, unfinished }
++assert(string.find(storage.Report(brain), "massstorageheld=3/2/1", 1, true))
++mex.Dead = true
++assert(string.find(storage.Report(brain), "massstorageheld=3/2/0", 1, true))
++
++-- Strict hook is opt-in to this job. Every other AI/building retains native.
++local nativeCalls, strictCalls = 0, 0
++local hook = setmetatable({
++    AIBuildAdjacency = function(...) nativeCalls = nativeCalls + 1; return "native", select("#", ...) end,
++    AddToBuildQueue = enqueue,
++    import = function() return { TryBuild = function() strictCalls = strictCalls + 1; return false end } end,
++}, { __index = _G })
++setfenv(assert(loadfile("hook/lua/AI/aibuildstructures.lua")), hook)()
++brain, mex, engineer, enqueue = fixture()
++builder = engineer()
++assert(hook.AIBuildAdjacency(brain, builder, "MassStorage", false, false, {}, {}, { mex }, nil) == false)
++assert(strictCalls == 1 and nativeCalls == 0, "refusal must not retry native adjacency")
++local result, count = hook.AIBuildAdjacency(brain, builder, "EnergyStorage", false, false, {}, {}, { mex }, nil)
++assert(result == "native" and count == 9)
++builder.PlatoonHandle.PlatoonData.Construction.RedQueenStrictMassStorage = nil
++assert(hook.AIBuildAdjacency(brain, builder, "MassStorage") == "native")
++builder.PlatoonHandle.PlatoonData.Construction.RedQueenStrictMassStorage = true
++brain.RedQueenLobbyPersonality = nil
++assert(hook.AIBuildAdjacency(brain, builder, "MassStorage") == "native")
++assert(nativeCalls == 3 and strictCalls == 1)
++print("Mass storage placement, refusal, reservation and hook contracts passed")
+diff --git a/lua/AI/RedQueen/CounterBuilders.lua b/lua/AI/RedQueen/CounterBuilders.lua
+--- a/lua/AI/RedQueen/CounterBuilders.lua
++++ b/lua/AI/RedQueen/CounterBuilders.lua
+@@ -1234,6 +1234,29 @@
+             Construction = {
+                 BuildClose = true,
+                 BuildStructures = { "T3EnergyProduction" },
++                Location = "LocationType",
++            },
++        },
++    },
++    -- Isolated mass-storage candidate. A free local skirt is the quota;
++    -- unrelated storage elsewhere neither permits nor suppresses this job.
++    Builder {
++        BuilderName = "Red Queen Mass Storage Adjacency",
++        PlatoonTemplate = "EngineerBuilder",
++        Priority = 935,
++        InstanceCount = 2,
++        BuilderType = "Any",
++        BuilderConditions = {
++            { "/mods/TheRedQueen/lua/AI/RedQueen/MassStorage.lua", "HasWork", { "LocationType" } },
++            { InstantBuildConditions, "BrainNotLowPowerMode", {} },
++        },
++        BuilderData = {
++            Construction = {
++                RedQueenStrictMassStorage = true,
++                AdjacencyCategory = categories.STRUCTURE * categories.MASSEXTRACTION
++                    * (categories.TECH2 + categories.TECH3),
++                AdjacencyDistance = 60,
++                BuildStructures = { "MassStorage" },
+                 Location = "LocationType",
+             },
+         },
+diff --git a/lua/AI/RedQueen/Diagnostics.lua b/lua/AI/RedQueen/Diagnostics.lua
+--- a/lua/AI/RedQueen/Diagnostics.lua
++++ b/lua/AI/RedQueen/Diagnostics.lua
+@@ -3,6 +3,7 @@
+ local Experimentals = import("/mods/TheRedQueen/lua/AI/RedQueen/Experimentals.lua")
+ local Observer = import("/mods/TheRedQueen/lua/AI/RedQueen/Observer.lua")
+ local CombatTelemetry = import("/mods/TheRedQueen/lua/AI/RedQueen/CombatTelemetry.lua")
++local MassStorage = import("/mods/TheRedQueen/lua/AI/RedQueen/MassStorage.lua")
+ 
+ ---@class RedQueenDiagnostics
+ -- Whether the attack actually received force.
+@@ -319,7 +320,7 @@
+             -- while the other three still hold the ladder down.
+             gate.Land2, gate.Land3,
+             gate.Air2, gate.Air3,
+-            gate.Naval2, gate.Naval3) .. combatTelemetry)
++            gate.Naval2, gate.Naval3) .. combatTelemetry .. MassStorage.Report(self.Brain))
+     end,
+ }
+ 
+diff --git a/tests/diagnostics_spec.lua b/tests/diagnostics_spec.lua
+--- a/tests/diagnostics_spec.lua
++++ b/tests/diagnostics_spec.lua
+@@ -76,6 +76,8 @@
+         return experimentals
+     elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/Observer.lua" then
+         return { Report = function() end }
++    elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/MassStorage.lua" then
++        return { Report = function() return " massstorage=4/3/1/no-safe-free-edge massstorageheld=3/2/1" end }
+     elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/CombatTelemetry.lua" then
+         return { Report = function() return " combatctl=directed:3/540/0/180 combatdetail=1/1" end }
+     end
+@@ -268,6 +270,8 @@
+ reporter:Update()
+ local state = logged[table.getn(logged)]
+ assert(state, "Update must log a state line")
++assert(string.find(state, "massstorage=4/3/1/no-safe-free-edge massstorageheld=3/2/1", 1, true),
++    "state must distinguish placement attempts and engine-confirmed adjacency")
+ assert(string.find(state, "combatctl=directed:3/540/0/180 combatdetail=1/1", 1, true),
+     "the periodic state must expose controller inventory, losses and detail coverage")
+ assert(string.find(state, "assist=2/7/5 acuassist=3 mexgate=under-attack/4", 1, true),
+diff --git a/tests/counter_builders_spec.lua b/tests/counter_builders_spec.lua
+--- a/tests/counter_builders_spec.lua
++++ b/tests/counter_builders_spec.lua
+@@ -164,6 +164,19 @@
+     GetListOfUnits = function() return constructors end,
+ }
+ 
++local massStorage = builders["Red Queen Mass Storage Adjacency"]
++assert(massStorage and massStorage.Priority == 935 and massStorage.InstanceCount == 2)
++local massCondition = massStorage.BuilderConditions[1]
++assert(massCondition[1] == "/mods/TheRedQueen/lua/AI/RedQueen/MassStorage.lua"
++    and massCondition[2] == "HasWork" and massCondition[3][1] == "LocationType",
++    "storage eligibility must inspect the requesting base")
++local massConstruction = massStorage.BuilderData.Construction
++assert(massConstruction.RedQueenStrictMassStorage and massConstruction.AdjacencyCategory
++    and massConstruction.AdjacencyDistance == 60
++    and massConstruction.BuildStructures[1] == "MassStorage",
++    "storage job must select the strict adjacency hook")
++assert(not builders["Red Queen Energy Storage Adjacency"], "energy storage is a separate experiment")
++
+ local gunshipCondition = builders["Red Queen T3 Gunship Counter"].BuilderConditions[1][1]
+ assert(gunshipCondition(brain), "land-loss doctrine must enable native gunship builders")
+ 
+diff --git a/scripts/validate.sh b/scripts/validate.sh
+--- a/scripts/validate.sh
++++ b/scripts/validate.sh
+@@ -17,6 +17,7 @@
+ luajit tests/combat_manager_spec.lua
+ luajit tests/combat_telemetry_spec.lua
+ luajit tests/counter_builders_spec.lua
++luajit tests/mass_storage_spec.lua
+ luajit tests/diagnostics_spec.lua
+ luajit tests/economy_manager_spec.lua
+ luajit tests/assistance_spec.lua

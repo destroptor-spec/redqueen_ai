@@ -1,0 +1,62 @@
+Red Queen lines: 1248
+Brains started: 1
+Income contracts: 1
+State samples: 56
+Defense alerts raised: 17
+Assistance: 296 helper assignments, 169 releases, 0 commander assignments; summed per-army peak helpers=6
+Extractor upgrades: 8 native start attempts blocked; gate samples={'expanding': 12, 'stall-risk': 4, 'upgrading': 7, 'under-attack': 6, 'none': 27}
+Pressure: 15 held, 4 yielded, 37 idle of 56 samples (21.1% yielded where anything was sent)
+  primary slot:   {'Pressure': 4, 'Raid': 52}
+  secondary slot: {'Defend': 42}
+Engineers by tier: peak T1=27 T2=18 T3=14; 39/56 samples had a Tech 2 engineer
+Army census: peak owned=51, peak pooled=13, peak available=8
+  units Red Queen cannot command (owned-pooled): mean 25.8, peak 47
+  held by Red Queen itself: order mean 1.8 peak 8, garrison mean 0.3 peak 2
+Directed platoons: 52 formed under a Red Queen plan, 186 aims issued
+  aims by objective: {'Raid': 187}
+Objective changes: 26
+     13  none/none -> Defend/DefenseAlert [Secondary]
+      4  Defend/DefenseAlert -> Defend/LocalDefense [Secondary]
+      4  Defend/LocalDefense -> Defend/DefenseAlert [Secondary]
+      3  none/none -> Defend/LocalDefense [Secondary]
+      1  none/none -> Pressure/Offensive [Primary]
+      1  Pressure/Offensive -> Raid/Offensive [Primary]
+Objective changes refused: 0
+Tier policy changes: 5
+Forward bases: 3 started, 1 established, 56 blocked
+Commitment holds: 54
+Economy stagnation reports: 1
+Endgame investment under alert: 12/37 alert samples kept a non-zero experimental weight
+Alert samples by qualifying arm: combined 7, surface 30
+Peak units dispatched per layer: L11, A4, W0, M0, H15 over 56 samples
+Engine Lua failures: 2
+Red Queen Lua failures: 0
+Red Queen scheduler failures: 0
+Unattributed Lua failures: 2
+Post-defeat Lua failures: 0 attributed, 2 in FAF code (advisory)
+Invalid manager locations: 0 attributed, 20 in FAF code (advisory) (20 after first defeat)
+
+Forward base blockers:
+     20  map-cap
+     15  construction-active
+     12  defense-alert
+      2  no-idle-engineer
+      2  negative-mass-trend
+      2  stall-risk
+      1  negative-energy-trend
+      1  low-mass-income
+      1  low-energy-storage
+
+End-of-game army stats:
+  army                                 built$    lost$    kill$    K/L   exp
+  FAF_Destroptor (Human)                   0k       0k       0k   0.00   0/0
+  Janus (AI: Rush) (AI)                  569k     354k     300k   0.85   1/2
+  Trudi (AI: Rush) (AI)                  670k     327k     346k   1.06   3/3
+  (exp = experimentals built/lost; K/L is destroyed mass over lost mass)
+
+Failures: 0 distinct, 0 occurrences
+
+Unattributed engine failures (advisory, not gated):
+      1x  warning: Error running lua script: ...\andreas\.faforever\gamedata\lua.nxN\lua\platoon.lua(N): attempt to call field `SetupEngineerCallbacks' (a nil value)
+      1x  warning: Error running lua script: ...\andreas\.faforever\gamedata\lua.nxN\lua\platoon.lua(N): attempt to call method `GetLocationCoords' (a nil value)
+     20x  invalid manager location - Expansion Area 1

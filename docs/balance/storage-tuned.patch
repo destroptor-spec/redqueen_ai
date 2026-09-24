@@ -1,0 +1,144 @@
+diff --git a/lua/AI/RedQueen/Constants.lua b/lua/AI/RedQueen/Constants.lua
+index 3b6bdd9..52c0c40 100644
+--- a/lua/AI/RedQueen/Constants.lua
++++ b/lua/AI/RedQueen/Constants.lua
+@@ -252,6 +252,13 @@ Policy = {
+     -- observed fleet of 30 that produced no kills; the transport budget
+     -- diagnostic reports when it engages so it can be tuned from evidence.
+     MaximumTransports = 10,
++    -- Storage waits for an economy that can spare the engineer, not just the
++    -- mass. Adjacency is worth +12.5% per storage and pays back in 1.5 to 4.4
++    -- minutes, which is real -- but placing it at the first Tech 2 extractor
++    -- cost build power while the economy was still being grown, and total mass
++    -- built fell 22-27% with four of six wins lost. Gated at the Tech 3 income
++    -- level so the ring is bought late, when engineers are plentiful.
++    StorageAdjacencyMinimumMassIncome = 10,
+     Tech2MinimumMassIncome = 4,
+     Tech2MinimumEnergyIncome = 60,
+     Tech3MinimumMassIncome = 10,
+diff --git a/lua/AI/RedQueen/CounterBuilders.lua b/lua/AI/RedQueen/CounterBuilders.lua
+index 86ad59d..88c1f93 100644
+--- a/lua/AI/RedQueen/CounterBuilders.lua
++++ b/lua/AI/RedQueen/CounterBuilders.lua
+@@ -1238,6 +1238,32 @@ BuilderGroup {
+             },
+         },
+     },
++    -- Isolated mass-storage candidate. A free local skirt is the quota;
++    -- unrelated storage elsewhere neither permits nor suppresses this job.
++    Builder {
++        BuilderName = "Red Queen Mass Storage Adjacency",
++        PlatoonTemplate = "EngineerBuilder",
++        -- Below Red Queen Engineer T2 at 917, so a ring is only ever bought
++        -- with an engineer nothing better wanted. At 935 storage outranked
++        -- engineer production itself, and total mass built fell 22-27%.
++        Priority = 900,
++        InstanceCount = 2,
++        BuilderType = "Any",
++        BuilderConditions = {
++            { "/mods/TheRedQueen/lua/AI/RedQueen/MassStorage.lua", "HasWork", { "LocationType" } },
++            { InstantBuildConditions, "BrainNotLowPowerMode", {} },
++        },
++        BuilderData = {
++            Construction = {
++                RedQueenStrictMassStorage = true,
++                AdjacencyCategory = categories.STRUCTURE * categories.MASSEXTRACTION
++                    * (categories.TECH2 + categories.TECH3),
++                AdjacencyDistance = 60,
++                BuildStructures = { "MassStorage" },
++                Location = "LocationType",
++            },
++        },
++    },
+     Builder {
+         BuilderName = "Red Queen Tech Energy T2",
+         PlatoonTemplate = "T2EngineerBuilder",
+diff --git a/lua/AI/RedQueen/Diagnostics.lua b/lua/AI/RedQueen/Diagnostics.lua
+index e6108a8..160777c 100644
+--- a/lua/AI/RedQueen/Diagnostics.lua
++++ b/lua/AI/RedQueen/Diagnostics.lua
+@@ -3,6 +3,7 @@ local Logger = import("/mods/TheRedQueen/lua/AI/RedQueen/Logger.lua")
+ local Experimentals = import("/mods/TheRedQueen/lua/AI/RedQueen/Experimentals.lua")
+ local Observer = import("/mods/TheRedQueen/lua/AI/RedQueen/Observer.lua")
+ local CombatTelemetry = import("/mods/TheRedQueen/lua/AI/RedQueen/CombatTelemetry.lua")
++local MassStorage = import("/mods/TheRedQueen/lua/AI/RedQueen/MassStorage.lua")
+ 
+ ---@class RedQueenDiagnostics
+ -- Whether the attack actually received force.
+@@ -319,7 +320,7 @@ Diagnostics = ClassSimple {
+             -- while the other three still hold the ladder down.
+             gate.Land2, gate.Land3,
+             gate.Air2, gate.Air3,
+-            gate.Naval2, gate.Naval3) .. combatTelemetry)
++            gate.Naval2, gate.Naval3) .. combatTelemetry .. MassStorage.Report(self.Brain))
+     end,
+ }
+ 
+diff --git a/scripts/validate.sh b/scripts/validate.sh
+index e43a816..a4bf1de 100755
+--- a/scripts/validate.sh
++++ b/scripts/validate.sh
+@@ -17,6 +17,7 @@ luajit tests/commander_safety_spec.lua
+ luajit tests/combat_manager_spec.lua
+ luajit tests/combat_telemetry_spec.lua
+ luajit tests/counter_builders_spec.lua
++luajit tests/mass_storage_spec.lua
+ luajit tests/diagnostics_spec.lua
+ luajit tests/economy_manager_spec.lua
+ luajit tests/assistance_spec.lua
+@@ -45,4 +46,5 @@ python3 tests/watch_match_spec.py
+ python3 -B tests/production_trace_log_spec.py
+ python3 -B tests/prepare_runtime_spec.py
+ python3 -B tests/summarize_matrix_spec.py
++python3 -B tests/check_balance_spec.py
+ echo "All Red Queen validation checks passed"
+diff --git a/tests/counter_builders_spec.lua b/tests/counter_builders_spec.lua
+index cfa015e..e022299 100644
+--- a/tests/counter_builders_spec.lua
++++ b/tests/counter_builders_spec.lua
+@@ -164,6 +164,23 @@ local brain = {
+     GetListOfUnits = function() return constructors end,
+ }
+ 
++local massStorage = builders["Red Queen Mass Storage Adjacency"]
++-- Below Red Queen Engineer T2 at 917 on purpose: a ring is only bought with an
++-- engineer nothing better wanted. At 935 storage outranked engineer production
++-- and total mass built fell 22-27% with four of six wins lost.
++assert(massStorage and massStorage.Priority == 900 and massStorage.InstanceCount == 2)
++assert(massStorage.Priority < 917, "storage must not outrank engineer production")
++local massCondition = massStorage.BuilderConditions[1]
++assert(massCondition[1] == "/mods/TheRedQueen/lua/AI/RedQueen/MassStorage.lua"
++    and massCondition[2] == "HasWork" and massCondition[3][1] == "LocationType",
++    "storage eligibility must inspect the requesting base")
++local massConstruction = massStorage.BuilderData.Construction
++assert(massConstruction.RedQueenStrictMassStorage and massConstruction.AdjacencyCategory
++    and massConstruction.AdjacencyDistance == 60
++    and massConstruction.BuildStructures[1] == "MassStorage",
++    "storage job must select the strict adjacency hook")
++assert(not builders["Red Queen Energy Storage Adjacency"], "energy storage is a separate experiment")
++
+ local gunshipCondition = builders["Red Queen T3 Gunship Counter"].BuilderConditions[1][1]
+ assert(gunshipCondition(brain), "land-loss doctrine must enable native gunship builders")
+ 
+diff --git a/tests/diagnostics_spec.lua b/tests/diagnostics_spec.lua
+index ac03a01..0a24ce2 100644
+--- a/tests/diagnostics_spec.lua
++++ b/tests/diagnostics_spec.lua
+@@ -76,6 +76,8 @@ function import(path)
+         return experimentals
+     elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/Observer.lua" then
+         return { Report = function() end }
++    elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/MassStorage.lua" then
++        return { Report = function() return " massstorage=4/3/1/no-safe-free-edge massstorageheld=3/2/1" end }
+     elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/CombatTelemetry.lua" then
+         return { Report = function() return " combatctl=directed:3/540/0/180 combatdetail=1/1" end }
+     end
+@@ -268,6 +270,8 @@ brain.RedQueenExtractorBlocks = 4
+ reporter:Update()
+ local state = logged[table.getn(logged)]
+ assert(state, "Update must log a state line")
++assert(string.find(state, "massstorage=4/3/1/no-safe-free-edge massstorageheld=3/2/1", 1, true),
++    "state must distinguish placement attempts and engine-confirmed adjacency")
+ assert(string.find(state, "combatctl=directed:3/540/0/180 combatdetail=1/1", 1, true),
+     "the periodic state must expose controller inventory, losses and detail coverage")
+ assert(string.find(state, "assist=2/7/5 acuassist=3 mexgate=under-attack/4", 1, true),

@@ -1,3 +1,4 @@
+local Constants = import("/mods/TheRedQueen/lua/AI/RedQueen/Constants.lua")
 local InstantBuildConditions = "/lua/editor/InstantBuildConditions.lua"
 local UnitCountBuildConditions = "/lua/editor/UnitCountBuildConditions.lua"
 
@@ -36,66 +37,85 @@ local function HasEngineer(aiBrain, locationType, tier)
     return engineerManager:GetNumCategoryUnits("Engineers", category) > 0
 end
 
-local function NeedsDefense(aiBrain, locationType, role, category)
-    local alert = GetState(aiBrain)
+-- `standing` is a target the base holds whether or not anything is attacking it.
+-- Omitted, this behaves exactly as before: no alert, no defence.
+--
+-- Anti-air is the one role that passes it. Measured across eighteen mirror
+-- cells, 63% of active alerts qualify on surface and only 12% on air, so an
+-- anti-air target keyed on an alert is zero most of the match and cannot
+-- accumulate between raids -- which is why 17.9 point defences stand beside 3.8
+-- SAM while the opponent builds 222 air units a match. Reported from a human
+-- match: one air experimental killed both Red Queen armies.
+--
+-- A base that waits for an air alert to build SAM has already taken the raid.
+local function NeedsDefense(aiBrain, locationType, role, category, standing)
     local position, radius = GetLocation(aiBrain, locationType)
-    if not alert
-        or not alert.Active
-        or not position
-        or DistanceSquared(position, alert.AnchorPosition) > math.max(40, radius) ^ 2
-    then
+    if not position then
         return false
     end
-    local target = alert.Targets and alert.Targets[role] or 0
+    local extent = math.max(Constants.Policy.FortificationMinimumRadius, radius)
+    local target = standing or 0
+    -- An alert on this base raises the target for the arm under attack.
+    local alert = GetState(aiBrain)
+    if alert
+        and alert.Active
+        and alert.AnchorPosition
+        and DistanceSquared(position, alert.AnchorPosition) <= extent ^ 2
+    then
+        target = math.max(target, (alert.Targets and alert.Targets[role]) or 0)
+    end
     if target <= 0 then
         return false
     end
-    return aiBrain:GetNumUnitsAroundPoint(category, position, math.max(40, radius), "Ally") < target
+    return aiBrain:GetNumUnitsAroundPoint(category, position, extent, "Ally") < target
+end
+
+-- What counts toward a tier's ground-defence need.
+--
+-- Not "any point defence": observed in a live match, four Tech 1 point
+-- defences satisfied a Ground target of four, so the Tech 2 point defence
+-- builder's condition went false while the base was under pressure and the
+-- next passing builder -- a tactical missile launcher at priority 980 -- became
+-- the first Tech 2 structure built. Four Tech 1 point defences are not four
+-- Tech 2 point defences against a Tech 2 enemy.
+--
+-- A tier's need is therefore measured in structures of that tier or better.
+-- Tech 1 still counts everything, because it is the floor and anything at all
+-- satisfies it.
+local function GroundDefenseCategory(tier)
+    local ground = categories.STRUCTURE * categories.DEFENSE * categories.DIRECTFIRE
+    if tier >= 3 then
+        return ground * categories.TECH3
+    end
+    if tier >= 2 then
+        return ground * (categories.TECH2 + categories.TECH3)
+    end
+    return ground
 end
 
 local function NeedsT2GroundWithT3(aiBrain, locationType)
     return aiBrain:GetFactionIndex() ~= 1
         and HasEngineer(aiBrain, locationType, 3)
-        and NeedsDefense(
-            aiBrain,
-            locationType,
-            "Ground",
-            categories.STRUCTURE * categories.DEFENSE * categories.DIRECTFIRE
-        )
+        and NeedsDefense(aiBrain, locationType, "Ground", GroundDefenseCategory(2))
 end
 
 local function NeedsT3Ground(aiBrain, locationType)
     return aiBrain:GetFactionIndex() == 1
         and HasEngineer(aiBrain, locationType, 3)
-        and NeedsDefense(
-            aiBrain,
-            locationType,
-            "Ground",
-            categories.STRUCTURE * categories.DEFENSE * categories.DIRECTFIRE
-        )
+        and NeedsDefense(aiBrain, locationType, "Ground", GroundDefenseCategory(3))
 end
 
 local function NeedsT2Ground(aiBrain, locationType)
     return not HasEngineer(aiBrain, locationType, 3)
         and HasEngineer(aiBrain, locationType, 2)
-        and NeedsDefense(
-            aiBrain,
-            locationType,
-            "Ground",
-            categories.STRUCTURE * categories.DEFENSE * categories.DIRECTFIRE
-        )
+        and NeedsDefense(aiBrain, locationType, "Ground", GroundDefenseCategory(2))
 end
 
 local function NeedsT1Ground(aiBrain, locationType)
     return not HasEngineer(aiBrain, locationType, 3)
         and not HasEngineer(aiBrain, locationType, 2)
         and HasEngineer(aiBrain, locationType, 1)
-        and NeedsDefense(
-            aiBrain,
-            locationType,
-            "Ground",
-            categories.STRUCTURE * categories.DEFENSE * categories.DIRECTFIRE
-        )
+        and NeedsDefense(aiBrain, locationType, "Ground", GroundDefenseCategory(1))
 end
 
 local function NeedsTacticalMissileWithT3(aiBrain, locationType)
@@ -108,13 +128,33 @@ local function NeedsTacticalMissileWithT3(aiBrain, locationType)
         )
 end
 
+-- What counts toward a tier's anti-air need, on the same rule as ground.
+--
+-- The standing floor was first written against a tier-blind category, and it
+-- reproduced the exact defect this file already records for point defence:
+-- cheap Tech 2 flak filled a floor of six, the Tech 3 builder saw the floor
+-- satisfied and laid no SAM. Measured across eighteen cells -- flak 3.9 to 7.8
+-- while SAM went 3.8 to 2.8. Flak is not SAM against an air experimental, which
+-- is the threat the floor exists for.
+local function AntiAirCategory(tier)
+    local antiAir = categories.STRUCTURE * categories.DEFENSE * categories.ANTIAIR
+    if tier >= 3 then
+        return antiAir * categories.TECH3
+    end
+    if tier >= 2 then
+        return antiAir * (categories.TECH2 + categories.TECH3)
+    end
+    return antiAir
+end
+
 local function NeedsT3AntiAir(aiBrain, locationType)
     return HasEngineer(aiBrain, locationType, 3)
         and NeedsDefense(
             aiBrain,
             locationType,
             "AntiAir",
-            categories.STRUCTURE * categories.DEFENSE * categories.ANTIAIR
+            AntiAirCategory(3),
+            Constants.Policy.StandingAntiAirPerBase
         )
 end
 
@@ -125,7 +165,8 @@ local function NeedsT2AntiAir(aiBrain, locationType)
             aiBrain,
             locationType,
             "AntiAir",
-            categories.STRUCTURE * categories.DEFENSE * categories.ANTIAIR
+            AntiAirCategory(2),
+            Constants.Policy.StandingAntiAirPerBase
         )
 end
 

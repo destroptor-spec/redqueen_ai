@@ -19,7 +19,14 @@ EconomyManager = ClassSimple {
             Surplus = false,
             DesiredFactories = 1,
             GameTimeSeconds = 0,
+            -- Smoothed income exists so a strategic threshold is crossed by a
+            -- trend rather than by a single sample. Army 5 in match 27741743
+            -- sat at 21.8 mass against a 22.0 experimental gate and flickered
+            -- its whole late game away on that one unit of noise.
+            SmoothedMassIncome = 0,
+            SmoothedEnergyIncome = 0,
         }
+        self.SmoothingSeeded = false
     end,
 
     Update = function(self)
@@ -35,6 +42,18 @@ EconomyManager = ClassSimple {
         state.MassRequested = brain:GetEconomyRequested("MASS") or 0
         state.EnergyRequested = brain:GetEconomyRequested("ENERGY") or 0
         state.GameTimeSeconds = GetGameTimeSeconds()
+
+        if not self.SmoothingSeeded then
+            self.SmoothingSeeded = true
+            state.SmoothedMassIncome = state.MassIncome
+            state.SmoothedEnergyIncome = state.EnergyIncome
+        else
+            local weight = Constants.Policy.IncomeSmoothingWeight
+            state.SmoothedMassIncome = state.SmoothedMassIncome
+                + (state.MassIncome - state.SmoothedMassIncome) * weight
+            state.SmoothedEnergyIncome = state.SmoothedEnergyIncome
+                + (state.EnergyIncome - state.SmoothedEnergyIncome) * weight
+        end
 
         state.StallRisk = (state.EnergyStoredRatio < 0.03 and state.EnergyTrend < 0)
             or (state.MassStoredRatio < 0.02 and state.MassTrend < 0)
@@ -53,8 +72,23 @@ EconomyManager = ClassSimple {
             state.Mode = "Balanced"
         end
 
-        local incomeFactories = math.floor(state.MassIncome / 8)
-        state.DesiredFactories = math.max(1, math.min(24, 1 + incomeFactories + self.Context.ArmyDeficit))
+        -- Income alone sets the factory target. ArmyDeficit is already paid out
+        -- as an income handicap in IncomeBonus, so counting it again here
+        -- inflated the target twice for an outnumbered brain and, because the
+        -- same number is the production cap, made the cap unpredictable.
+        --
+        -- The divisor is per tick, like every income figure the directors read.
+        -- Written as a bare 8 it read as a per-second figure and was therefore
+        -- ten times too strict: a third factory needed 160 mass per second,
+        -- while a real economy runs four or more at twenty or thirty. In the
+        -- Red Queen versus stock Adaptive 1v1 this held the land target at a
+        -- single factory for the whole match -- "factory cap L1/1" from the
+        -- first minute to the defeat at 18:46 -- because income can never grow
+        -- past the gate without the production the gate is withholding.
+        local incomeFactories = math.floor(
+            state.MassIncome / Constants.Policy.MassIncomePerFactory
+        )
+        state.DesiredFactories = math.max(1, math.min(24, 1 + incomeFactories))
     end,
 
     CanCommitAttack = function(self)
@@ -63,10 +97,14 @@ EconomyManager = ClassSimple {
         return true
     end,
 
+    -- Deliberately not gated on ArmyDeficit. A balanced match reports a deficit
+    -- of zero, so that gate left Red Queen's own factory expansion switched off
+    -- for the entire match and handed every factory decision to the native
+    -- builders -- which is how match 27741743 reached 16 factories against a
+    -- target of 8 without logging a single expansion of its own.
     CanExpandProduction = function(self, factoryCount)
         local state = self.State
-        return self.Context.ArmyDeficit > 0
-            and state.Mode == "ExpandProduction"
+        return state.Mode == "ExpandProduction"
             and state.MassIncome >= Constants.Policy.MinimumProductionMassIncome
             and factoryCount < state.DesiredFactories
     end,

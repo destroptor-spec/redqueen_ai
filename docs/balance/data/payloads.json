@@ -1,0 +1,19 @@
+{
+  "engsurv": "baseline instrumentation (d9d87346e487)",
+  "lever1": "withdrawal writes no exclusion (cbf11975e7e8)",
+  "guardoff": "route guard disarmed, refusals still counted (1f80dcd5aa3d)",
+  "mexplace": "placement counterfactual probe (acc05419c5d5)",
+  "defcover": "defence coverage, losses and fortifiable span (592e88deaadc)",
+  "24df7ae613f5": "defence coverage, neutral (map-marker span, no extractor query)",
+  "513b620b866b": "forward-base cap moved one step (1 -> 2 bases); not adopted",
+  "c28ba99ffec7": "forward-base registration figure (fwdreg=), neutral",
+  "f799868c7df8": "ReleaseEngineer surfaces its pcall error (diagnostic)",
+  "d16f0c19dc2a": "forward-base recall fixed: native PlatoonDisband guard",
+  "701798836fab": "anti-air divisor 10 -> 5; not adopted, delivered no guns",
+  "8781d01046da": "standing anti-air floor, tier-blind (superseded)",
+  "b189beae5f17": "standing anti-air floor, tier-scoped; ADOPTED",
+  "2d5b4aa18e3c": "standing tiered shields; not adopted (structures delivered, K/L fell)",
+  "a4eaf3924de1": "shield-by-tier telemetry only; neutral, kept",
+  "db8478841cd3": "idle-engineer attribution telemetry; neutral, kept",
+  "2cdb26a0ba06": "any-tier factory assistance; not adopted (mechanism did not move)"
+}

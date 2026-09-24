@@ -73,6 +73,44 @@ local function ClusterMassMarkers(markers, count, clusterRadius)
 end
 
 ---@class RedQueenWorldModel
+-- What a player sitting in the lobby would know about where everyone spawned.
+--
+-- `TeamSpawn` is the host's choice. `fixed` puts everyone on a slot-determined
+-- start and the `*_reveal` variants randomise but show the result, so in both
+-- cases every player can see every start position and Red Queen may read them
+-- directly. Plain `random`, `balanced` and `balanced_flex` do not: a player
+-- knows the map's start locations but not who is standing on which, and
+-- neither should we.
+--
+-- Randomisation only hides anything while the map has empty slots, though. If
+-- every start on the map has a player on it, then every start that is not ours
+-- and not an ally's holds an enemy, and that is a deduction any player makes
+-- without scouting. Occupancy is therefore the second half of the question.
+--
+-- Absent means fixed. That is FAF's default and what a command-line skirmish
+-- gets, so reading nothing must not silently blind the brain.
+local RevealedSpawns = {
+    fixed = true,
+    random_reveal = true,
+    balanced_reveal = true,
+    balanced_reveal_mirrored = true,
+    balanced_flex_reveal = true,
+}
+
+-- A start position's identity, stable across rebuilds.
+local function StartKey(position)
+    return string.format("%d:%d", position[1], position[3])
+end
+
+local function SpawnsRevealed()
+    local options = ScenarioInfo and ScenarioInfo.Options
+    local spawn = options and options.TeamSpawn
+    if spawn == nil then
+        return true
+    end
+    return RevealedSpawns[spawn] or false
+end
+
 WorldModel = ClassSimple {
     __init = function(self, brain, context)
         self.Brain = brain
@@ -83,6 +121,7 @@ WorldModel = ClassSimple {
         self.MapType = "Land"
         self.MassClusters = {}
         self.EnemyStarts = {}
+        self.NavalApproaches = {}
         self.ForwardBaseCandidates = {}
 
         local startX, startZ = brain:GetArmyStartPos()
@@ -103,6 +142,43 @@ WorldModel = ClassSimple {
         local markers, count = MarkerUtilities.GetMarkersByType("Mass")
         local clusterRadius = math.max(40, math.min(120, self.Width / 10))
         self.MassClusters = ClusterMassMarkers(markers, count, clusterRadius)
+        -- How many mass points the map has at all, kept because claiming an
+        -- unclaimed one is the best economic action in the game: 36 mass for
+        -- +2/s pays back in 18 seconds, against 225 for a Tech 2 upgrade. What
+        -- an army holds against what exists is therefore the measure that says
+        -- whether expansion is failing for lack of trying or lack of holding,
+        -- and it was not previously recorded anywhere.
+        self.MassPointCount = count
+
+        -- Water destinations a fleet can actually be sent to.
+        --
+        -- An enemy start is where a commander spawns, i.e. dry land, so
+        -- CanPath("Water", ...) to it fails by definition and the offensive
+        -- layer used to fall through to Air. FAF generates "Naval Area" markers
+        -- around every spawn and expansion from
+        -- NavUtils.GetPositionsInRadius('Water', ...), keeping only positions
+        -- that resolve to a real water label -- exactly the "water next to the
+        -- enemy base" a fleet needs. AdaptiveBrain.OnBeginSession already calls
+        -- GenerateNavalAreaMarkers before our first Rebuild, so they only need
+        -- reading. Sorted by coordinate because the generator names them with
+        -- an unpadded %00d, under which "Naval Area 9" sorts after "10".
+        self.NavalApproaches = {}
+        local navalMarkers, navalCount = MarkerUtilities.GetMarkersByType("Naval Area")
+        for index = 1, navalCount do
+            local marker = navalMarkers[index]
+            local position = marker and (marker.Position or marker.position)
+            if position then
+                table.insert(self.NavalApproaches, {
+                    Name = tostring(marker.Name or marker.name or "NavalArea" .. tostring(index)),
+                    Position = { position[1], position[2] or 0, position[3] },
+                })
+            end
+        end
+        table.sort(self.NavalApproaches, function(a, b)
+            if a.Position[1] ~= b.Position[1] then return a.Position[1] < b.Position[1] end
+            if a.Position[3] ~= b.Position[3] then return a.Position[3] < b.Position[3] end
+            return a.Name < b.Name
+        end)
 
         self.ForwardBaseCandidates = {}
         for _, markerType in pairs({ "Defensive Point", "Expansion Area" }) do
@@ -135,24 +211,121 @@ WorldModel = ClassSimple {
             return a.Name < b.Name
         end)
 
+        -- Where the enemy is, in two tiers.
+        --
+        -- The positions are always kept: they are where an army can spawn, and
+        -- something has to be scouted. What varies is whether we also know an
+        -- enemy is standing on one. `Known` is that distinction, and it is what
+        -- separates a place worth looking at from a place worth attacking.
+        --
+        -- Resolved starts survive every rebuild. Every intel record decays at
+        -- IntelLifetimeSeconds; a base does not stop being there because
+        -- nothing has looked at it lately.
+        self.SpawnsRevealed = SpawnsRevealed()
+        self.ResolvedStarts = self.ResolvedStarts or {}
         self.EnemyStarts = {}
-        for _, armyIndex in pairs(self.Context.EnemyArmies) do
-            local enemyBrain = ArmyBrains[armyIndex]
-            if enemyBrain then
-                local x, z = enemyBrain:GetArmyStartPos()
-                table.insert(self.EnemyStarts, {
-                    Army = armyIndex,
-                    Position = { x, GetSurfaceHeight(x, z), z },
-                })
+
+        -- FAF caches every ARMY_n marker on the map under "Spawn", each
+        -- carrying whether a player actually took that slot. That is the whole
+        -- occupancy question answered by the engine, empty slots included,
+        -- which is what distinguishes "the enemy is somewhere in these seven
+        -- places" from "the enemy is in the one place left".
+        local spawnMarkers, spawnCount = MarkerUtilities.GetMarkersByType("Spawn")
+        self.SpawnMarkerCount = spawnCount or 0
+        self.OccupiedSpawnCount = 0
+        for index = 1, self.SpawnMarkerCount do
+            if spawnMarkers[index].IsOccupied then
+                self.OccupiedSpawnCount = self.OccupiedSpawnCount + 1
+            end
+        end
+        self.AllSpawnsOccupied = self.SpawnMarkerCount > 0
+            and self.OccupiedSpawnCount == self.SpawnMarkerCount
+
+        if self.SpawnsRevealed then
+            for _, armyIndex in pairs(self.Context.EnemyArmies) do
+                local enemyBrain = ArmyBrains[armyIndex]
+                if enemyBrain then
+                    local x, z = enemyBrain:GetArmyStartPos()
+                    table.insert(self.EnemyStarts, {
+                        Army = armyIndex,
+                        Position = { x, GetSurfaceHeight(x, z), z },
+                        Known = true,
+                    })
+                end
+            end
+        elseif self.SpawnMarkerCount > 0 then
+            -- Our own start and our allies' are ours to see either way, so the
+            -- candidates are every other slot on the map. Which enemy holds
+            -- which is still not ours to read, so no army is attached.
+            local friendlyRadius = Constants.Policy.FriendlySpawnMatchRadius
+            local friendly = {}
+            for _, armyIndex in pairs(self.Context.AlliedArmies or {}) do
+                local allyBrain = ArmyBrains[armyIndex]
+                if allyBrain then
+                    local x, z = allyBrain:GetArmyStartPos()
+                    table.insert(friendly, { x, GetSurfaceHeight(x, z), z })
+                end
+            end
+            table.insert(friendly, self.StartPosition)
+
+            local candidates = {}
+            for index = 1, self.SpawnMarkerCount do
+                local marker = spawnMarkers[index]
+                local position = marker.Position or marker.position
+                local ours = false
+                for _, own in ipairs(friendly) do
+                    if DistanceSquared(own, position) <= friendlyRadius * friendlyRadius then
+                        ours = true
+                        break
+                    end
+                end
+                if not ours then
+                    table.insert(candidates, {
+                        Marker = marker.Name,
+                        Position = { position[1], position[2], position[3] },
+                        -- A full map leaves nowhere for an enemy to hide: every
+                        -- slot that is not ours holds one.
+                        Known = self.AllSpawnsOccupied
+                            or self.ResolvedStarts[StartKey(position)] or false,
+                    })
+                end
+            end
+            -- Nearest first is the order scouting wants, and it also destroys
+            -- any correspondence a caller could read an army index back out of.
+            local home = self.StartPosition
+            table.sort(candidates, function(a, b)
+                return DistanceSquared(home, a.Position) < DistanceSquared(home, b.Position)
+            end)
+            self.EnemyStarts = candidates
+        else
+            -- No spawn markers means the cache was read before the engine
+            -- populated it. Fall back to the occupied enemy starts so the brain
+            -- is not blind, and say so, because this is a bug and not a map.
+            Logger.Info(self.Brain,
+                "spawn markers unavailable, falling back to occupied enemy starts")
+            for _, armyIndex in pairs(self.Context.EnemyArmies) do
+                local enemyBrain = ArmyBrains[armyIndex]
+                if enemyBrain then
+                    local x, z = enemyBrain:GetArmyStartPos()
+                    local position = { x, GetSurfaceHeight(x, z), z }
+                    table.insert(self.EnemyStarts, {
+                        Position = position,
+                        Known = self.ResolvedStarts[StartKey(position)] or false,
+                    })
+                end
             end
         end
 
         Logger.Info(self.Brain, string.format(
-            "map type=%s size=%dkm water=%.2f massClusters=%d",
+            "map type=%s size=%dkm water=%.2f massClusters=%d spawns=%s slots=%d/%d starts=%d",
             self.MapType,
             self.MapKilometers,
             self.WaterRatio,
-            table.getn(self.MassClusters)
+            table.getn(self.MassClusters),
+            self.SpawnsRevealed and "revealed" or (self.AllSpawnsOccupied and "hidden-full" or "hidden"),
+            self.OccupiedSpawnCount,
+            self.SpawnMarkerCount,
+            table.getn(self.EnemyStarts)
         ))
     end,
 
@@ -170,14 +343,105 @@ WorldModel = ClassSimple {
         return ok == true
     end,
 
+    -- Water nearest `position`, without any route test. Used to put both ends
+    -- of a naval question onto the water layer before asking it.
+    NearestNavalApproach = function(self, position)
+        if not position then
+            return nil
+        end
+        local best, bestDistance = nil, nil
+        for _, candidate in ipairs(self.NavalApproaches or {}) do
+            local distance = DistanceSquared(position, candidate.Position)
+            if not bestDistance or distance < bestDistance then
+                best = candidate.Position
+                bestDistance = distance
+            end
+        end
+        return best
+    end,
+
+    -- Nearest water position to `target` that our fleet can actually reach from
+    -- `origin`. The destination must be on the target's side of the midpoint
+    -- and closer to it than our source water. Reachability within our home basin
+    -- alone is not an enemy approach; return nil so callers can change layers.
+    --
+    -- Both ends must be resolved onto water first. NavUtils.CanPathTo reports
+    -- OriginUnpathable when the *origin* cell has no label on the layer, so
+    -- asking it for a water route out of an army start -- dry land, where the
+    -- commander spawns -- fails exactly as asking for a water route *to* one
+    -- does. Testing only the destination leaves the same bug on the other end,
+    -- which is what kept every offensive on SCMP_037 falling through to Air.
+    GetNavalApproach = function(self, origin, target)
+        if not origin or not target then
+            return nil
+        end
+        local source = self:NearestNavalApproach(origin)
+        if not source then
+            return nil
+        end
+        local best, bestDistance = nil, nil
+        local sourceDistance = DistanceSquared(target, source)
+        for _, candidate in ipairs(self.NavalApproaches or {}) do
+            local distance = DistanceSquared(target, candidate.Position)
+            if distance < sourceDistance
+                and distance < DistanceSquared(origin, candidate.Position)
+                and (not bestDistance or distance < bestDistance)
+            then
+                if self:CanPath("Water", source, candidate.Position) then
+                    best = candidate.Position
+                    bestDistance = distance
+                end
+            end
+        end
+        return best
+    end,
+
+    -- Only bases we are entitled to know about. With revealed spawns that is
+    -- all of them from the first tick; with hidden spawns it is the ones
+    -- something of ours has actually seen.
+    -- Learn which start the enemy is actually on when the lobby did not say.
+    --
+    -- A structure is the evidence: mobile units travel, buildings do not. The
+    -- resolution is recorded permanently and separately from EnemyStarts,
+    -- because the observation that produced it will decay and the base will
+    -- not. With revealed spawns this does nothing -- everything is known
+    -- already.
+    ResolveEnemyBases = function(self, intel)
+        if self.SpawnsRevealed or not intel or not intel.Observations then
+            return 0
+        end
+        local radius = Constants.Policy.EnemyBaseDiscoveryRadius
+        local resolved = 0
+        for _, observation in pairs(intel.Observations) do
+            local role = observation.Role
+            if role and role.Structure and observation.Position then
+                for _, enemy in ipairs(self.EnemyStarts) do
+                    if not enemy.Known
+                        and DistanceSquared(enemy.Position, observation.Position) <= radius * radius
+                    then
+                        enemy.Known = true
+                        self.ResolvedStarts[StartKey(enemy.Position)] = true
+                        resolved = resolved + 1
+                        Logger.Info(self.Brain, string.format(
+                            "enemy base resolved position=%.0f,%.0f",
+                            enemy.Position[1], enemy.Position[3]))
+                    end
+                end
+            end
+        end
+        return resolved
+    end,
+
     GetClosestEnemyStart = function(self, origin, layer)
         local best = nil
         local bestDistance = nil
         for _, enemy in pairs(self.EnemyStarts) do
+            if enemy.Known ~= false then
             local distance = DistanceSquared(origin, enemy.Position)
             if (not bestDistance or distance < bestDistance) and self:CanPath(layer or "Land", origin, enemy.Position) then
                 best = enemy.Position
                 bestDistance = distance
+            end
             end
         end
         return best
@@ -191,26 +455,64 @@ WorldModel = ClassSimple {
         ))
     end,
 
-    GetObservedRouteThreat = function(self, origin, destination, intel, radius)
-        local path = NavUtils.PathTo and NavUtils.PathTo("Land", origin, destination)
+    -- Observed threat along a route, and how much of that route the army can
+    -- actually see. Returns `threat, coverage` where coverage is 0 for a route
+    -- nobody has looked at and 1 for one fully in view.
+    --
+    -- Both halves are needed because they are not the same question. Threat is
+    -- summed from observations, so an unscouted route reports 0 -- and a caller
+    -- reading that as "clear" is most confident precisely where it knows least.
+    -- Coverage is what lets the caller tell the two apart.
+    --
+    -- `layer` is the graph the traveller actually moves on. Every engineer in
+    -- the game crosses water -- UEF and Cybran float, Aeon and Seraphim hover --
+    -- so asking about "Land" describes none of them.
+    GetObservedRouteThreat = function(self, origin, destination, intel, radius, layer)
+        layer = layer or "Land"
+        local path = NavUtils.PathTo and NavUtils.PathTo(layer, origin, destination)
         if not path then
-            if not self:CanPath("Land", origin, destination) then
+            if not self:CanPath(layer, origin, destination) then
                 return nil
             end
             path = { origin, destination }
         end
-        local maximum = 0
+        -- NavUtils paths need not include the engineer's starting position.
+        -- Leaving a threatened source must be checked as well as arriving.
+        local maximum = intel:GetThreatNear(origin, radius)
+        local samples = { origin, destination }
         for _, position in pairs(path) do
             maximum = math.max(maximum, intel:GetThreatNear(position, radius))
+            table.insert(samples, position)
         end
         maximum = math.max(maximum, intel:GetThreatNear(destination, radius))
-        return maximum
+
+        -- Coverage is the mean over sampled points, so one watched corner of a
+        -- long blind route cannot vouch for the rest of it.
+        local coverage = 0
+        local counted = 0
+        local full = Constants.Policy.RouteCoverageConfidenceForFull
+        for _, position in pairs(samples) do
+            local known = intel.GetCoverageNear
+                and intel:GetCoverageNear(position, radius)
+                or nil
+            if known == nil then
+                -- An intel source that cannot report coverage must not be
+                -- treated as blind, or every route would carry presumed risk.
+                coverage = counted + 1
+                counted = counted + 1
+            else
+                coverage = coverage + math.min(1, known / full)
+                counted = counted + 1
+            end
+        end
+        return maximum, counted > 0 and coverage / counted or 0
     end,
 
-    SelectForwardBaseSite = function(self, origin, objective, intel, claimed, escortThreat, rebuildable)
+    SelectForwardBaseSite = function(self, origin, objective, intel, claimed, escortThreat, rebuildable, layer)
         if not objective then
             return nil
         end
+        layer = layer or "Land"
         local best = nil
         local bestScore = nil
         local minimumDistance = Constants.Policy.ForwardBaseMinimumDistance
@@ -222,14 +524,21 @@ WorldModel = ClassSimple {
                 local objectiveDistance = math.sqrt(DistanceSquared(objective, candidate.Position))
                 local rebuilding = rebuildable and rebuildable[candidate.Name]
                 if (rebuilding or ownDistance >= minimumDistance)
-                    and self:CanPath("Land", origin, candidate.Position)
+                    and self:CanPath(layer, origin, candidate.Position)
                 then
-                    local routeThreat = self:GetObservedRouteThreat(
+                    local routeThreat, coverage = self:GetObservedRouteThreat(
                         origin,
                         candidate.Position,
                         intel,
-                        Constants.Policy.ForwardBaseSiteRadius
+                        Constants.Policy.ForwardBaseSiteRadius,
+                        layer
                     )
+                    -- Coverage is recorded for diagnosis but does not gate the
+                    -- route. Charging unknown ground a presumed threat was
+                    -- measured on Seton's Clutch and cost expansion without
+                    -- saving a single engineer: the losses happen at coverage
+                    -- 1.00, well inside the safety limit, part-way through a
+                    -- walk long enough for the assessment to go stale.
                     if routeThreat and routeThreat <= safetyLimit then
                         local progress = ownDistance - objectiveDistance
                         local score = candidate.Value + progress * 0.35 - routeThreat * 12
@@ -242,6 +551,9 @@ WorldModel = ClassSimple {
                                 Type = candidate.Type,
                                 Position = candidate.Position,
                                 RouteThreat = routeThreat,
+                                RouteCoverage = coverage or 0,
+                                Layer = layer,
+                                SafetyLimit = safetyLimit,
                                 Score = score,
                             }
                             bestScore = score

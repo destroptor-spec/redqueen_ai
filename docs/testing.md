@@ -10,7 +10,7 @@ After an in-game run, summarize the log with:
 ./scripts/analyze-log.py "/path/to/game.log"
 ```
 
-The analyzer fails on Red Queen errors, on engine Lua errors it can attribute to this mod, and on any Lua error after the first defeat marker. Engine Lua errors it cannot attribute are reported as `Unattributed Lua failures` and do not fail the gate, so a stock-AI comparison run is not rejected for someone else's stack trace. If it prints `Post-defeat Lua failures: not checked`, the log carried no recognizable defeat marker and the task-leak check did not run.
+The analyzer fails on Red Queen errors and on engine Lua errors attributed to this mod by their source or traceback. Engine Lua errors it cannot attribute are reported as `Unattributed Lua failures` and do not fail the gate, including after defeat. Post-defeat counts are subsets of these totals: each occurrence is counted once. If it prints `Post-defeat Lua failures: not checked`, the log carried no recognizable defeat marker and the task-leak check did not run.
 
 ## In-game smoke test
 
@@ -39,7 +39,7 @@ For an isolated command-line check, make a copy of `Game.prefs` in FAF's prefere
 
 ```lua
 active_mods = {
-    ['7f4a8d2e-2d63-4e71-9c51-5ed0ee000008'] = true
+    ['7f4a8d2e-2d63-4e71-9c51-5ed0ee000010'] = true
 }
 ```
 
@@ -62,6 +62,93 @@ featured mod deliberately. Confirm the log contains
 any result.
 
 The runner uses out-of-range difficulty `42` as an internal smoke-test marker, which redirects command-line Rush opponents to The Red Queen inside the simulation. Normal lobby sessions and stock Rush AIs are unchanged.
+
+### Passive production investigation
+
+The current launcher uses strict equal-income mixed matches: `FAF_MIXED=1`
+for 1v1 or `FAF_MIXED=2` for 2v2. Add `FAF_PRODUCTION_TRACE=1` for bounded
+tracing in either configuration (sentinels 43/46). Surplus and human starts are
+civilian; Red Queen uses Aeon and stock Adaptive uses Cybran. Contestants occupy
+sorted AI starts, Red Queen first, with teams 2 and 3. Verify the actual
+`income contract ... income=1.00` in each log. The earlier 1.20 Sweepwing trace
+is historical defect evidence and is not an equal-income baseline.
+
+Before every launch the script verifies the active mod symlink and writes a
+`.manifest.json` beside the log, containing revision, working status, map and
+per-file/runtime payload hashes. A `.patch` records tracked working changes.
+The manifest hashes include untracked Lua sources. Preserve the tested source
+files as well as the manifest when archiving a run.
+
+Tracing is off in ordinary matches. `RedQueenProductionTrace=true` enables it
+through synchronized scenario options. `RedQueenTraceArmy` selects exactly one
+army (default 2); `RedQueenTraceSubsystems` optionally selects a table of
+`lifecycle`, `placement`, `defense`, `commitment`, and `projects` booleans.
+Selection and assignment functions are no longer wrapped. Decision counters
+aggregate every 30 simulation seconds, with individual state transitions.
+Each subsystem retains at most 64 decision identities per interval; placement
+and project construction each retain at most 64 live entities. Engineer
+snapshots and pending requests are also capped at 64. Overflow is explicit and
+invalidates claims of complete coverage. Inactive entities are released and
+construction lifetimes use monotonic identities, independent of reused engine
+IDs. Cleanup reports unfinished tracked entities as unknown.
+
+Queue positions use native `x,z,orientation` coordinates. Attempts, accepted
+requests, construction starts, progress, completions, destruction, and unknown
+outcomes are separate records. An absent queue entry never proves completion.
+Factory counts include unfinished structures and upgrade callbacks do not
+prove additional production sites. Project samples record progress delta,
+initiating engineer, original manager, current construction target, guards,
+income, health, and nearby observed ground threat; these observations alone do
+not establish a cause of abandonment.
+
+Analyze a fresh diagnostic log with both tools:
+
+```bash
+./scripts/analyze-log.py /tmp/rq-production-trace.log
+python3 scripts/analyze-production-trace.py /tmp/rq-production-trace.log
+```
+
+Reject runs with `production trace unavailable` or Lua startup failures as
+diagnostic evidence. Preserve the tested revision, working patch, runtime
+payload hash, map, factions and income contract alongside the log. Run until
+the capacity deficit persists through several requests, defeat, or 30
+simulation minutes. Report the task/queue timeline before selecting any
+production-policy change.
+
+See [the September 6 investigation](production-capacity-investigation.md) for
+the measured ownership/placement timeline, run provenance and remaining limits.
+
+### Large-map expansion and terrain profiles
+
+Size is evaluated independently of terrain at the 10 km threshold:
+
+| Terrain | Below 10 km | 10 km and larger |
+| --- | --- | --- |
+| Land | LandSmall | LandLarge |
+| Naval | Naval | NavalLarge |
+| Mixed | Mixed | MixedLarge |
+
+Large profiles enable completed-tier readiness; naval and mixed profiles keep
+naval production and shore torpedoes at both sizes. Sludge remains `Naval`;
+Seton's Clutch selects `NavalLarge`. Extending readiness to large water maps
+requires balance measurement; profile selection alone does not establish a win-rate gain.
+
+For expansion verification, use Seton's for two teams and Saltrock for three:
+
+```bash
+./scripts/run-matrix.sh 1 SCMP_009 8675309 2 3 expansion-large-3v3 3v3
+./scripts/run-matrix.sh 2 SCMP_025 31337 3 2 expansion-large-2v2v2 2v2v2
+```
+
+Check each manifest, `profile selected=NavalLarge`, and the expected income
+contract before interpreting the run. Count forward-base starts and completions,
+peak sampled mass income, and blockers while `objective=Defend`. The objective
+itself must no longer block expansion: observed threat at the engineer's origin,
+along the path, and at the candidate site still limits eligibility. Opening and
+recovery objectives, an active emergency defense alert, affordability, cooldown
+and the existing map cap remain separate reservations. A later blocker becoming
+visible is not proof that a forward base completed. These two cells check runtime
+behaviour across layouts; use matched seeds and factions for balance comparisons.
 
 ### What a short run cannot reach
 
@@ -97,7 +184,59 @@ state objective=<type> eco=<mode> mass=<perTick> energy=<perTick>
 target, not against `DesiredFactories`; `production expansion` logs the same
 number. `mass=` and `energy=` are per tick, as below.
 
+For the scouting production/dispatch experiment, use the modes and fixed case
+list in [scouting isolation](scouting-isolation.md). Those matrices require the
+user's go-ahead before launch.
+
 ## Required match matrix
+
+### The matrix is deterministic, and that cuts both ways
+
+Two control runs of the same eight cases, same payload, reproduced every cell:
+8/8 outcomes and mass K/L identical to two decimal places.
+
+So a single sample per cell is **conclusive** for that exact map, seed, faction
+and payload. There is no run-to-run noise to average away, and any difference
+between two arms is causal.
+
+It is also chaotic. Changing one builder's priority by 35 points flipped four of
+eight cells while leaving the record unchanged at 4W/4L, and across two such
+arms seven of the eight cells were won by *some* configuration. A small timing
+change cascades into a different match.
+
+Both facts together mean the danger is not noise but **overfitting**: a policy
+tuned until eight fixed cells go green has been fitted to eight seeds. The
+gunship gate is the worked example -- 8W/4L on the twelve recorded cases, then
+five of six losses on cases it had never seen. Judge a candidate on cases it was
+not tuned against, and prefer more seeds per map and faction over more maps.
+
+### Protecting recorded wins
+
+`docs/balance/airland-reference.json` records the completed 8W/4L strict 1v1
+reference, including settings, outcomes, payloads, log hashes and contestant
+statistics hashes. After running those same cases on a candidate, check them:
+
+```bash
+python3 scripts/check-balance.py \
+    --reference docs/balance/airland-reference.json \
+    --output /tmp/rq-balance-comparison.json \
+    /tmp/rq-m-<candidate-prefix>-*.log
+```
+
+The command runs `analyze-log.py` on each log before interpreting its result.
+Exit 0 means every case is complete and every reference win is retained; exit
+1 identifies lost winning cases even if other gains keep the total unchanged;
+exit 2 rejects invalid evidence. Missing/duplicate cases, changed factions,
+starts, victory settings, income, scouting mode or native FAF Lua version, mixed candidate payloads,
+unfinished matches and Red Queen failures cannot pass. Mass K/L changes and
+exact contestant-statistics agreement are reported separately.
+
+This checks the recorded cases, not unseen seeds or long-term win probability.
+Preselect additional paired cases when extending a policy's scope. Keep the
+old reference when a candidate loses a protected win; update it only after
+reviewing the complete paired results and their production costs.
+
+### Broader release coverage
 
 | Area | Required cases |
 | --- | --- |

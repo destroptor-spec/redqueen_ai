@@ -1,0 +1,54 @@
+Red Queen lines: 980
+Brains started: 1
+Income contracts: 1
+State samples: 47
+Defense alerts raised: 11
+Assistance: 273 helper assignments, 110 releases, 1 commander assignments; summed per-army peak helpers=8
+Extractor upgrades: 15 native start attempts blocked; gate samples={'expanding': 8, 'stall-risk': 14, 'upgrading': 7, 'none': 17, 'under-attack': 1}
+Pressure: 8 held, 5 yielded, 34 idle of 47 samples (38.5% yielded where anything was sent)
+  primary slot:   {'Pressure': 4, 'Raid': 43}
+  secondary slot: {'Defend': 34}
+Engineers by tier: peak T1=32 T2=16 T3=13; 35/47 samples had a Tech 2 engineer
+Army census: peak owned=41, peak pooled=14, peak available=9
+  units Red Queen cannot command (owned-pooled): mean 20.2, peak 35
+  held by Red Queen itself: order mean 1.8 peak 6, garrison mean 0.1 peak 2
+Directed platoons: 25 formed under a Red Queen plan, 145 aims issued
+  aims by objective: {'Raid': 145}
+Objective changes: 14
+     10  none/none -> Defend/DefenseAlert [Secondary]
+      1  none/none -> Pressure/Offensive [Primary]
+      1  Pressure/Offensive -> Raid/Offensive [Primary]
+      1  Defend/DefenseAlert -> Defend/LocalDefense [Secondary]
+      1  Defend/LocalDefense -> Defend/DefenseAlert [Secondary]
+Objective changes refused: 0
+Tier policy changes: 4
+Forward bases: 1 started, 1 established, 47 blocked
+Commitment holds: 37
+Economy stagnation reports: 1
+Endgame investment under alert: 11/34 alert samples kept a non-zero experimental weight
+Alert samples by qualifying arm: combined 14, surface 20
+Peak units dispatched per layer: L2, A8, W0, M0, H5 over 47 samples
+Engine Lua failures: 0
+Red Queen Lua failures: 0
+Red Queen scheduler failures: 0
+Unattributed Lua failures: 0
+Post-defeat Lua failures: 0 attributed, 0 in FAF code (advisory)
+Invalid manager locations: 0 attributed, 0 in FAF code (advisory) (0 after first defeat)
+
+Forward base blockers:
+     20  defense-alert
+     16  map-cap
+      6  construction-active
+      2  no-idle-engineer
+      1  negative-mass-trend
+      1  stall-risk
+      1  low-mass-storage
+
+End-of-game army stats:
+  army                                 built$    lost$    kill$    K/L   exp
+  FAF_Destroptor (Human)                   0k       0k       0k   0.00   0/0
+  Judith (AI: Rush) (AI)                 324k     245k     119k   0.49   0/19
+  Lish (AI: Rush) (AI)                   477k     120k     242k   2.02   1/0
+  (exp = experimentals built/lost; K/L is destroyed mass over lost mass)
+
+Failures: 0 distinct, 0 occurrences

@@ -1,0 +1,14 @@
+diff --git a/lua/AI/RedQueen/ProductionManager.lua b/lua/AI/RedQueen/ProductionManager.lua
+index 5e59457..243463a 100644
+--- a/lua/AI/RedQueen/ProductionManager.lua
++++ b/lua/AI/RedQueen/ProductionManager.lua
+@@ -2804,8 +2804,7 @@ ProductionManager = ClassSimple {
+                         escort * Constants.Policy.ForwardBaseSafetyRatio
+                     )
+                     if threat > limit then
+-                        EngineerSurvival.RememberLethalSite(
+-                            self.Brain, position, "engineer-withdrawn")
++                        EngineerSurvival.RecordWithdrawal(self.Brain)
+                         if ReleaseEngineer(engineer, home) then
+                             recalled = recalled + 1
+                         end

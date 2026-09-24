@@ -1,0 +1,57 @@
+Red Queen lines: 4466
+Brains started: 2
+Income contracts: 2
+State samples: 126
+Defense alerts raised: 17
+Assistance: 1717 helper assignments, 801 releases, 28 commander assignments; summed per-army peak helpers=32
+Extractor upgrades: 2 native start attempts blocked; gate samples={'expanding': 23, 'stall-risk': 6, 'upgrading': 15, 'started': 1, 'none': 78, 'under-attack': 3}
+Pressure: 1 held, 10 yielded, 115 idle of 126 samples (90.9% yielded where anything was sent)
+  primary slot:   {'Pressure': 12, 'JointAttack': 63, 'Raid': 51}
+  secondary slot: {'Defend': 34}
+Engineers by tier: peak T1=46 T2=14 T3=13; 86/126 samples had a Tech 2 engineer
+Army census: peak owned=162, peak pooled=27, peak available=23
+  units Red Queen cannot command (owned-pooled): mean 68.6, peak 149
+  held by Red Queen itself: order mean 4.0 peak 18, garrison mean 0.7 peak 3
+Directed platoons: 161 formed under a Red Queen plan, 661 aims issued
+  aims by objective: {'Raid': 566, 'JointAttack': 471, 'Pressure': 102}
+Objective changes: 27
+     17  none/none -> Defend/DefenseAlert [Secondary]
+      4  Pressure/Offensive -> Raid/Offensive [Primary]
+      4  Raid/Offensive -> Pressure/Offensive [Primary]
+      1  none/none -> Pressure/Offensive [Primary]
+      1  none/none -> JointAttack/JointAttack [Primary]
+Objective changes refused: 22
+     22  priority-gap: Raid/Offensive kept over Pressure/Offensive
+Tier policy changes: 11
+Forward bases: 14 started, 0 established, 126 blocked
+Commitment holds: 32
+Economy stagnation reports: 10
+Endgame investment under alert: 23/34 alert samples kept a non-zero experimental weight
+Alert samples by qualifying arm: air 16, surface 18
+Peak units dispatched per layer: L16, A8, W0, M1, H0 over 126 samples
+Engine Lua failures: 0
+Red Queen Lua failures: 0
+Red Queen scheduler failures: 0
+Unattributed Lua failures: 0
+Post-defeat Lua failures: 0 attributed, 0 in FAF code (advisory)
+Invalid manager locations: 0 attributed, 0 in FAF code (advisory) (0 after first defeat)
+
+Forward base blockers:
+     93  construction-active
+      9  defense-alert
+      6  negative-mass-trend
+      6  cooldown
+      4  no-idle-engineer
+      4  stall-risk
+      3  low-mass-storage
+      1  negative-energy-trend
+
+End-of-game army stats:
+  army                                 built$    lost$    kill$    K/L   exp
+  Destroptor (Human)                     919k      49k     695k  14.13  11/1
+  Snider (Human)                         723k     688k     292k   0.42   0/0
+  Kijanka (AI: The Red Queen) (AI)       786k     574k      53k   0.09   2/3
+  Ranga (AI: The Red Queen) (AI)         493k     566k      32k   0.06   0/3
+  (exp = experimentals built/lost; K/L is destroyed mass over lost mass)
+
+Failures: 0 distinct, 0 occurrences

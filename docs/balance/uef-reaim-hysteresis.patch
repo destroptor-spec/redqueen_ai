@@ -1,0 +1,106 @@
+diff --git a/lua/AI/RedQueen/Constants.lua b/lua/AI/RedQueen/Constants.lua
+index 3b6bdd9..cba59b2 100644
+--- a/lua/AI/RedQueen/Constants.lua
++++ b/lua/AI/RedQueen/Constants.lua
+@@ -116,6 +116,17 @@ Policy = {
+     NarrateToChat = true,
+     NarrationIntervalSeconds = 8,
+     PlatoonDirectionSeconds = 15,
++    -- How far an objective must move before a directed platoon re-aims, for the
++    -- factions that need the approach protected.
++    --
++    -- Applied to every faction this cost seven cells of twelve and dropped mean
++    -- mass K/L from 1.44 to 0.88: frequent re-aiming is adaptive, not a defect,
++    -- and committing to a target lets the battle move away. But both of its
++    -- gains were UEF, and UEF had already gained from an unrelated change twice.
++    -- UEF is the slow faction -- its approach is the one that cannot finish, and
++    -- it is 1W/5L across the twenty-four cell baseline against 3W/2L to 4W/2L
++    -- for everyone else. Scoped there rather than abandoned.
++    PlatoonReaimDistance = 40,
+     WaveRallyHoldTicks = 50,
+     -- A wave that has lost this share of its strength has done its work or
+     -- failed, and is dissolved so the survivors can join the next one.
+diff --git a/lua/AI/RedQueen/PlatoonPlans.lua b/lua/AI/RedQueen/PlatoonPlans.lua
+index b5fa1cc..43821d5 100644
+--- a/lua/AI/RedQueen/PlatoonPlans.lua
++++ b/lua/AI/RedQueen/PlatoonPlans.lua
+@@ -54,6 +54,30 @@ function DirectionKey(position)
+         math.floor(position[1] / 8), math.floor(position[3] / 8))
+ end
+ 
++--- Whether the objective has moved far enough to be worth a new order.
++---
++--- Only the slow faction gets hysteresis. Applied to all four it cost seven
++--- cells of twelve and took mean mass K/L from 1.44 to 0.88 -- re-aiming is how
++--- a platoon follows a moving battle, and suppressing it commits the army to a
++--- stale target. Its only two gains were UEF, which is 1W/5L across the
++--- baseline and whose units are too slow to finish an approach that keeps
++--- restarting. Everyone else keeps the eight-unit bucket that measured better.
++function ShouldReaim(brain, pursued, position)
++    if not position then
++        return false
++    end
++    if not pursued then
++        return true
++    end
++    if not brain or brain:GetFactionIndex() ~= 1 then
++        return DirectionKey(position) ~= DirectionKey(pursued)
++    end
++    local dx = position[1] - pursued[1]
++    local dz = position[3] - pursued[3]
++    local reaim = Constants.Policy.PlatoonReaimDistance
++    return (dx * dx + dz * dz) > reaim * reaim
++end
++
+ -- Direct a native-formed platoon at that objective.
+ --
+ -- Native forms this platoon and supplies every movement helper used here;
+@@ -75,9 +99,8 @@ function ObjectiveAttack(self)
+     local pursuing = nil
+     while brain:PlatoonExists(self) do
+         local position, kind = DirectionTarget(brain, self:GetPlatoonPosition(), "Land")
+-        local key = DirectionKey(position)
+-        if key and key ~= pursuing then
+-            pursuing = key
++        if ShouldReaim(brain, pursuing, position) then
++            pursuing = position
+             self.RedQueenDirectionPosition = position
+             self:Stop()
+             self:AggressiveMoveToLocation(position)
+diff --git a/tests/platoon_plans_spec.lua b/tests/platoon_plans_spec.lua
+index ea42f9b..06eab9e 100644
+--- a/tests/platoon_plans_spec.lua
++++ b/tests/platoon_plans_spec.lua
+@@ -5,7 +5,7 @@ function import(path)
+     elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/Narrator.lua" then
+         return { Announce = function() return false end }
+     elseif path == "/mods/TheRedQueen/lua/AI/RedQueen/Constants.lua" then
+-        return { Policy = { PlatoonDirectionSeconds = 15 } }
++        return { Policy = { PlatoonDirectionSeconds = 15, PlatoonReaimDistance = 40 } }
+     end
+     error("unexpected import: " .. tostring(path))
+ end
+@@ -76,4 +76,23 @@ assert(plans.DirectionKey({ 900, 0, 800 }) ~= plans.DirectionKey({ 960, 0, 800 }
+     "a genuinely different target must re-aim it")
+ assert(not plans.DirectionKey(nil), "no position is no key")
+ 
++-- Hysteresis is scoped to UEF, and that scoping is the contract.
++--
++-- Applied to every faction it cost seven cells of twelve and took mean mass
++-- K/L from 1.44 to 0.88: re-aiming is how a platoon follows a moving battle.
++-- Both of its gains were UEF, which is 1W/5L across the baseline and too slow
++-- to finish an approach that keeps restarting.
++local uef = { GetFactionIndex = function() return 1 end }
++local fast = { GetFactionIndex = function() return 3 end }
++assert(plans.ShouldReaim(uef, nil, { 100, 0, 100 }), "an unaimed platoon takes the first objective")
++assert(not plans.ShouldReaim(uef, { 100, 0, 100 }, nil), "no objective is no order")
++assert(not plans.ShouldReaim(uef, { 100, 0, 100 }, { 130, 0, 100 }),
++    "UEF ignores drift inside the band so its approach can finish")
++assert(plans.ShouldReaim(uef, { 100, 0, 100 }, { 141, 0, 100 }),
++    "a genuinely new objective still re-aims UEF")
++assert(plans.ShouldReaim(fast, { 100, 0, 100 }, { 130, 0, 100 }),
++    "every other faction keeps the responsive bucket that measured better")
++assert(not plans.ShouldReaim(fast, { 900, 0, 800 }, { 903, 0, 802 }),
++    "a target drifting a metre is still the same target for anyone")
++
+ print("Red Queen platoon plan contracts passed")

@@ -1,0 +1,234 @@
+game,army,line,preceding_watch_t,message
+27843240,2,940,,forward base blocked reason=no-idle-engineer
+27843240,4,944,,forward base blocked reason=no-idle-engineer
+27843240,2,972,9,forward base blocked reason=no-idle-engineer
+27843240,4,974,9,forward base blocked reason=no-idle-engineer
+27843240,2,994,69,forward base blocked reason=low-mass-income
+27843240,4,996,69,forward base blocked reason=negative-mass-trend
+27843240,2,1028,129,forward base blocked reason=negative-mass-trend
+27843240,4,1030,129,forward base blocked reason=negative-mass-trend
+27843240,2,1083,189,forward base blocked reason=low-energy-income
+27843240,4,1085,189,forward base blocked reason=negative-mass-trend
+27843240,2,1141,249,forward base blocked reason=stall-risk
+27843240,4,1142,249,forward base blocked reason=low-mass-storage
+27843240,4,1189,309,forward base started name=RQFB_4_1 site=MassCluster24 tech=1 queued=6 layer=Amphibious routeThreat=0.0 coverage=0.36 effective=0.0 limit=11.9 first=T1GroundDefense needs=2pd/1aa/0sh
+27843240,2,1213,309,forward base blocked reason=low-mass-storage
+27843240,4,1216,309,forward base blocked reason=construction-active
+27843240,2,1258,369,forward base started name=RQFB_2_1 site=MassCluster19 tech=1 queued=6 layer=Amphibious routeThreat=0.0 coverage=0.69 effective=0.0 limit=25.6 first=T1GroundDefense needs=2pd/1aa/0sh
+27843240,2,1268,369,forward base blocked reason=construction-active
+27843240,4,1269,369,forward base blocked reason=construction-active
+27843240,2,1321,429,forward base blocked reason=construction-active
+27843240,4,1323,429,forward base blocked reason=construction-active
+27843240,2,1380,489,forward base blocked reason=construction-active
+27843240,4,1383,489,forward base blocked reason=construction-active
+27843240,2,1426,549,forward base established name=RQFB_2_1 site=MassCluster19 tech=1
+27843240,2,1451,549,forward base blocked reason=map-cap
+27843240,4,1454,549,forward base blocked reason=construction-active
+27843240,4,1456,549,forward base garrison released site=RQFB_4_1 reason=escort-overwhelmed units=1 losses=2 strength=2
+27843240,2,1543,609,forward base blocked reason=map-cap
+27843240,4,1546,609,forward base blocked reason=construction-active
+27843240,4,1589,669,forward base garrison released site=RQFB_4_1 reason=escort-overwhelmed units=0 losses=1 strength=0
+27843240,2,1593,669,forward base garrison released site=RQFB_2_1 reason=escort-overwhelmed units=0 losses=1 strength=6
+27843240,2,1613,669,forward base blocked reason=map-cap
+27843240,4,1615,669,forward base blocked reason=construction-active
+27843240,2,1682,729,forward base blocked reason=map-cap
+27843240,4,1684,729,forward base blocked reason=construction-active
+27843240,2,1737,789,forward base blocked reason=map-cap
+27843240,4,1740,789,forward base blocked reason=construction-active
+27843240,2,1818,849,forward base blocked reason=map-cap
+27843240,4,1819,849,forward base blocked reason=construction-active
+27843240,4,1853,909,forward base garrison released site=RQFB_4_1 reason=escort-overwhelmed units=2 losses=2 strength=4
+27843240,2,1888,909,forward base blocked reason=map-cap
+27843240,4,1890,909,forward base blocked reason=construction-active
+27843240,2,1938,969,production expansion type=T1AirFactory factories=18 desired=20 deficit=0 engineer=1048588 idle=no building=no
+27843240,2,1972,969,production expansion type=T1AirFactory factories=17 desired=24 deficit=0 engineer=1048605 idle=no building=no
+27843240,2,1984,969,forward base blocked reason=map-cap
+27843240,4,1986,969,forward base blocked reason=construction-active
+27843240,2,2031,1029,production expansion type=T1AirFactory factories=17 desired=23 deficit=0 engineer=1048578 idle=no building=no
+27843240,4,2058,1029,forward base recall failed name=RQFB_4_1
+27843240,2,2091,1029,forward base blocked reason=map-cap
+27843240,4,2092,1029,forward base blocked reason=construction-active
+27843240,2,2127,1089,production expansion type=T1AirFactory factories=18 desired=24 deficit=0 engineer=1048622 idle=no building=no
+27843240,4,2150,1089,forward base garrison released site=RQFB_4_1 reason=escort-overwhelmed units=0 losses=1 strength=8
+27843240,2,2180,1089,forward base blocked reason=map-cap
+27843240,4,2182,1089,forward base blocked reason=construction-active
+27843240,2,2229,1149,production expansion type=T1LandFactory factories=21 desired=23 deficit=0 engineer=1048584 idle=no building=no
+27843240,2,2256,1149,forward base garrison released site=RQFB_2_1 reason=escort-overwhelmed units=1 losses=1 strength=4
+27843240,2,2271,1149,production expansion type=T1LandFactory factories=21 desired=23 deficit=0 engineer=1048595 idle=no building=no
+27843240,2,2280,1149,forward base blocked reason=map-cap
+27843240,4,2282,1149,forward base blocked reason=construction-active
+27843240,4,2362,1209,forward base failed name=RQFB_4_1 site=MassCluster24 reason=no-factory queued=6 elapsed=900s routeThreat=0.0 nowThreat=0.0 limit=38.8
+27843240,2,2386,1209,forward base blocked reason=map-cap
+27843240,4,2387,1209,forward base blocked reason=defense-alert
+27843240,2,2436,1269,production expansion type=T1AirFactory factories=22 desired=24 deficit=0 engineer=1048578 idle=no building=no
+27843240,4,2450,1269,production expansion type=T1AirFactory factories=20 desired=24 deficit=0 engineer=3145736 idle=no building=no
+27843240,2,2457,1269,forward base blocked reason=map-cap
+27843240,4,2458,1269,forward base blocked reason=defense-alert
+27843240,2,2510,1329,forward base blocked reason=map-cap
+27843240,4,2511,1329,forward base blocked reason=defense-alert
+27843240,2,2569,1389,forward base blocked reason=map-cap
+27843240,4,2570,1389,forward base blocked reason=defense-alert
+27843240,2,2621,1449,forward base blocked reason=map-cap
+27843240,4,2622,1449,forward base blocked reason=defense-alert
+27843240,4,2630,1449,production expansion type=T1AirFactory factories=21 desired=24 deficit=0 engineer=3145777 idle=no building=no
+27843240,4,2675,1509,production expansion type=T1AirFactory factories=21 desired=24 deficit=0 engineer=3145731 idle=no building=no
+27843240,2,2685,1509,forward base blocked reason=map-cap
+27843240,4,2686,1509,forward base blocked reason=defense-alert
+27843240,4,2689,1509,production expansion type=T1AirFactory factories=21 desired=24 deficit=0 engineer=3145738 idle=no building=no
+27843240,4,2728,1569,production expansion type=T1AirFactory factories=21 desired=24 deficit=0 engineer=3145732 idle=no building=no
+27843240,2,2741,1569,forward base blocked reason=map-cap
+27843240,4,2742,1569,forward base blocked reason=defense-alert
+27843240,4,2782,1629,production expansion type=T1AirFactory factories=21 desired=24 deficit=0 engineer=3145729 idle=no building=no
+27843240,2,2784,1629,production expansion type=T1AirFactory factories=23 desired=24 deficit=0 engineer=1048578 idle=no building=no
+27843240,4,2794,1629,production expansion type=T1AirFactory factories=22 desired=24 deficit=0 engineer=3145732 idle=no building=no
+27843240,2,2799,1629,forward base blocked reason=map-cap
+27843240,4,2800,1629,forward base blocked reason=defense-alert
+27843240,4,2832,1689,production expansion type=T1AirFactory factories=22 desired=24 deficit=0 engineer=3145777 idle=no building=no
+27843240,4,2848,1689,production expansion type=T1AirFactory factories=22 desired=24 deficit=0 engineer=3145729 idle=no building=no
+27843240,2,2852,1689,forward base blocked reason=map-cap
+27843240,4,2853,1689,forward base blocked reason=defense-alert
+27843240,2,2932,1749,forward base blocked reason=map-cap
+27843240,4,2933,1749,forward base blocked reason=defense-alert
+27843240,2,2987,1809,forward base blocked reason=map-cap
+27843240,4,2988,1809,forward base blocked reason=defense-alert
+27843240,4,3022,1869,production expansion type=T1AirFactory factories=22 desired=24 deficit=0 engineer=3145741 idle=no building=no
+27843240,2,3041,1869,forward base blocked reason=map-cap
+27843240,4,3042,1869,forward base blocked reason=defense-alert
+27843240,2,3091,1929,forward base blocked reason=map-cap
+27843240,4,3092,1929,forward base blocked reason=defense-alert
+27843240,2,3130,1989,forward base blocked reason=map-cap
+27843240,4,3131,1989,forward base blocked reason=defense-alert
+27843240,4,3171,2049,production expansion type=T1LandFactory factories=20 desired=24 deficit=0 engineer=3145753 idle=no building=no
+27843240,2,3175,2049,forward base blocked reason=map-cap
+27843240,4,3176,2049,forward base blocked reason=defense-alert
+27843240,2,3221,2109,forward base blocked reason=map-cap
+27843240,4,3222,2109,forward base blocked reason=defense-alert
+27843240,2,3281,2169,forward base blocked reason=map-cap
+27843240,4,3282,2169,forward base blocked reason=defense-alert
+27843240,2,3326,2229,forward base blocked reason=map-cap
+27843240,4,3327,2229,forward base blocked reason=defense-alert
+27843240,2,3380,2289,forward base blocked reason=map-cap
+27843240,4,3381,2289,forward base blocked reason=defense-alert
+27843240,2,3439,2349,forward base blocked reason=map-cap
+27843240,4,3441,2349,forward base blocked reason=defense-alert
+27843240,2,3489,2409,forward base blocked reason=map-cap
+27843240,4,3491,2409,forward base blocked reason=defense-alert
+27843240,2,3561,2469,forward base blocked reason=map-cap
+27843240,4,3564,2469,forward base blocked reason=defense-alert
+27843240,2,3619,2529,forward base blocked reason=map-cap
+27843240,4,3620,2529,forward base blocked reason=low-mass-storage
+27843240,2,3699,2589,forward base blocked reason=map-cap
+27843240,4,3701,2589,forward base blocked reason=low-mass-storage
+27843240,2,3779,2649,forward base blocked reason=map-cap
+27843240,4,3781,2649,forward base blocked reason=defense-alert
+27843240,2,3839,2709,forward base blocked reason=map-cap
+27843240,4,3840,2709,forward base blocked reason=stall-risk
+27843240,2,3906,2769,forward base blocked reason=map-cap
+27843240,4,3907,2769,forward base blocked reason=defense-alert
+27843240,2,4022,2829,forward base blocked reason=map-cap
+27843240,4,4023,2829,forward base blocked reason=defense-alert
+27843240,2,4100,2889,forward base blocked reason=map-cap
+27843240,4,4101,2889,forward base blocked reason=defense-alert
+27843240,2,4211,2949,forward base blocked reason=map-cap
+27843240,4,4212,2949,forward base blocked reason=defense-alert
+27843240,2,4275,3009,forward base blocked reason=map-cap
+27843240,4,4276,3009,forward base blocked reason=defense-alert
+27843240,2,4347,3069,forward base blocked reason=map-cap
+27843240,4,4348,3069,forward base blocked reason=stall-risk
+27843240,2,4416,3129,forward base blocked reason=map-cap
+27843240,4,4417,3129,forward base blocked reason=low-mass-storage
+27843240,2,4480,3189,forward base blocked reason=map-cap
+27843240,4,4481,3189,forward base blocked reason=defense-alert
+27843240,2,4605,3249,forward base blocked reason=map-cap
+27843240,4,4606,3249,forward base blocked reason=defense-alert
+27843240,2,4669,3309,forward base blocked reason=map-cap
+27843240,4,4670,3309,forward base blocked reason=defense-alert
+27843240,2,4734,3369,forward base blocked reason=map-cap
+27843240,4,4736,3369,forward base blocked reason=low-mass-storage
+27843240,2,4810,3429,forward base blocked reason=map-cap
+27843240,4,4812,3429,forward base blocked reason=defense-alert
+27843240,2,4867,3489,forward base blocked reason=map-cap
+27843240,4,4868,3489,forward base blocked reason=defense-alert
+27843240,2,4931,3549,forward base destroyed name=RQFB_2_1 site=MassCluster19 manager=yes factory=no
+27843240,2,4932,3549,forward base blocked reason=defense-alert
+27843240,4,4933,3549,forward base blocked reason=defense-alert
+27843240,2,4990,3609,forward base blocked reason=defense-alert
+27843240,4,4991,3609,forward base blocked reason=defense-alert
+27843240,2,5091,3669,forward base blocked reason=defense-alert
+27843240,4,5092,3669,forward base blocked reason=defense-alert
+27843240,2,5154,3729,forward base blocked reason=defense-alert
+27843240,4,5155,3729,forward base blocked reason=defense-alert
+27843240,2,5231,3789,forward base blocked reason=defense-alert
+27843240,4,5232,3789,forward base blocked reason=defense-alert
+27843240,2,5307,3849,forward base blocked reason=defense-alert
+27843240,4,5308,3849,forward base blocked reason=defense-alert
+27843240,2,5368,3909,forward base blocked reason=defense-alert
+27843240,4,5369,3909,forward base blocked reason=defense-alert
+27843240,2,5424,3969,forward base blocked reason=defense-alert
+27843240,4,5425,3969,forward base blocked reason=defense-alert
+27843240,2,5523,4029,forward base blocked reason=defense-alert
+27843240,4,5524,4029,forward base blocked reason=defense-alert
+27843240,2,5660,4089,forward base blocked reason=defense-alert
+27843240,4,5661,4089,forward base blocked reason=defense-alert
+27843240,2,5725,4149,forward base started name=RQFB_2_2 site=MassCluster20 tech=3 queued=19 layer=Amphibious routeThreat=0.0 coverage=0.65 effective=0.0 limit=233.4 first=T1GroundDefense needs=5pd/2aa/1sh
+27843240,2,5739,4149,forward base blocked reason=construction-active
+27843240,4,5740,4149,forward base blocked reason=defense-alert
+27843240,2,5806,4209,forward base failed name=RQFB_2_2 site=MassCluster20 reason=manager-lost queued=19 elapsed=65s routeThreat=0.0 nowThreat=0.0 limit=1049.3
+27843240,2,5848,4209,forward base blocked reason=cooldown
+27843240,4,5849,4209,forward base blocked reason=defense-alert
+27843240,2,5903,4269,forward base blocked reason=defense-alert
+27843240,4,5904,4269,forward base blocked reason=defense-alert
+27843240,2,5992,4329,forward base blocked reason=defense-alert
+27843240,4,5994,4329,forward base blocked reason=defense-alert
+27843240,2,6060,4389,forward base blocked reason=defense-alert
+27843240,4,6062,4389,forward base blocked reason=defense-alert
+27843240,2,6105,4449,forward base started name=RQFB_2_3 site=MassCluster19 tech=3 queued=19 layer=Amphibious routeThreat=0.0 coverage=0.65 effective=0.0 limit=310.5 first=T1GroundDefense needs=5pd/2aa/1sh
+27843240,2,6122,4449,forward base blocked reason=construction-active
+27843240,4,6123,4449,forward base blocked reason=defense-alert
+27843240,4,6180,4509,forward base started name=RQFB_4_2 site=MassCluster12 tech=3 queued=19 layer=Amphibious routeThreat=0.0 coverage=0.69 effective=0.0 limit=937.8 first=T1GroundDefense needs=5pd/2aa/1sh
+27843240,2,6193,4509,forward base blocked reason=construction-active
+27843240,4,6194,4509,forward base blocked reason=construction-active
+27843240,2,6252,4569,forward base blocked reason=construction-active
+27843240,4,6253,4569,forward base blocked reason=construction-active
+27843240,2,6355,4629,forward base blocked reason=construction-active
+27843240,4,6356,4629,forward base blocked reason=construction-active
+27843240,4,6398,4689,forward base failed name=RQFB_4_2 site=MassCluster12 reason=route-unsafe queued=19 elapsed=165s routeThreat=0.0 nowThreat=893.6 limit=286.8
+27843240,2,6415,4689,forward base blocked reason=construction-active
+27843240,4,6416,4689,forward base blocked reason=defense-alert
+27843240,2,6526,4749,forward base established name=RQFB_2_3 site=MassCluster19 tech=3
+27843240,2,6527,4749,forward base blocked reason=map-cap
+27843240,4,6528,4749,forward base blocked reason=defense-alert
+27843240,2,6663,4809,forward base blocked reason=map-cap
+27843240,4,6665,4809,forward base blocked reason=defense-alert
+27843240,2,6797,4869,forward base blocked reason=map-cap
+27843240,4,6799,4869,forward base blocked reason=defense-alert
+27843240,2,6869,4929,forward base destroyed name=RQFB_2_3 site=MassCluster19 manager=yes factory=no
+27843240,2,6913,4929,forward base blocked reason=defense-alert
+27843240,4,6914,4929,forward base blocked reason=defense-alert
+27843240,2,7048,4989,forward base blocked reason=defense-alert
+27843240,4,7050,4989,forward base blocked reason=defense-alert
+27843240,2,7197,5049,forward base blocked reason=defense-alert
+27843240,4,7199,5049,forward base blocked reason=defense-alert
+27843240,2,7403,5109,forward base blocked reason=defense-alert
+27843240,4,7404,5109,forward base blocked reason=defense-alert
+27843240,2,7495,5169,forward base blocked reason=defense-alert
+27843240,4,7496,5169,forward base blocked reason=defense-alert
+27843240,2,7575,5229,forward base blocked reason=defense-alert
+27843240,4,7576,5229,forward base blocked reason=defense-alert
+27843240,2,7667,5289,forward base blocked reason=defense-alert
+27843240,4,7669,5289,forward base blocked reason=defense-alert
+27843240,2,7738,5349,forward base blocked reason=defense-alert
+27843240,4,7739,5349,forward base blocked reason=defense-alert
+27843240,2,7815,5409,forward base blocked reason=defense-alert
+27843240,4,7816,5409,forward base blocked reason=defense-alert
+27843240,2,7941,5469,forward base blocked reason=defense-alert
+27843240,4,7942,5469,forward base blocked reason=defense-alert
+27843240,2,8006,5529,forward base blocked reason=defense-alert
+27843240,4,8007,5529,forward base blocked reason=defense-alert
+27843240,2,8063,5589,forward base blocked reason=negative-mass-trend
+27843240,4,8066,5589,forward base blocked reason=negative-mass-trend
+27843240,4,8156,5649,forward base blocked reason=defense-alert
+27843240,4,8180,5709,forward base blocked reason=stall-risk
+27843240,4,8221,5769,forward base blocked reason=stall-risk
+27843240,4,8252,5829,forward base blocked reason=defense-alert
+27843240,4,8276,5889,forward base blocked reason=defense-alert

@@ -45,6 +45,34 @@ Fresh observed mobile combat contacts are clustered deterministically by movemen
 
 Forward bases use land-pathable defensive, expansion, and mass-cluster markers. A base starts only when the economy has positive trends, useful storage, no defense alert, and an observed-intel route from the selected engineer's actual position whose threat is supportable by its nearby escort. Bounded diagnostics report whether construction is blocked by objectives, alerts, engineers, economy, cooldown, cap, or site safety. The package scales with engineer tier and includes a factory, radar, point defense, AA, shields and artillery when available. Established bases remain valid only while both their expansion manager and a live self-owned local factory exist; losing either releases the marker for replacement and removes the site from garrison use. Released destroyed-base markers may bypass the normal minimum distance from the selected engineer, while pathing and route-threat checks still originate at that engineer. T2 tactical missile launchers and T3 strategic missile defense may be placed forward; strategic nuclear launchers remain rear-base investments. The number of forward bases scales from one to three with map size.
 
+## Builder mutation boundary
+
+Red Queen adjusts FAF's builders by priority and never by editing their
+definitions. That is a hard constraint, not a style choice.
+
+`Builders` is a single simulation-wide table declared in
+`/lua/system/GlobalBuilderTemplate.lua`, and registration stores the spec by
+reference. `Builder:Create` in `/lua/sim/Builder.lua` copies only `Priority`,
+`OriginalPriority`, `Brain`, `BuilderName`, `ReportFailure`,
+`DelayEqualBuildPlattons` and the build conditions onto the per-army instance;
+`BuilderData` is never assigned to it, and `GetBuilderData` re-reads
+`Builders[BuilderName].BuilderData` from the global on every call. Every army in
+the match shares one Lua state, so editing a `BuildStructures` list would change
+that builder for every army at once, Red Queen or not, plus FAF's own use of it.
+
+`Priority` is safe to change because Lua copies numbers by value: the instance
+holds its own number, and `SetPriority(0)` cannot reach another army. This is
+why the factory capacity policy suppresses whole builders rather than removing
+the factory entry from a builder that also creates an expansion, and why the
+cap instead distinguishes pure factory builders from base packages.
+
+One exception exists and does not apply here. `/lua/aibrains/templates/builders/builder.lua`
+deep-copies `BuilderData` per brain, but that system is imported only by
+`easy-ai.lua`. `BuilderManager` and `EngineerManager` both import
+`/lua/sim/builder.lua`, and Red Queen extends `adaptive-ai.lua`, so the shared
+path is the live one. Rebasing onto the template system would invalidate this
+section.
+
 ## Economy units
 
 Every economy figure the directors read comes from `GetEconomyIncome` and
@@ -58,14 +86,21 @@ own numbers: it silently moves a threshold by a factor of ten. The factory-assis
 thresholds shipped that way and gated the feature behind an economy no match
 reaches, which is why the convention is written down here.
 
+The convention is confirmed against the engine, not assumed. A commander alone
+produces 1 mass and 20 energy per second (`UEL0001_unit.bp`), and the first
+diagnostic sample of a match, taken while each brain still has only its
+commander, reads `mass=0.1 energy=2.0` in both match 27741743 and the V8
+verification match. Ten ticks to the second, exactly.
+
+Reading the constants back through that conversion shows they were calibrated
+deliberately: `Tech3MinimumEnergyIncome = 250` is 2500 energy per second, which
+is exactly one T3 power generator; `Tech2MinimumEnergyIncome = 60` is 600, about
+2.7 T2 generators; experimentals gate at 3.2 T3 generators and nuclear launchers
+at 4.8. The mass gates form the matching ladder -- Tech 2 at 40 per second,
+Tech 3 at 100, experimentals at 220, nuclear at 300.
+
 ## Known gaps
 
-- `MinimumProductionMassIncome` and `EconomyManager`'s
-  `DesiredFactories = 1 + floor(MassIncome / 8)` both read as per-second figures
-  against per-tick input. If that is unintended, the production gate is ten times
-  stricter than it looks and the income term contributes nothing below 80 mass
-  per second, leaving the army-deficit term to set the factory count on its own.
-  Not yet confirmed either way.
 - Alert-driven behavior has contract coverage but no runtime evidence; see the
   short-run limits in [testing.md](testing.md).
 
