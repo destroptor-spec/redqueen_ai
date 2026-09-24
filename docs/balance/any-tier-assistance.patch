@@ -1,0 +1,44 @@
+diff --git a/lua/AI/RedQueen/ProductionManager.lua b/lua/AI/RedQueen/ProductionManager.lua
+index 1201958..384b42a 100644
+--- a/lua/AI/RedQueen/ProductionManager.lua
++++ b/lua/AI/RedQueen/ProductionManager.lua
+@@ -1395,8 +1395,20 @@ ProductionManager = ClassSimple {
+             -- Building a factory outranks assisting one. IssueGuard would
+             -- replace the build order TryExpandFactoryCapacity queued earlier in
+             -- this same pass.
+-            if UnitTech(engineer) == 1
+-                and IsAvailable(engineer)
++            -- Any tier may assist, not Tech 1 alone.
++            --
++            -- Measured across eighteen cells: 10.4 engineers stand unassigned
++            -- every sample -- 90% of all idle engineers, with nothing of Red
++            -- Queen's holding them -- while factory assistance, the one sink
++            -- for spare build power, runs at 1.44 active against a cap of 6.
++            -- Late in a match 18.5 of 33 engineers are Tech 2 or Tech 3, so the
++            -- tech test excluded more than half the corps from that sink
++            -- exactly when the idle count peaks. An idle Tech 3 engineer is not
++            -- being saved for better work; it is doing none.
++            --
++            -- Tech 1 is still preferred by the sort below, so a higher-tier
++            -- engineer is taken only once the cheap ones are used up.
++            if IsAvailable(engineer)
+                 and not engineer.RedQueenEmergencyDefenseUntil
+                 and not (engineer.RedQueenProductionBuildUntil
+                     and engineer.RedQueenProductionBuildUntil > tick)
+@@ -1406,6 +1418,16 @@ ProductionManager = ClassSimple {
+             end
+         end
+ 
++        -- Cheapest build power first, and deterministically: `pairs` order is
++        -- not stable, and this list decides which engineers get guard orders.
++        table.sort(candidates, function(a, b)
++            local aTech, bTech = UnitTech(a), UnitTech(b)
++            if aTech ~= bTech then
++                return aTech < bTech
++            end
++            return (a.EntityId or 0) < (b.EntityId or 0)
++        end)
++
+         local assigned = 0
+         local needed = desired - table.getn(active)
+         for index = 1, math.min(needed, table.getn(candidates)) do

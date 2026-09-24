@@ -13,5 +13,7 @@
   "8781d01046da": "standing anti-air floor, tier-blind (superseded)",
   "b189beae5f17": "standing anti-air floor, tier-scoped; ADOPTED",
   "2d5b4aa18e3c": "standing tiered shields; not adopted (structures delivered, K/L fell)",
-  "a4eaf3924de1": "shield-by-tier telemetry only; neutral, kept"
+  "a4eaf3924de1": "shield-by-tier telemetry only; neutral, kept",
+  "db8478841cd3": "idle-engineer attribution telemetry; neutral, kept",
+  "2cdb26a0ba06": "any-tier factory assistance; not adopted (mechanism did not move)"
 }

@@ -102,15 +102,35 @@ function IdleEngineers(brain)
     end
     local engineers = brain:GetListOfUnits(
         categories.ENGINEER * categories.MOBILE - categories.COMMAND, false) or {}
+    -- Why an idle engineer is idle, from the list already fetched.
+    --
+    -- Between a fifth and a half of the engineer corps stands idle in every
+    -- regime measured -- 32% of 30 in the mirror matrix, 44% of 41 against
+    -- humans, where Red Queen held 27 factories it did not want and both
+    -- resource stores at 95% full. A count alone cannot say whether Red Queen
+    -- is holding them or native has simply run out of work to give, and those
+    -- call for opposite fixes.
     local idle = 0
+    local breakdown = { Retreating = 0, Assisting = 0, Building = 0, Unassigned = 0 }
     for _, engineer in pairs(engineers) do
         if engineer and not engineer.Dead
             and engineer.IsIdleState and engineer:IsIdleState()
         then
             idle = idle + 1
+            if engineer.RedQueenRetreatPosition then
+                breakdown.Retreating = breakdown.Retreating + 1
+            elseif engineer.RedQueenAssist then
+                breakdown.Assisting = breakdown.Assisting + 1
+            elseif engineer.RedQueenProductionBuildUntil then
+                breakdown.Building = breakdown.Building + 1
+            else
+                -- Nothing of Red Queen's is holding this one: native had no
+                -- task for it.
+                breakdown.Unassigned = breakdown.Unassigned + 1
+            end
         end
     end
-    return idle, table.getn(engineers)
+    return idle, table.getn(engineers), breakdown
 end
 
 function Collect(brain, modules)
@@ -118,7 +138,7 @@ function Collect(brain, modules)
     local economy = (modules.Economy or {}).State or {}
     local home = world.StartPosition
     local commander = CommanderFacts(brain, home)
-    local idleEngineers, engineers = IdleEngineers(brain)
+    local idleEngineers, engineers, idleBreakdown = IdleEngineers(brain)
 
     local structure = categories.STRUCTURE
     local pd1, pd2, pd3 = Tiers(brain, structure * categories.DEFENSE * categories.DIRECTFIRE)
@@ -155,6 +175,7 @@ function Collect(brain, modules)
         Artillery = Count(brain, structure * categories.ARTILLERY),
         Extractors = { mex1, mex2, mex3 },
         IdleEngineers = idleEngineers,
+        IdleBreakdown = idleBreakdown,
         Engineers = engineers,
         Own = { own1, own2, own3, Count(brain, CombatUnits * categories.EXPERIMENTAL) },
         Enemy = { enemy1, enemy2, enemy3, enemyExperimental },
@@ -167,7 +188,7 @@ function Format(facts)
     local commander = facts.Commander
     return string.format(
         "watch t=%d acu=%s/%.0f/%.0f def=pd%d/%d/%d,aa%d/%d/%d,tmd%d,sh%d/%d/%d,tml%d,arty%d"
-            .. " mex=%d/%d/%d eng=%d/%d units=%d/%d/%d/%d enemy=%d/%d/%d/%d store=%.2f/%.2f",
+            .. " mex=%d/%d/%d eng=%d/%d units=%d/%d/%d/%d enemy=%d/%d/%d/%d store=%.2f/%.2f engidle=%d/%d/%d/%d",
         facts.Time,
         commander.State,
         commander.Distance,
@@ -186,7 +207,11 @@ function Format(facts)
         facts.Own[1], facts.Own[2], facts.Own[3], facts.Own[4],
         facts.Enemy[1], facts.Enemy[2], facts.Enemy[3], facts.Enemy[4],
         facts.MassStored,
-        facts.EnergyStored
+        facts.EnergyStored,
+        facts.IdleBreakdown.Retreating,
+        facts.IdleBreakdown.Assisting,
+        facts.IdleBreakdown.Building,
+        facts.IdleBreakdown.Unassigned
     )
 end
 

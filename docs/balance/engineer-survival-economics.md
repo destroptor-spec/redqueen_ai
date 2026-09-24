@@ -1324,3 +1324,72 @@ This is the better lead, and unlike shields and experimentals it is **testable
 in the regime we can run**: it is present at 32% in the matrix, larger at 44%
 against humans, and it explains the float directly — an army cannot spend what
 its engineers are not working on.
+
+---
+
+# Idle engineers: attributed, and the tech filter was not the cause (2026-09-24)
+
+## The attribution
+
+`engidle=<retreating>/<assisting>/<build-hold>/<unassigned>` breaks the idle
+count down by cause, from the unit list `IdleEngineers` already fetches. Neutral:
+55 of 55 state samples identical to control.
+
+| idle engineer cause | mean |
+| --- | ---: |
+| retreating | 0.5 |
+| assisting | 0.2 |
+| build-hold | 0.5 |
+| **unassigned — native had no task** | **10.4** |
+
+**90% of idle engineers are held by nothing of Red Queen's.** It is job supply,
+not hoarding — which rules out releasing holds as a fix and was worth one canary
+to know.
+
+## The tech filter, and why it looked like the answer
+
+Factory assistance is the only sink for spare build power and ran at **1.44
+active against a cap of 6**. Its recruitment tested `UnitTech(engineer) == 1`,
+and late in a match **18.5 of 33 engineers are Tech 2 or Tech 3** — over half the
+corps barred from the sink exactly when idle peaks.
+
+Lifting the restriction bought **0.13 assistants**.
+
+| | control | any tier |
+| --- | ---: | ---: |
+| assistants active | 1.44 | **1.57** |
+| idle engineers | 10.5 of 29.3 | 10.8 of 29.9 |
+| mean mass K/L | 1.085 | 1.030 |
+| cells with K/L >= 1.0 | 10 | 11 of 18 |
+| claim retention | 0.645 | 0.658 |
+| extractors lost | 425 | 450 |
+
+K/L better in 7 cells and worse in 11. The mechanism did not move, so the
+outcome differences are perturbation rather than effect, and the change is not
+adopted on that basis rather than on the K/L number.
+
+**Not adopted.** Preserved as `any-tier-assistance.patch`. The deterministic
+candidate sort it carried — `pairs` order is not stable and that list decides
+which engineers receive guard orders — is separable and untested alone.
+
+## What this leaves
+
+Three named constants have now failed the same way: the forward-base cap, the
+anti-air divisor and the assistance tech filter. Each looked binding because its
+value matched the observed count, and in each case the real constraint was
+elsewhere. The pattern is worth stating: **a constant whose value equals the
+observed figure is evidence of nothing** — it is equally consistent with the
+constant binding and with something upstream producing that figure anyway.
+
+What is now known precisely: about ten engineers per sample have no task, Red
+Queen is not holding them, and the one sink that could use them recruits 1.5 of
+a permitted 6. The gap is between "native has no task" and "assistance did not
+take them" — the eligibility test in recruitment, or an assist expiring faster
+than it is reissued. Cumulative assignments run at 294 against 1.44 active,
+which is heavy churn and the first thing to look at.
+
+A separate note for the record: one cell of this matrix launched with **zero Red
+Queen brains** — 408 lines, no state samples, no `GameEnded`, UI-layer import
+failures. It was a transient client failure, not the payload; a re-run was
+clean. `analyze-log.py` caught it. An ad-hoc grep would have averaged a dead
+cell into the result.

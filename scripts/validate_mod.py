@@ -896,6 +896,15 @@ diagnostics_source = (ROOT / "lua/AI/RedQueen/Diagnostics.lua").read_text(
 # showed point defence and anti-air standing beside the factories, out of range
 # of the fighting until the enemy reached them, which a base-wide structure
 # count reports as fully defended.
+# A third to a half of the engineer corps stands idle in every regime measured.
+# "Red Queen is holding it" and "native had no task for it" call for opposite
+# fixes, so the count must be attributed or it cannot be acted on.
+observer_source = (ROOT / "lua/AI/RedQueen/Observer.lua").read_text(encoding="utf-8")
+if "engidle=%d/%d/%d/%d" not in observer_source:
+    fail("the watch line must attribute idle engineers, not merely count them")
+if "Unassigned" not in observer_source:
+    fail("idle attribution must separate engineers native left unassigned")
+
 fortification = (ROOT / "lua/AI/RedQueen/FortificationBuilders.lua").read_text(
     encoding="utf-8")
 # Tier-blind anti-air lets cheap flak satisfy a floor meant to buy SAM, which is

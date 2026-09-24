@@ -167,6 +167,7 @@ Run(function()
         Artillery = 0,
         Extractors = { 9, 2, 0 },
         IdleEngineers = 3,
+        IdleBreakdown = { Retreating = 1, Assisting = 0, Building = 0, Unassigned = 2 },
         Engineers = 11,
         Own = { 12, 0, 0, 0 },
         Enemy = { 19, 2, 0, 0 },
@@ -180,7 +181,8 @@ Run(function()
     assert(string.find(line, "mex=9/2/0", 1, true), line)
     assert(string.find(line, "eng=3/11", 1, true), line)
     assert(string.find(line, "units=12/0/0/0 enemy=19/2/0/0", 1, true), line)
-    assert(string.find(line, "store=0.12/0.03", 1, true), line)
+    assert(string.find(line, "store=0.12/0.03 engidle=1/0/0/2", 1, true),
+        "an idle engineer must be attributed: held by Red Queen, or unassigned by native: " .. line)
 end)
 
 print("observer_spec ok")
