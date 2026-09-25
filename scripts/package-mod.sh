@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Build the uploadable mod archive.
+# Build the uploadable mod directory.
+#
+# The FAF uploader is pointed at a *directory* containing mod_info.lua, not at
+# an archive, so the artifact is a clean folder. A zip is written beside it only
+# as a keepable copy of what was uploaded; it is not what you select.
 #
 # The repository is a development tree: 38 MB of match archives under
 # docs/balance/data, plus scripts, contracts and notes. None of that belongs in
@@ -10,6 +14,8 @@
 # appeared this month was 38 MB of logs.
 #
 # usage: package-mod.sh [output-directory]     (default: dist/)
+#
+# Select dist/TheRedQueen/ in the uploader.
 set -euo pipefail
 
 repository=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
@@ -67,9 +73,12 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
     echo "    WARNING: working tree is dirty; the archive will not match any commit"
 fi
 
-staging=$(mktemp -d)
-trap 'rm -rf -- "$staging"' EXIT
-root="$staging/$name"
+mkdir -p -- "$output"
+root="$repository/$output/$name"
+
+# Rebuilt from scratch every time: a stale file left from a previous version
+# would be uploaded without anything noticing.
+rm -rf -- "$root"
 mkdir -p -- "$root"
 
 echo "==> staging"
@@ -113,19 +122,22 @@ for entry in "${staged[@]}"; do
     fi
 done
 
-mkdir -p -- "$output"
 archive="$repository/$output/$name.v$version.zip"
 rm -f -- "$archive"
 
-echo "==> archiving"
-( cd -- "$staging" && zip -q -r -X "$archive" "$name" )
+echo "==> archiving a copy"
+( cd -- "$repository/$output" && zip -q -r -X "$archive" "$name" )
 
 echo
-echo "  archive : $archive"
-echo "  size    : $(du -h "$archive" | cut -f1)"
-echo "  files   : $(unzip -Z1 "$archive" | grep -cv '/$')"
-echo "  version : $version"
-echo "  uid     : $uid"
+echo "  UPLOAD THIS DIRECTORY : $root"
+echo "  keepable copy         : $archive"
+echo "  size                  : $(du -sh "$root" | cut -f1)"
+echo "  files                 : $(find "$root" -type f | wc -l)"
+echo "  version               : $version"
+echo "  uid                   : $uid"
 echo
-echo "  top level inside the archive:"
-unzip -Z1 "$archive" | awk -F/ 'NF>1 && $2 != "" {print "    " $1 "/" $2}' | sort -u | head -12
+echo "  contents:"
+( cd -- "$root" && ls -A | sed 's/^/    /' )
+echo
+echo "  mod_info.lua is at the root of that directory, which is what the"
+echo "  uploader looks for. The folder must stay named $name."

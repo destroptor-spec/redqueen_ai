@@ -99,6 +99,15 @@ class PackagePayload(unittest.TestCase):
                 "README ships to players and its release label drifted from mod_info.lua",
             )
 
+    def test_the_packager_emits_a_directory_not_only_an_archive(self):
+        """The FAF uploader selects a directory containing mod_info.lua."""
+        text = PACKAGER.read_text(encoding="utf-8")
+        self.assertIn("UPLOAD THIS DIRECTORY", text,
+                      "the packager must name the directory to upload")
+        self.assertIn('rm -rf -- "$root"', text,
+                      "the directory must be rebuilt, or a file from an earlier "
+                      "version is uploaded with the rest")
+
     def test_the_packager_refuses_a_failing_tree(self):
         text = PACKAGER.read_text(encoding="utf-8")
         self.assertIn("validate.sh", text, "the packager must not archive an unvalidated tree")

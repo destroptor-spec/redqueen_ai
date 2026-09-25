@@ -191,8 +191,14 @@ The repository is a development tree. `docs/balance/data/` alone carries roughly
 uploaded to the Vault has to be built, never zipped from the checkout.
 
 ```bash
-./scripts/package-mod.sh            # writes dist/TheRedQueen.v<N>.zip
+./scripts/package-mod.sh            # writes dist/TheRedQueen/
 ```
+
+The FAF uploader is pointed at a **directory** containing `mod_info.lua`, not at
+an archive, so **`dist/TheRedQueen/` is what you select**. A zip is written
+beside it only as a keepable copy of what was uploaded. The directory is deleted
+and rebuilt on every run, because a file left over from an earlier version would
+otherwise be uploaded with the rest and nothing would notice.
 
 The payload is an **allowlist** in the script — `mod_info.lua`, `lua/`, `hook/`,
 `assets/`, `LICENSE`, `README.md` — and not an exclusion list, because a
@@ -209,8 +215,7 @@ must never appear, and the README's `Release \`V<n>\`` label must match
 `mod_info.lua`. That last one caught two stale `V8` labels that would have
 shipped to players.
 
-The archive contains a single top-level **`TheRedQueen/`** folder, and that name
-is not free to change. The FAF uploader records the folder the mod is in, and
+That directory is named **`TheRedQueen`**, and the name is not free to change. The FAF uploader records the folder the mod is in, and
 every import here is absolute — `import("/mods/TheRedQueen/…")`, 82 of them.
 Packaged under any other name the mod installs and then fails on first use,
 which is harder to diagnose than a mod that fails to install.
