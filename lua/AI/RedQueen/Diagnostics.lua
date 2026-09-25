@@ -186,7 +186,7 @@ Diagnostics = ClassSimple {
         }
 
         Logger.Info(self.Brain, string.format(
-            "state objective=%s primary=%s/%d secondary=%s/%d pressure=%s claim=%.0f/%.0f%s eco=%s mass=%.1f energy=%.1f factories=%d/%d intel=%d doctrine=%s focus=%s weights=A=%d,T2=%d,T3=%d,X=%d,N=%d ready=%.2f slots=%d reason=%s landloss=%d/%.0f airloss=%d/%.0f airdrop=%s alert=%s/%.1f/%.2f/%s/%.0f/%.0f momentum=%.0f/%.0f/%s tiers=L%d,A%d,N%d forward=%d/%s/%s fwdreg=%d/%d/%d/%d exp=%s/%d/%d eng=%d/%d/%d engtier=%d/%d/%d cover=%d/%d engpolicy=%d/%d mex=%d/%d defcover=%d/%d/%.0f mexloss=%d/%d basespan=%d/%d/%d mexplace=%d/%d/%d engsurvival=%d/%d/%d/%d/%d/%d scout=%d/%d/%d scoutorders=%d/%d scouts=%d scoutfraction=%.3f/%.3f dispatch=L%d,A%d,W%d,M%d,H%d army=%d/%d/%d held=%d/%d/%d directed=%d/%d assist=%d/%d/%d acuassist=%d mexgate=%s/%d techgate=L%s/%s,A%s/%s,N%s/%s",
+            "state objective=%s primary=%s/%d secondary=%s/%d pressure=%s claim=%.0f/%.0f%s eco=%s mass=%.1f energy=%.1f factories=%d/%d intel=%d doctrine=%s focus=%s weights=A=%d,T2=%d,T3=%d,X=%d,N=%d ready=%.2f slots=%d reason=%s landloss=%d/%.0f airloss=%d/%.0f airdrop=%s alert=%s/%.1f/%.2f/%s/%.0f/%.0f momentum=%.0f/%.0f/%s tiers=L%d,A%d,N%d forward=%d/%s/%s fwdreg=%d/%d/%d/%d exp=%s/%d/%d eng=%d/%d/%d engtier=%d/%d/%d cover=%d/%d engpolicy=%d/%d mex=%d/%d defcover=%d/%d/%.0f mexloss=%d/%d basespan=%d/%d/%d mexplace=%d/%d/%d engsurvival=%d/%d/%d/%d/%d/%d scout=%d/%d/%d scoutorders=%d/%d scouts=%d scoutfraction=%.3f/%.3f dispatch=L%d,A%d,W%d,M%d,H%d army=%d/%d/%d held=%d/%d/%d directed=%d/%d assist=%d/%d/%d/%d/%d/%d assistdrop=%d/%d/%d acuassist=%d mexgate=%s/%d techgate=L%s/%s,A%s/%s,N%s/%s",
             tostring(objective.Type or "none"),
             primary and tostring(primary.Type) or "none",
             slotDispatch.Primary or 0,
@@ -372,6 +372,16 @@ Diagnostics = ClassSimple {
             (modules.Production.AssistSummary or {}).Active or 0,
             (modules.Production.AssistSummary or {}).Assigned or 0,
             (modules.Production.AssistSummary or {}).Released or 0,
+            -- Desired, candidates offered, and passes the gate shut the whole
+            -- mechanism. Active alone cannot separate "nothing was wanted" from
+            -- "nothing was available" from "an alert released everyone".
+            (modules.Production.AssistSummary or {}).Desired or 0,
+            (modules.Production.AssistSummary or {}).Candidates or 0,
+            (modules.Production.AssistSummary or {}).Gated or 0,
+            -- Why assistant records are dropped: out of pool, expired, dead.
+            (modules.Production.AssistSummary or {}).DropPool or 0,
+            (modules.Production.AssistSummary or {}).DropExpired or 0,
+            (modules.Production.AssistSummary or {}).DropDead or 0,
             modules.Production.CommanderAssists or 0,
             (modules.Production.CoreUpgrade or {}).State or "none",
             self.Brain.RedQueenExtractorBlocks or 0,

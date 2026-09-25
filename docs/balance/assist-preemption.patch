@@ -1,0 +1,170 @@
+diff --git a/lua/AI/RedQueen/ProductionManager.lua b/lua/AI/RedQueen/ProductionManager.lua
+index 1201958..81a523c 100644
+--- a/lua/AI/RedQueen/ProductionManager.lua
++++ b/lua/AI/RedQueen/ProductionManager.lua
+@@ -440,7 +440,20 @@ ProductionManager = ClassSimple {
+         self.LastFactoryRequestTick = -100000
+         self.FactoryAssistants = {}
+         self.IdleAssistants = {}
+-        self.AssistSummary = { Active = 0, Assigned = 0, Released = 0, Commander = 0 }
++        -- Desired and Candidates are reported because Active alone cannot say
++        -- which of two independent limits is holding factory assistance at 1.44
++        -- of a permitted 6: the gate that releases every assistant whenever a
++        -- defence alert is active (74% of samples) or on stall risk (21%), or
++        -- the candidate pool, which is ArmyPool and which this file's own
++        -- comment says "holds one or two units in transit". Guessing between
++        -- two constants that both match the observed figure is how the
++        -- forward-base cap, the anti-air divisor and the assistance tech filter
++        -- each cost a matrix.
++        self.AssistSummary = {
++            Active = 0, Assigned = 0, Released = 0, Commander = 0,
++            Desired = 0, Candidates = 0, Gated = 0,
++            DropPool = 0, DropExpired = 0, DropDead = 0,
++        }
+         self.LastEmergencyDefenseTick = -100000
+         self.LastShoreArtilleryTick = -100000
+         self.LastShoreTorpedoTick = -100000
+@@ -1310,11 +1323,29 @@ ProductionManager = ClassSimple {
+         end
+         local alert = self.Strategy.ProductionDemand.DefenseAlert
+         local state = self.Economy.State
+-        if state.StallRisk or (alert and alert.Active) then
+-            self:ReleaseFactoryAssistants(
+-                alert and alert.Active and "defense" or "stall",
+-                unassignedByEntityId
+-            )
++        -- A defence alert no longer releases every assistant.
++        --
++        -- The release existed so emergency defence could claim engineers from
++        -- the same ArmyPool. Measured across eighteen cells: 1,430
++        -- emergency-defence events and exactly **one** blocked for want of an
++        -- engineer. The cost of that protection was the whole mechanism --
++        -- alerts are active in 74% of samples and stall risk in 21%, so the
++        -- gate stood shut in 82% of them, and assistance ran at 1.56 of a
++        -- permitted 6 while it was open with 7.5 candidates waiting for 3.9
++        -- wanted.
++        --
++        -- The released engineers did not go and build defences either: 10.4 per
++        -- sample sat idle with nothing of Red Queen's holding them.
++        --
++        -- Stall risk still releases them. That one is an affordability
++        -- judgement rather than a priority one: an army that cannot pay for
++        -- what it is already building should not add assistants to build it
++        -- faster.
++        if state.StallRisk then
++            self.AssistSummary.Gated = self.AssistSummary.Gated + 1
++            self.AssistSummary.Desired = 0
++            self.AssistSummary.Candidates = 0
++            self:ReleaseFactoryAssistants("stall", unassignedByEntityId)
+             return
+         end
+ 
+@@ -1331,6 +1362,20 @@ ProductionManager = ClassSimple {
+                 kept[entityId] = record
+                 table.insert(active, record.Engineer)
+             elseif record.Engineer then
++                -- Why the record was dropped. Assistance holds 1.86 active
++                -- against 5.46 wanted with 11 candidates offered, so neither
++                -- the alert gate nor the pool supply explains it, and the four
++                -- retention conditions are indistinguishable in the log.
++                if not IsAlive(record.Engineer) or not IsAlive(record.Factory) then
++                    self.AssistSummary.DropDead = self.AssistSummary.DropDead + 1
++                elseif record.ExpiresTick <= tick then
++                    self.AssistSummary.DropExpired = self.AssistSummary.DropExpired + 1
++                else
++                    -- Alive, unexpired, still guarding -- dropped only because
++                    -- it is no longer in ArmyPool, which is what receiving the
++                    -- guard order takes it out of.
++                    self.AssistSummary.DropPool = self.AssistSummary.DropPool + 1
++                end
+                 if IsAlive(record.Engineer)
+                     and unassignedByEntityId[record.Engineer.EntityId]
+                 then
+@@ -1366,6 +1411,8 @@ ProductionManager = ClassSimple {
+                 IssueClearCommands(excess)
+             end
+         end
++        self.AssistSummary.Desired = desired
++        self.AssistSummary.Candidates = table.getn(unassigned)
+         if desired <= table.getn(active) or desired <= 0 then
+             return
+         end
+@@ -1434,17 +1481,49 @@ ProductionManager = ClassSimple {
+         end
+     end,
+ 
++    -- Take an idle engineer, or preempt one that is assisting a factory.
++    --
++    -- A factory assistant carries a guard order, so `IsAvailable` -- which is
++    -- `IsIdleState` -- cannot see it, and emergency defence used to be given
++    -- its pick by releasing **every** assistant the moment any alert raised.
++    -- That protected a path which, across eighteen cells, was blocked for want
++    -- of an engineer exactly once in 1,430 events, and it cost the whole
++    -- assistance mechanism: alerts are active in 74% of samples, the gate stood
++    -- shut in 82%, and assistance ran at 1.56 of a permitted 6.
++    --
++    -- Preempting one assistant on demand serves the same need without shutting
++    -- anything down. An idle engineer is still preferred; an assistant is taken
++    -- only when there is no idle one, and it is released properly so its guard
++    -- order cannot fight the build order that follows.
++    ReleasePreemptedAssistant = function(self, engineer)
++        local record = engineer and self.FactoryAssistants[engineer.EntityId]
++        if not record then
++            return
++        end
++        self.FactoryAssistants[engineer.EntityId] = nil
++        engineer.RedQueenFactoryAssistUntil = nil
++        engineer.RedQueenFactoryAssistTarget = nil
++        self.AssistSummary.Released = self.AssistSummary.Released + 1
++        if IssueClearCommands then
++            IssueClearCommands({ engineer })
++        end
++    end,
++
+     FindEmergencyDefenseEngineer = function(self, anchorPosition, blueprintId, engineers)
+         local candidates = {}
++        local assistants = {}
+         for _, engineer in pairs(engineers or {}) do
+-            if IsAvailable(engineer)
+-                and engineer.CanBuild
+-                and engineer:CanBuild(blueprintId)
+-            then
+-                table.insert(candidates, engineer)
++            if engineer.CanBuild and engineer:CanBuild(blueprintId) then
++                if IsAvailable(engineer) then
++                    table.insert(candidates, engineer)
++                elseif IsAlive(engineer)
++                    and self.FactoryAssistants[engineer.EntityId]
++                then
++                    table.insert(assistants, engineer)
++                end
+             end
+         end
+-        table.sort(candidates, function(a, b)
++        local function Nearest(a, b)
+             local aTech = UnitTech(a)
+             local bTech = UnitTech(b)
+             if aTech ~= bTech then return aTech < bTech end
+@@ -1454,8 +1533,20 @@ ProductionManager = ClassSimple {
+             local bDistance = DistanceSquared(bPosition, anchorPosition)
+             if aDistance ~= bDistance then return aDistance < bDistance end
+             return (a.EntityId or 0) < (b.EntityId or 0)
+-        end)
+-        return candidates[1]
++        end
++        table.sort(candidates, Nearest)
++        local chosen = candidates[1]
++        if not chosen then
++            table.sort(assistants, Nearest)
++            chosen = assistants[1]
++        end
++        -- Release whichever path produced it. An assistant whose guard order
++        -- has ended reads as idle while its record still stands, so selecting
++        -- it as an ordinary candidate would leave it booked as an assistant
++        -- while it builds -- counted in Active, and released again later
++        -- against a factory it is no longer guarding.
++        self:ReleasePreemptedAssistant(chosen)
++        return chosen
+     end,
+ 
+     HasManagedEmergencyDefense = function(self, alert)
