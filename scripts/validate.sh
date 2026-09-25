@@ -43,6 +43,7 @@ luajit tests/narrator_spec.lua
 luajit tests/observer_spec.lua
 python3 tests/analyze_log_spec.py
 python3 tests/analyze_combat_spec.py
+python3 tests/package_mod_spec.py
 python3 tests/watch_match_spec.py
 python3 -B tests/production_trace_log_spec.py
 python3 -B tests/prepare_runtime_spec.py

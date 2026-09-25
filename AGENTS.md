@@ -184,6 +184,35 @@ A single match is one sample. Seed alone has flipped an outcome on the same map,
 
 Every mechanism must be visible in a match log, and it is worth adding the log line *before* the run rather than after. Two mechanisms once ran a full 21-cell matrix leaving no trace: forward-base cover, which logged at `Logger.Debug` (off in behavioural runs) and stood down for 86% of bases behind a Tech 3 filter, and native engineer suppression, which was inferable only by noticing that held engineers tracked their target exactly. Outcomes cannot attribute a change; only mechanism figures can. `Logger.Debug` is for interactive work — a figure a matrix has to read belongs in the periodic state line, with a contract asserting it is reported.
 
+### Packaging the mod
+
+The repository is a development tree. `docs/balance/data/` alone carries roughly
+38 MB of match archives, against a mod payload of about 2 MB — so what is
+uploaded to the Vault has to be built, never zipped from the checkout.
+
+```bash
+./scripts/package-mod.sh            # writes dist/TheRedQueen.v<N>.zip
+```
+
+The payload is an **allowlist** in the script — `mod_info.lua`, `lua/`, `hook/`,
+`assets/`, `LICENSE`, `README.md` — and not an exclusion list, because a
+denylist has to be updated every time a directory appears and the one that
+appeared this month was 38 MB of logs. The script validates first and refuses to
+archive a failing tree, warns when the working tree is dirty so an upload stays
+attributable, checks that the icon `mod_info.lua` declares is actually carried,
+and rejects anything at the archive root that is not on the list.
+
+`tests/package_mod_spec.py` guards the list itself: every
+`import("/mods/TheRedQueen/…")` in the payload must resolve to a file the
+archive carries, the declared icon must exist, `docs`, `tests` and `scripts`
+must never appear, and the README's `Release \`V<n>\`` label must match
+`mod_info.lua`. That last one caught two stale `V8` labels that would have
+shipped to players.
+
+The archive contains a single top-level `TheRedQueen/` folder, matching how a
+mod is laid out under `mods/` — compare a neighbouring install such as
+`SupremeEconomy`, which is `mod_info.lua` beside `hook/` and its content.
+
 ### Where results live
 
 `run-matrix.sh` writes every log and manifest to `/tmp`, which does not survive a reboot. Anything a conclusion rests on belongs in **`docs/balance/data/`** before the machine goes down:
