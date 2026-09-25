@@ -209,9 +209,19 @@ must never appear, and the README's `Release \`V<n>\`` label must match
 `mod_info.lua`. That last one caught two stale `V8` labels that would have
 shipped to players.
 
-The archive contains a single top-level `TheRedQueen/` folder, matching how a
-mod is laid out under `mods/` — compare a neighbouring install such as
-`SupremeEconomy`, which is `mod_info.lua` beside `hook/` and its content.
+The archive contains a single top-level **`TheRedQueen/`** folder, and that name
+is not free to change. The FAF uploader records the folder the mod is in, and
+every import here is absolute — `import("/mods/TheRedQueen/…")`, 82 of them.
+Packaged under any other name the mod installs and then fails on first use,
+which is harder to diagnose than a mod that fails to install.
+
+So the packager derives the name from the imports, refuses to build when they
+disagree with each other or with the folder it is about to write, and checks the
+icon is rooted at the same place. `package_mod_spec.py` asserts the same
+invariant in the gate, so a renamed import is caught at commit time rather than
+at upload time. The layout matches how a mod sits under `mods/` — compare a
+neighbouring install such as `SupremeEconomy`, which is `mod_info.lua` beside
+`hook/` and its content.
 
 ### Where results live
 

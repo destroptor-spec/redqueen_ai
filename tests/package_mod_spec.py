@@ -58,6 +58,32 @@ class PackagePayload(unittest.TestCase):
         self.assertTrue(icon.group(1).startswith(MOD_ROOT), "the icon must live inside the mod")
         self.assertTrue((ROOT / icon.group(1)[len(MOD_ROOT):]).is_file(), "declared icon is missing")
 
+    def test_every_import_agrees_on_the_mod_folder_name(self):
+        """The uploader records the folder name, and every import is absolute.
+
+        Ship under any other name and each `/mods/<name>/...` path resolves to
+        nothing -- a mod that installs and then fails on first use, which is
+        harder to diagnose than one that fails to install.
+        """
+        prefixes = set()
+        for source in list(ROOT.glob("lua/**/*.lua")) + list(ROOT.glob("hook/**/*.lua")):
+            for match in re.finditer(r'import\(\s*"/mods/([^/"]+)/', source.read_text(encoding="utf-8")):
+                prefixes.add(match.group(1))
+        self.assertEqual(
+            prefixes, {"TheRedQueen"},
+            "every import must be rooted at /mods/TheRedQueen/, found: " + ", ".join(sorted(prefixes)),
+        )
+
+    def test_the_packager_ships_that_same_folder_name(self):
+        text = PACKAGER.read_text(encoding="utf-8")
+        name = re.search(r'^name="([^"]+)"', text, re.M)
+        self.assertIsNotNone(name, "package-mod.sh must declare the mod folder name")
+        self.assertEqual(name.group(1), "TheRedQueen")
+        self.assertIn(
+            'prefixes[0]}" != "$name', text,
+            "the packager must cross-check the folder name against the imports",
+        )
+
     def test_development_trees_are_not_shipped(self):
         """38 MB of match archives live under docs/. None of it is the mod."""
         for forbidden in ("docs", "tests", "scripts", ".git", ".claude"):
