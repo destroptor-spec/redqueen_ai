@@ -1393,3 +1393,73 @@ Queen brains** — 408 lines, no state samples, no `GameEnded`, UI-layer import
 failures. It was a transient client failure, not the payload; a re-run was
 clean. `analyze-log.py` caught it. An ad-hoc grep would have averaged a dead
 cell into the result.
+
+---
+
+# Factory assistance: four limits, and the wrong question (2026-09-25)
+
+The thread began with a real figure: 10.4 engineers idle per sample with nothing
+of Red Queen's holding them, while factory assistance — the only sink for spare
+build power — ran at 1.44 of a permitted 6. Four limits were found, each by
+measurement after the previous fix exposed the next.
+
+| limit | evidence | verdict |
+| --- | --- | --- |
+| Tech 1 only may assist | 18.5 of 33 engineers are T2/T3 late | lifted; bought 0.13 assistants |
+| alert releases every assistant | gate shut in 82% of samples | narrowed to preemption |
+| retained only while in ArmyPool | — | **14% of drops; not the cause** |
+| assist expires after 30s | **85% of drops** | measured, not fixed |
+
+Full accounting of 414 assignments in one match: **released 242** (stall
+closures, 94 of them), **expired 135**, out of pool 22, dead 2.
+
+## The preemption change
+
+A defence alert no longer releases every assistant; emergency defence preempts
+one when no idle engineer is free. Justified because across eighteen cells
+emergency defence was blocked for want of an engineer **once in 1,430 events**,
+while the release shut assistance in 82% of samples.
+
+It worked mechanically — gate open 18% → **72%**, candidates 11.05 for 5.46
+wanted, and point defence and anti-air held at 18.3 and 26.6 — and it made the
+match worse.
+
+| | control | preemption |
+| --- | ---: | ---: |
+| mean mass K/L | **1.085** | **0.936** |
+| cells with K/L >= 1.0 | **10** | **8** of 18 |
+| mean peak claim | 24.4 | 23.4 |
+| mean claim retention | 0.627 | 0.698 |
+
+**Not adopted.** Preserved as `assist-preemption.patch`.
+
+## Why, and why the whole question was wrong for this regime
+
+Factory assistance **consumes mass**. The mirror matrix runs at 0.21 mass
+storage with stall risk in a fifth of samples, and the 94 gate closures in the
+measured cell were all stall. Adding build power to factories that are already
+mass-limited does not produce more units; it drains a starved economy faster,
+and the outcome says so.
+
+So the premise behind this whole thread — that 10 idle engineers are a wasted
+resource — is **false in this regime**. They are idle because there is no mass
+to build with. Idle engineers here are a *symptom* of mass starvation, not a
+cause of underproduction, and no amount of work-finding fixes that.
+
+Against humans the same figure meant the opposite: Red Queen floated both stores
+46–62% of the match while holding 27 factories it did not want and leaving 40%
+of its engineers idle. There the mass existed and was not spent. That is a real
+defect — and it cannot be tested here, because the matrix never has the surplus.
+
+## What the chain is worth
+
+Four hypotheses, four measurements, four corrections — the tech filter, the
+alert gate, the ArmyPool retention, and finally expiry, each of which looked
+like the answer and three of which were not. The instruments are kept:
+`assist=active/assigned/released/desired/candidates/gated` and
+`assistdrop=pool/expired/dead` make the next attempt cheap, and the accounting
+above could not have been produced without them.
+
+The standing conclusion for the matrix regime is unchanged and now better
+supported: **Red Queen is mass-limited, not build-power-limited.** Work on claim
+and retention, not on finding jobs for engineers.

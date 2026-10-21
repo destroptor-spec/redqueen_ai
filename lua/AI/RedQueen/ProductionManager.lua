@@ -440,7 +440,14 @@ ProductionManager = ClassSimple {
         self.LastFactoryRequestTick = -100000
         self.FactoryAssistants = {}
         self.IdleAssistants = {}
-        self.AssistSummary = { Active = 0, Assigned = 0, Released = 0, Commander = 0 }
+        -- Desired, candidates, gate closures and drop reasons. Active alone
+        -- could not separate four independent limits on this mechanism, and
+        -- three of the four looked like the answer and were not.
+        self.AssistSummary = {
+            Active = 0, Assigned = 0, Released = 0, Commander = 0,
+            Desired = 0, Candidates = 0, Gated = 0,
+            DropPool = 0, DropExpired = 0, DropDead = 0,
+        }
         self.LastEmergencyDefenseTick = -100000
         self.LastShoreArtilleryTick = -100000
         self.LastShoreTorpedoTick = -100000
@@ -1311,6 +1318,9 @@ ProductionManager = ClassSimple {
         local alert = self.Strategy.ProductionDemand.DefenseAlert
         local state = self.Economy.State
         if state.StallRisk or (alert and alert.Active) then
+            self.AssistSummary.Gated = self.AssistSummary.Gated + 1
+            self.AssistSummary.Desired = 0
+            self.AssistSummary.Candidates = 0
             self:ReleaseFactoryAssistants(
                 alert and alert.Active and "defense" or "stall",
                 unassignedByEntityId
@@ -1331,6 +1341,13 @@ ProductionManager = ClassSimple {
                 kept[entityId] = record
                 table.insert(active, record.Engineer)
             elseif record.Engineer then
+                if not IsAlive(record.Engineer) or not IsAlive(record.Factory) then
+                    self.AssistSummary.DropDead = self.AssistSummary.DropDead + 1
+                elseif record.ExpiresTick <= tick then
+                    self.AssistSummary.DropExpired = self.AssistSummary.DropExpired + 1
+                else
+                    self.AssistSummary.DropPool = self.AssistSummary.DropPool + 1
+                end
                 if IsAlive(record.Engineer)
                     and unassignedByEntityId[record.Engineer.EntityId]
                 then
@@ -1366,6 +1383,8 @@ ProductionManager = ClassSimple {
                 IssueClearCommands(excess)
             end
         end
+        self.AssistSummary.Desired = desired
+        self.AssistSummary.Candidates = table.getn(unassigned)
         if desired <= table.getn(active) or desired <= 0 then
             return
         end

@@ -184,6 +184,50 @@ A single match is one sample. Seed alone has flipped an outcome on the same map,
 
 Every mechanism must be visible in a match log, and it is worth adding the log line *before* the run rather than after. Two mechanisms once ran a full 21-cell matrix leaving no trace: forward-base cover, which logged at `Logger.Debug` (off in behavioural runs) and stood down for 86% of bases behind a Tech 3 filter, and native engineer suppression, which was inferable only by noticing that held engineers tracked their target exactly. Outcomes cannot attribute a change; only mechanism figures can. `Logger.Debug` is for interactive work — a figure a matrix has to read belongs in the periodic state line, with a contract asserting it is reported.
 
+### Packaging the mod
+
+The repository is a development tree. `docs/balance/data/` alone carries roughly
+38 MB of match archives, against a mod payload of about 2 MB — so what is
+uploaded to the Vault has to be built, never zipped from the checkout.
+
+```bash
+./scripts/package-mod.sh            # writes dist/TheRedQueen/
+```
+
+The FAF uploader is pointed at a **directory** containing `mod_info.lua`, not at
+an archive, so **`dist/TheRedQueen/` is what you select**. A zip is written
+beside it only as a keepable copy of what was uploaded. The directory is deleted
+and rebuilt on every run, because a file left over from an earlier version would
+otherwise be uploaded with the rest and nothing would notice.
+
+The payload is an **allowlist** in the script — `mod_info.lua`, `lua/`, `hook/`,
+`assets/`, `LICENSE`, `README.md` — and not an exclusion list, because a
+denylist has to be updated every time a directory appears and the one that
+appeared this month was 38 MB of logs. The script validates first and refuses to
+archive a failing tree, warns when the working tree is dirty so an upload stays
+attributable, checks that the icon `mod_info.lua` declares is actually carried,
+and rejects anything at the archive root that is not on the list.
+
+`tests/package_mod_spec.py` guards the list itself: every
+`import("/mods/TheRedQueen/…")` in the payload must resolve to a file the
+archive carries, the declared icon must exist, `docs`, `tests` and `scripts`
+must never appear, and the README's `Release \`V<n>\`` label must match
+`mod_info.lua`. That last one caught two stale `V8` labels that would have
+shipped to players.
+
+That directory is named **`TheRedQueen`**, and the name is not free to change. The FAF uploader records the folder the mod is in, and
+every import here is absolute — `import("/mods/TheRedQueen/…")`, 82 of them.
+Packaged under any other name the mod installs and then fails on first use,
+which is harder to diagnose than a mod that fails to install.
+
+So the packager derives the name from the imports, refuses to build when they
+disagree with each other or with the folder it is about to write, and checks the
+icon is rooted at the same place. `package_mod_spec.py` asserts the same
+invariant in the gate, so a renamed import is caught at commit time rather than
+at upload time. The layout matches how a mod sits under `mods/` — compare a
+neighbouring install such as `SupremeEconomy`, which is `mod_info.lua` beside
+`hook/` and its content.
+
 ### Where results live
 
 `run-matrix.sh` writes every log and manifest to `/tmp`, which does not survive a reboot. Anything a conclusion rests on belongs in **`docs/balance/data/`** before the machine goes down:

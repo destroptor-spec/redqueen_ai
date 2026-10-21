@@ -899,6 +899,20 @@ diagnostics_source = (ROOT / "lua/AI/RedQueen/Diagnostics.lua").read_text(
 # A third to a half of the engineer corps stands idle in every regime measured.
 # "Red Queen is holding it" and "native had no task for it" call for opposite
 # fixes, so the count must be attributed or it cannot be acted on.
+# Factory assistance runs at 1.44 of a permitted 6 and two independent limits
+# both match that figure: a gate that releases every assistant on any active
+# defence alert, and a candidate pool the code itself says holds one or two
+# engineers. Active alone cannot separate them, and three earlier changes were
+# aimed at constants that merely matched the count they appeared to explain.
+if "assist=%d/%d/%d/%d/%d/%d" not in diagnostics_source:
+    fail(
+        "the state line must report assistance desired, candidates and gate "
+        "closures, not the active count alone"
+    )
+for field in ("Desired", "Candidates", "Gated"):
+    if f"AssistSummary.{field}" not in production_source:
+        fail(f"AssistSummary must record {field}")
+
 observer_source = (ROOT / "lua/AI/RedQueen/Observer.lua").read_text(encoding="utf-8")
 if "engidle=%d/%d/%d/%d" not in observer_source:
     fail("the watch line must attribute idle engineers, not merely count them")

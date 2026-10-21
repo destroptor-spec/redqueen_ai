@@ -276,7 +276,9 @@ local brain = {
 
 logged = {}
 local reporter = Create(brain, modules)
-modules.Production.AssistSummary = { Active = 2, Assigned = 7, Released = 5 }
+modules.Production.AssistSummary = { Active = 2, Assigned = 7, Released = 5,
+    Desired = 6, Candidates = 1, Gated = 40,
+    DropPool = 31, DropExpired = 2, DropDead = 1 }
 modules.Production.CommanderAssists = 3
 -- Established forward bases, what native has registered to them, and what Red
 -- Queen finds standing near them. A base alive on the ground and dead on the
@@ -307,7 +309,7 @@ local state = logged[table.getn(logged)]
 assert(state, "Update must log a state line")
 assert(string.find(state, "combatctl=directed:3/540/0/180 combatdetail=1/1", 1, true),
     "the periodic state must expose controller inventory, losses and detail coverage")
-assert(string.find(state, "assist=2/7/5 acuassist=3 mexgate=under-attack/4", 1, true),
+assert(string.find(state, "assist=2/7/5/6/1/40 assistdrop=31/2/1 acuassist=3 mexgate=under-attack/4", 1, true),
     "normal diagnostics must expose assist activity and blocked native extractor starts")
 
 -- Which gate is holding each domain's tier ladder down.
